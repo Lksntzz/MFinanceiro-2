@@ -3,6 +3,19 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+// Remova qualquer Service Worker fantasma que possa estar em cache
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister()
+        .then(success => {
+          if (success) console.log('ServiceWorker defasado desregistrado com sucesso');
+        })
+        .catch(err => console.error('Falha ao desregistrar ServiceWorker', err));
+    }
+  });
+}
+
 class RootErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; message: string }> {
   constructor(props: { children: ReactNode }) {
     super(props);

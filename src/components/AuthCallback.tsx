@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearLegacyCache } from '../lib/clearCache';
 
 export default function AuthCallback() {
   const [statusMessage, setStatusMessage] = useState('Validando confirmação de e-mail...');
@@ -38,6 +39,7 @@ export default function AuthCallback() {
           if (!isMounted) return;
           setStatusMessage('E-mail confirmado com sucesso. Redirecionando...');
           window.setTimeout(() => {
+            clearLegacyCache();
             window.location.replace('/');
           }, 900);
           return;

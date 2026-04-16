@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Transaction, UserSettings, FinanceSummary, FixedBill, DailyBill, CreditCard, CardInstallment, ImportedTransaction } from '../types';
@@ -29,6 +29,7 @@ import {
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
 import { format, subDays, isAfter, isBefore, addDays, getDaysInMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { clearLegacyCache } from '../lib/clearCache';
 
 ChartJS.register(...registerables);
 
@@ -1257,7 +1258,11 @@ export default function Dashboard({ user }: { user: User }) {
           <button onClick={() => setShowSettingsModal(true)} className="p-1.5 text-white/60 hover:text-white transition-colors">
             <Settings size={18} />
           </button>
-          <button onClick={() => db.auth.signOut()} className="p-1.5 text-white/60 hover:text-white transition-colors">
+          <button onClick={async () => {
+              await db.auth.signOut();
+              clearLegacyCache();
+              window.location.replace('/');
+            }} className="p-1.5 text-white/60 hover:text-white transition-colors">
             <LogOut size={18} />
           </button>
         </div>

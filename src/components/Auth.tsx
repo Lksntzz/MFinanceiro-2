@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearLegacyCache } from '../lib/clearCache';
 import { Wallet, LogIn, UserPlus, Mail, RefreshCw } from 'lucide-react';
 
 export default function Auth() {
@@ -41,7 +42,8 @@ export default function Auth() {
         });
         if (error) throw error;
         if (data.session) {
-          window.location.reload();
+          clearLegacyCache();
+          window.location.replace('/');
         } else {
           setPendingEmail(email);
           setAwaitingEmailConfirmation(true);
@@ -50,7 +52,8 @@ export default function Auth() {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (data.session) {
-          window.location.reload();
+          clearLegacyCache();
+          window.location.replace('/');
         } else {
           setError('Login enviado, mas a sessão não foi criada. Verifique a configuração do Supabase Auth.');
         }
