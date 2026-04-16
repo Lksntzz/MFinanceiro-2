@@ -3,12 +3,14 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
 
 const Auth = lazy(() => import('./components/Auth'));
+const AuthCallback = lazy(() => import('./components/AuthCallback'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const ConfigRequired = lazy(() => import('./components/ConfigRequired'));
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
@@ -43,6 +45,14 @@ export default function App() {
     return (
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">Carregando configuração...</div>}>
         <ConfigRequired />
+      </Suspense>
+    );
+  }
+
+  if (currentPath === '/auth/callback') {
+    return (
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">Finalizando confirmação...</div>}>
+        <AuthCallback />
       </Suspense>
     );
   }

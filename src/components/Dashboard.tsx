@@ -340,8 +340,14 @@ export default function Dashboard({ user }: { user: User }) {
 
     setLoading(true);
     setError(null);
+    setTransactions([]);
+    setFixedBills([]);
+    setDailyBills([]);
+    setCards([]);
+    setInstallments([]);
     
     let detectedMissing: string[] = [];
+    const todayPaydayDefault = new Date().getDate();
 
     // 1. Fetch Settings (Critical)
     try {
@@ -365,7 +371,7 @@ export default function Dashboard({ user }: { user: User }) {
             benefits: 0,
             deductions: 0,
             payday_cycle: 'monthly',
-            payday_1: 5
+            payday_1: todayPaydayDefault
           };
           setSettings(fallbackSettings);
         } else if (!settingsData) {
@@ -377,7 +383,7 @@ export default function Dashboard({ user }: { user: User }) {
             benefits: 0,
             deductions: 0,
             payday_cycle: 'monthly',
-            payday_1: 5
+            payday_1: todayPaydayDefault
           };
           
           const { data: newSettings, error: insertError } = await db
@@ -454,6 +460,8 @@ export default function Dashboard({ user }: { user: User }) {
       setDailyBills(dailyData || []);
     } catch (e: any) {
       console.warn('Bills fetch failed:', e);
+      setFixedBills([]);
+      setDailyBills([]);
     }
 
     // 4. Fetch Cards & Installments (Non-critical)
@@ -476,6 +484,8 @@ export default function Dashboard({ user }: { user: User }) {
       setInstallments(instData || []);
     } catch (e: any) {
       console.warn('Cards fetch failed:', e);
+      setCards([]);
+      setInstallments([]);
     }
 
     setMissingTables(detectedMissing);
@@ -1148,6 +1158,16 @@ export default function Dashboard({ user }: { user: User }) {
   const overviewCardsUsagePercent = overviewCardsLimit > 0
     ? Math.min(100, (overviewCardsUsed / overviewCardsLimit) * 100)
     : 0;
+  const isFreshAccount =
+    (transactions?.length ?? 0) === 0 &&
+    (fixedBills?.length ?? 0) === 0 &&
+    (dailyBills?.length ?? 0) === 0 &&
+    (cards?.length ?? 0) === 0 &&
+    (installments?.length ?? 0) === 0 &&
+    Number(settings?.current_balance ?? 0) === 0 &&
+    Number(settings?.gross_salary ?? 0) === 0;
+  const overviewDaysRemaining = isFreshAccount ? 0 : (summary?.daysRemaining ?? 0);
+  const overviewNextPaydayLabel = isFreshAccount ? '--/--' : (summary?.nextPaydayLabel ?? '--/--');
 
   const tabs = [
     { id: 'overview', label: 'Visão Geral' },
@@ -1233,8 +1253,8 @@ export default function Dashboard({ user }: { user: User }) {
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Dias Restantes</span>
               <div>
-                <div className="text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
-                <div className="text-[11px] text-white/50 mt-1">Próx. pagamento: {summary?.nextPaydayLabel ?? '--/--'}</div>
+                <div className="text-2xl font-bold">{overviewDaysRemaining} dias</div>
+                <div className="text-[11px] text-white/50 mt-1">Próx. pagamento: {overviewNextPaydayLabel}</div>
               </div>
             </div>
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">

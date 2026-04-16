@@ -684,7 +684,7 @@ export default function BaseFinanceira({
             <Info size={20} />
           </div>
           <p className="text-xs text-white/60 leading-relaxed">
-            A **Base Financeira** é o motor do MFinanceiro. Alterações aqui impactam imediatamente seu **Limite Diário**, **Saldo Projetado** e todos os **Insights** de inteligência. Mantenha estes dados atualizados para garantir a precisão do sistema.
+            A Base Financeira é o motor do MFinanceiro. Alterações aqui impactam imediatamente seu Limite Diário, Saldo Projetado e todos os Insights de inteligência. Mantenha estes dados atualizados para garantir a precisão do sistema.
           </p>
         </div>
         <div className="col-span-4 flex flex-col gap-2">
