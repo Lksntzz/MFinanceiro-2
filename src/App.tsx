@@ -67,7 +67,7 @@ export default function App() {
 
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">Carregando dashboard...</div>}>
-      <Dashboard user={session.user} />
+      <Dashboard key={session.user.id} user={session.user} />
     </Suspense>
   );
 }

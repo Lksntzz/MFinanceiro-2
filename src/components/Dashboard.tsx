@@ -1,5 +1,5 @@
 ﻿
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Transaction, UserSettings, FinanceSummary, FixedBill, DailyBill, CreditCard, CardInstallment, ImportedTransaction } from '../types';
 import { calculateFinanceSummary } from '../lib/finance-calculations';
@@ -99,6 +99,12 @@ export default function Dashboard({ user }: { user: User }) {
     current_installment: '1',
     total_installments: '1',
   });
+  const currentUserIdRef = useRef(user.id);
+  const fetchVersionRef = useRef(0);
+
+  useEffect(() => {
+    currentUserIdRef.current = user.id;
+  }, [user.id]);
 
   const parseTransactionDate = (raw: string): Date | null => {
     if (!raw) return null;
@@ -248,10 +254,11 @@ export default function Dashboard({ user }: { user: User }) {
   }
 
   useEffect(() => {
+    setSummary(null);
     fetchData();
-    
+
     const channel = db
-      .channel('ledger_changes')
+      .channel(`ledger_changes_${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries' }, () => {
         fetchData();
       })
@@ -260,7 +267,7 @@ export default function Dashboard({ user }: { user: User }) {
     return () => {
       db.removeChannel(channel);
     };
-  }, []);
+  }, [user.id]);
 
   useEffect(() => {
     if (settings) {
@@ -337,6 +344,10 @@ export default function Dashboard({ user }: { user: User }) {
 
   async function fetchData() {
     if (!user) return;
+    const fetchUserId = user.id;
+    const fetchVersion = ++fetchVersionRef.current;
+    const isStale = () =>
+      fetchVersionRef.current !== fetchVersion || currentUserIdRef.current !== fetchUserId;
 
     setLoading(true);
     setError(null);
@@ -373,6 +384,7 @@ export default function Dashboard({ user }: { user: User }) {
             payday_cycle: 'monthly',
             payday_1: todayPaydayDefault
           };
+          if (isStale()) return;
           setSettings(fallbackSettings);
         } else if (!settingsData) {
           const defaultSettings: Partial<UserSettings> = {
@@ -395,6 +407,7 @@ export default function Dashboard({ user }: { user: User }) {
           if (insertError && insertError.code !== '23505') throw insertError;
           
           if (newSettings) {
+            if (isStale()) return;
             setSettings(newSettings);
           } else {
             const { data: retryData } = await db
@@ -402,10 +415,14 @@ export default function Dashboard({ user }: { user: User }) {
               .select('*')
               .eq('user_id', user.id)
               .single();
-            if (retryData) setSettings(retryData);
+            if (retryData) {
+              if (isStale()) return;
+              setSettings(retryData);
+            }
           }
         }
       } else {
+        if (isStale()) return;
         setSettings(settingsData);
       }
     } catch (err: any) {
@@ -437,9 +454,11 @@ export default function Dashboard({ user }: { user: User }) {
           description: t.description || 'Sem descrição'
         };
       });
+      if (isStale()) return;
       setTransactions(normalizedTransactions);
     } catch (err: any) {
       console.error('Transactions error:', err);
+      if (isStale()) return;
       setTransactions([]);
     }
 
@@ -450,6 +469,7 @@ export default function Dashboard({ user }: { user: User }) {
         if (fixedError.code === 'PGRST205') detectedMissing.push('mf_fixed_bills');
         throw fixedError;
       }
+      if (isStale()) return;
       setFixedBills(fixedData || []);
       
       const { data: dailyData, error: dailyError } = await db.from('mf_daily_bills').select('*').eq('user_id', user.id);
@@ -457,9 +477,11 @@ export default function Dashboard({ user }: { user: User }) {
         if (dailyError.code === 'PGRST205') detectedMissing.push('mf_daily_bills');
         throw dailyError;
       }
+      if (isStale()) return;
       setDailyBills(dailyData || []);
     } catch (e: any) {
       console.warn('Bills fetch failed:', e);
+      if (isStale()) return;
       setFixedBills([]);
       setDailyBills([]);
     }
@@ -471,6 +493,7 @@ export default function Dashboard({ user }: { user: User }) {
         if (cardError.code === 'PGRST205') detectedMissing.push('mf_credit_cards');
         throw cardError;
       }
+      if (isStale()) return;
       setCards(cardData || []);
       
       const cardIds = (cardData || []).map(card => card.id);
@@ -481,13 +504,16 @@ export default function Dashboard({ user }: { user: User }) {
         if (instError.code === 'PGRST205') detectedMissing.push('mf_card_installments');
         throw instError;
       }
+      if (isStale()) return;
       setInstallments(instData || []);
     } catch (e: any) {
       console.warn('Cards fetch failed:', e);
+      if (isStale()) return;
       setCards([]);
       setInstallments([]);
     }
 
+    if (isStale()) return;
     setMissingTables(detectedMissing);
     if (detectedMissing.length > 0) {
       console.error('Missing setup detected:', detectedMissing);
