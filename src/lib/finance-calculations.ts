@@ -25,8 +25,16 @@ import {
 import { ptBR } from 'date-fns/locale';
 
 function parseCalendarDate(value: string): Date | null {
-  // ISO com horário (ex.: lançamento manual salvo com toISOString):
-  // converte para dia LOCAL para evitar cair no dia seguinte/anterior por UTC.
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const year = Number(iso[1]);
+    const month = Number(iso[2]);
+    const day = Number(iso[3]);
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
+  }
+
+  // Fallback para ISO completo quando não houver prefixo de data reconhecível.
+  // Preserva o dia local apenas como última opção.
   if (value.includes('T')) {
     const parsedIso = new Date(value);
     if (!isNaN(parsedIso.getTime())) {
@@ -40,14 +48,6 @@ function parseCalendarDate(value: string): Date | null {
         0
       );
     }
-  }
-
-  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const year = Number(iso[1]);
-    const month = Number(iso[2]);
-    const day = Number(iso[3]);
-    return new Date(year, month - 1, day, 12, 0, 0, 0);
   }
 
   const br = value.match(/^(\d{2})[/-](\d{2})[/-](\d{2,4})/);
@@ -338,17 +338,36 @@ export function calculateFinanceSummary(
 
   // 10. Priorities
   const priorities: PriorityItem[] = [];
-  if (currentBalance < 100) {
-    priorities.push({ id: '1', title: 'Saldo Crítico', message: 'Evite qualquer gasto não essencial até o próximo pagamento.', type: 'urgent' });
+  const addPriority = (title: string, message: string, type: PriorityItem['type']) => {
+    priorities.push({ id: String(priorities.length + 1), title, message, type });
+  };
+
+  if (currentBalance < 0) {
+    addPriority('Saldo Negativo', 'Seu saldo está abaixo de zero. Priorize cobrir esse valor imediatamente.', 'urgent');
+  } else if (currentBalance < 100) {
+    addPriority('Saldo Crítico', 'Evite qualquer gasto não essencial até o próximo pagamento.', 'urgent');
   }
+
   if (totalCommitments > currentBalance) {
-    priorities.push({ id: '4', title: 'Comprometimento Alto', message: 'Seus compromissos financeiros já consomem todo seu saldo disponível.', type: 'urgent' });
+    addPriority('Comprometimento Alto', 'Seus compromissos financeiros já consomem todo seu saldo disponível.', 'urgent');
   }
+
   if (daysRemaining > 10 && availableForDaily < 500) {
-    priorities.push({ id: '2', title: 'Pressão no Ciclo', message: 'Ainda faltam muitos dias e o saldo livre está baixo.', type: 'warning' });
+    addPriority('Pressão no Ciclo', 'Ainda faltam muitos dias e o saldo livre está baixo.', 'warning');
   }
-  if (todaySpent > dailyLimit && dailyLimit > 0) {
-    priorities.push({ id: '3', title: 'Meta Diária', message: 'Você já ultrapassou o limite de hoje.', type: 'info' });
+
+  if (dailyLimit > 0 && todaySpent > dailyLimit) {
+    addPriority('Meta Diária', 'Você já ultrapassou o limite de hoje.', 'warning');
+  } else if (dailyLimit > 0 && todaySpent > dailyLimit * 0.8) {
+    addPriority('Atenção Hoje', 'Você já consumiu mais de 80% do limite diário.', 'info');
+  }
+
+  if (priorities.length === 0) {
+    if (transactions.length === 0) {
+      addPriority('Comece o Registro', 'Adicione lançamentos para ativar prioridades inteligentes.', 'info');
+    } else {
+      addPriority('Cenário Estável', 'Sem alertas críticos no momento. Mantenha o ritmo de gastos atual.', 'info');
+    }
   }
 
   return {
@@ -476,5 +495,3 @@ function getNextPayday(settings: UserSettings, now: Date): Date {
 
   return paydayDate;
 }
-
-

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { ImportedTransaction } from '../types';
+import { parsePdfStatement } from '../lib/import-parsers/pdf/parse-pdf-statement';
 import {
   Upload,
   FileText,
@@ -499,12 +500,64 @@ function parseOfxTransactions(content: string, bank: string): ImportedTransactio
   });
 }
 
+async function parsePdfTransactions(file: File, selectedBank: string): Promise<ImportedTransaction[]> {
+  return parsePdfStatement(file, selectedBank);
+}
+
 export default function ImportarExtratos({ onImport, onCancel }: ImportarExtratosProps) {
   const [step, setStep] = useState<'upload' | 'processing' | 'review' | 'success'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [bank, setBank] = useState<string>('auto');
   const [importedData, setImportedData] = useState<ImportedTransaction[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+
+  const signedAmountFromImported = (item: ImportedTransaction): number =>
+    item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount);
+
+  const parseImportedDate = (value: string): number => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+  };
+
+  const balanceValidation = (() => {
+    if (importedData.length === 0) return null;
+
+    const withRunning = importedData
+      .map((item, idx) => ({ item, idx }))
+      .filter(entry => typeof entry.item.running_balance === 'number' && Number.isFinite(entry.item.running_balance));
+
+    if (withRunning.length === 0) return null;
+
+    const sortedByDateAsc = [...withRunning].sort((a, b) => {
+      const byDate = parseImportedDate(a.item.date) - parseImportedDate(b.item.date);
+      if (byDate !== 0) return byDate;
+      return a.idx - b.idx;
+    });
+    const sortedByDateDesc = [...withRunning].sort((a, b) => {
+      const byDate = parseImportedDate(b.item.date) - parseImportedDate(a.item.date);
+      if (byDate !== 0) return byDate;
+      return b.idx - a.idx;
+    });
+
+    const firstWithBalance = sortedByDateAsc[0]?.item;
+    const lastWithBalance = sortedByDateDesc[0]?.item;
+    if (!firstWithBalance || !lastWithBalance) return null;
+
+    const openingBalance = (firstWithBalance.running_balance || 0) - signedAmountFromImported(firstWithBalance);
+    const selectedNet = importedData
+      .filter(item => item.status === 'ready')
+      .reduce((sum, item) => sum + signedAmountFromImported(item), 0);
+    const expectedFinal = openingBalance + selectedNet;
+    const statementFinal = lastWithBalance.running_balance || 0;
+    const diff = expectedFinal - statementFinal;
+
+    return {
+      expectedFinal,
+      statementFinal,
+      diff,
+      isClose: Math.abs(diff) < 0.01,
+    };
+  })();
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -536,13 +589,16 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
 
     try {
       const filename = selectedFile.name.toLowerCase();
-      const content = await selectedFile.text();
       let parsed: ImportedTransaction[] = [];
 
       if (filename.endsWith('.csv')) {
+        const content = await selectedFile.text();
         parsed = parseCsvTransactions(content, bank);
       } else if (filename.endsWith('.ofx')) {
+        const content = await selectedFile.text();
         parsed = parseOfxTransactions(content, bank);
+      } else if (filename.endsWith('.pdf')) {
+        parsed = await parsePdfTransactions(selectedFile, bank);
       }
 
       setImportedData(parsed);
@@ -650,7 +706,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                   </div>
                   <div>
                     <h4 className="text-xs font-bold">Formatos Suportados</h4>
-                    <p className="text-[10px] text-white/40 mt-1">CSV e OFX com mapeamento automatico de campos.</p>
+                    <p className="text-[10px] text-white/40 mt-1">CSV, OFX e PDF com mapeamento automatico de campos.</p>
                   </div>
                 </div>
                 <div className="glass-card !p-4 flex items-start gap-3">
@@ -683,6 +739,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                     <option value="santander">Santander</option>
                     <option value="bradesco">Bradesco</option>
                     <option value="mercadopago">Mercado Pago</option>
+                    <option value="c6bank">C6 Bank</option>
                   </select>
                 </div>
               </div>
@@ -712,6 +769,31 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
 
       {step === 'review' && (
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+          {balanceValidation && (
+            <div className={`glass-card !p-3 shrink-0 border ${balanceValidation.isClose ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">Validação de Saldo (pré-importação)</div>
+                  <div className="text-xs text-white/80 mt-1">
+                    Saldo final esperado x saldo do extrato
+                  </div>
+                </div>
+                <div className="text-right text-[11px] leading-5">
+                  <div>Esperado: <span className="font-bold">R$ {balanceValidation.expectedFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div>Extrato: <span className="font-bold">R$ {balanceValidation.statementFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={balanceValidation.isClose ? 'text-green-300' : 'text-yellow-300'}>
+                    Diferença: {balanceValidation.diff >= 0 ? '+' : '-'} R$ {Math.abs(balanceValidation.diff).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+              {!balanceValidation.isClose && (
+                <div className="text-[10px] text-yellow-200/90 mt-2">
+                  A diferença indica que algum lançamento pode estar pendente, desmarcado ou com valor/categoria incorreto.
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-4 shrink-0">
             <div className="flex-1 glass-card !p-3 flex items-center justify-between">
               <div className="flex items-center gap-6">
@@ -790,7 +872,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
             ))}
             {importedData.length === 0 && (
               <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-xs text-yellow-300">
-                Nenhum lancamento valido encontrado. Para XLSX/PDF/imagem ainda falta parser no app. Se puder, exporte o extrato em CSV ou OFX.
+                Nenhum lancamento valido encontrado. Para XLSX/imagem ainda falta parser no app. Se puder, exporte o extrato em CSV, OFX ou PDF.
               </div>
             )}
           </div>

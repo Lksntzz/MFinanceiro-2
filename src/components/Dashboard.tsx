@@ -79,6 +79,26 @@ export default function Dashboard({ user }: { user: User }) {
   const [salaryPromptAmount, setSalaryPromptAmount] = useState(0);
   const [salaryPromptDayLabel, setSalaryPromptDayLabel] = useState('');
   const [salaryPromptProcessing, setSalaryPromptProcessing] = useState(false);
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
+  const [cardForm, setCardForm] = useState({
+    name: '',
+    brand: 'Visa',
+    limit: '',
+    used: '',
+    closing_day: '1',
+    due_day: '10',
+  });
+  const [showInstallmentModal, setShowInstallmentModal] = useState(false);
+  const [editingInstallment, setEditingInstallment] = useState<CardInstallment | null>(null);
+  const [installmentForm, setInstallmentForm] = useState({
+    card_id: '',
+    description: '',
+    total_amount: '',
+    monthly_amount: '',
+    current_installment: '1',
+    total_installments: '1',
+  });
 
   const parseTransactionDate = (raw: string): Date | null => {
     if (!raw) return null;
@@ -469,13 +489,128 @@ export default function Dashboard({ user }: { user: User }) {
   async function handleToggleBillStatus(id: string) {
     const bill = fixedBills.find(b => b.id === id);
     if (!bill) return;
+    if (!settings) return;
+
+    const wasPaid = bill.status === 'paid';
+    let paidDateForLedger: Date | null = null;
+
+    if (!wasPaid) {
+      const todayLabel = format(new Date(), 'dd/MM/yyyy');
+      const paidDateInput = window.prompt(
+        `Informe a data em que a conta "${bill.name}" foi paga (dd/mm/aaaa):`,
+        todayLabel
+      );
+
+      if (paidDateInput === null) return;
+
+      const raw = paidDateInput.trim();
+      const br = raw.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+      const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (br) {
+        const day = Number(br[1]);
+        const month = Number(br[2]);
+        const year = Number(br[3]);
+        paidDateForLedger = new Date(year, month - 1, day, 12, 0, 0, 0);
+      } else if (iso) {
+        const year = Number(iso[1]);
+        const month = Number(iso[2]);
+        const day = Number(iso[3]);
+        paidDateForLedger = new Date(year, month - 1, day, 12, 0, 0, 0);
+      }
+
+      if (!paidDateForLedger || Number.isNaN(paidDateForLedger.getTime())) {
+        alert('Data inválida. Use o formato dd/mm/aaaa.');
+        return;
+      }
+
+      const confirmPay = window.confirm(
+        `Confirmar pagamento da conta "${bill.name}" no valor de R$ ${Number(bill.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} em ${format(paidDateForLedger, 'dd/MM/yyyy')}?`
+      );
+      if (!confirmPay) return;
+    }
+
     const newStatus = bill.status === 'paid' ? 'pending' : 'paid';
+    const balanceDelta = wasPaid ? Math.abs(bill.amount) : -Math.abs(bill.amount);
+    const ledgerDescription = wasPaid
+      ? `Estorno de conta fixa: ${bill.name}`
+      : `Pagamento de conta fixa: ${bill.name}`;
+    const ledgerType: 'income' | 'expense' = balanceDelta >= 0 ? 'income' : 'expense';
+
     try {
       const { error } = await db.from('mf_fixed_bills').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
+
+      const { error: ledgerError } = await db.from('mf_finance_ledger_entries').insert({
+        user_id: user.id,
+        amount: balanceDelta,
+        category: 'Contas Fixas',
+        description: ledgerDescription,
+        type: ledgerType,
+        date: wasPaid ? new Date().toISOString() : paidDateForLedger!.toISOString()
+      });
+      if (ledgerError) throw ledgerError;
+
+      const nextBalance = (Number(settings.current_balance) || 0) + balanceDelta;
+      const { error: balanceError } = await db
+        .from('mf_user_settings')
+        .update({ current_balance: nextBalance })
+        .eq('user_id', user.id);
+
+      if (balanceError && balanceError.code !== 'PGRST205') throw balanceError;
+
+      // Ao confirmar pagamento, cria automaticamente a próxima conta fixa para o mês seguinte,
+      // evitando duplicar se já existir um item pendente equivalente nesse mês.
+      if (!wasPaid) {
+        const referenceDate = paidDateForLedger!;
+        const nextMonthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1, 0, 0, 0, 0);
+        const nextMonthEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 2, 1, 0, 0, 0, 0);
+        const daysInNextMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 2, 0).getDate();
+        const nextDueDate = new Date(
+          referenceDate.getFullYear(),
+          referenceDate.getMonth() + 1,
+          Math.min(Math.max(1, Number(bill.due_day) || 1), daysInNextMonth),
+          12,
+          0,
+          0,
+          0
+        );
+
+        const { data: existingNextMonth } = await db
+          .from('mf_fixed_bills')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('status', 'pending')
+          .eq('name', bill.name)
+          .eq('amount', bill.amount)
+          .eq('due_day', bill.due_day)
+          .eq('category', bill.category)
+          .gte('created_at', nextMonthStart.toISOString())
+          .lt('created_at', nextMonthEnd.toISOString())
+          .limit(1);
+
+        if (!existingNextMonth || existingNextMonth.length === 0) {
+          const { error: nextBillError } = await db.from('mf_fixed_bills').insert({
+            user_id: user.id,
+            name: bill.name,
+            amount: bill.amount,
+            due_day: bill.due_day,
+            category: bill.category,
+            status: 'pending',
+            created_at: nextDueDate.toISOString()
+          });
+
+          if (nextBillError && nextBillError.code !== 'PGRST205') {
+            throw nextBillError;
+          }
+        }
+      }
+
       setFixedBills(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
+      setSettings({ ...settings, current_balance: nextBalance });
+      fetchData();
     } catch (err) {
       console.error('Error toggling bill status:', err);
+      alert('Não foi possível atualizar o pagamento da conta fixa.');
     }
   }
 
@@ -543,6 +678,174 @@ export default function Dashboard({ user }: { user: User }) {
     } catch (err) {
       console.error('Error deleting all transactions:', err);
       alert('Não foi possível apagar todos os lançamentos. Tente novamente.');
+    }
+  }
+
+  function openAddCardModal() {
+    setEditingCard(null);
+    setCardForm({
+      name: '',
+      brand: 'Visa',
+      limit: '',
+      used: '',
+      closing_day: '1',
+      due_day: '10',
+    });
+    setShowCardModal(true);
+  }
+
+  function openEditCardModal(card: CreditCard) {
+    setEditingCard(card);
+    setCardForm({
+      name: card.name || '',
+      brand: card.brand || 'Visa',
+      limit: String(card.limit ?? 0),
+      used: String(card.used ?? 0),
+      closing_day: String(card.closing_day ?? 1),
+      due_day: String(card.due_day ?? 10),
+    });
+    setShowCardModal(true);
+  }
+
+  async function handleSaveCard(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const payload = {
+        user_id: user.id,
+        name: cardForm.name.trim(),
+        brand: cardForm.brand.trim() || 'Cartão',
+        limit: Math.max(0, Number(cardForm.limit) || 0),
+        used: Math.max(0, Number(cardForm.used) || 0),
+        closing_day: Math.min(31, Math.max(1, Number(cardForm.closing_day) || 1)),
+        due_day: Math.min(31, Math.max(1, Number(cardForm.due_day) || 1)),
+      };
+
+      if (!payload.name) {
+        alert('Informe o nome do cartão.');
+        return;
+      }
+
+      if (editingCard) {
+        const { error } = await db
+          .from('mf_credit_cards')
+          .update(payload)
+          .eq('id', editingCard.id)
+          .eq('user_id', user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await db.from('mf_credit_cards').insert(payload);
+        if (error) throw error;
+      }
+
+      setShowCardModal(false);
+      setEditingCard(null);
+      fetchData();
+    } catch (err) {
+      console.error('Error saving credit card:', err);
+      alert('Não foi possível salvar o cartão. Verifique a configuração do banco e tente novamente.');
+    }
+  }
+
+  async function handleDeleteCard(card: CreditCard) {
+    const ok = window.confirm(`Excluir o cartão "${card.name}"?`);
+    if (!ok) return;
+
+    try {
+      const { error } = await db
+        .from('mf_credit_cards')
+        .delete()
+        .eq('id', card.id)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      console.error('Error deleting credit card:', err);
+      alert('Não foi possível excluir o cartão.');
+    }
+  }
+
+  function openAddInstallmentModal() {
+    const defaultCardId = cards[0]?.id || '';
+    setEditingInstallment(null);
+    setInstallmentForm({
+      card_id: defaultCardId,
+      description: '',
+      total_amount: '',
+      monthly_amount: '',
+      current_installment: '1',
+      total_installments: '1',
+    });
+    setShowInstallmentModal(true);
+  }
+
+  function openEditInstallmentModal(installment: CardInstallment) {
+    setEditingInstallment(installment);
+    setInstallmentForm({
+      card_id: installment.card_id,
+      description: installment.description || '',
+      total_amount: String(installment.total_amount ?? 0),
+      monthly_amount: String(installment.monthly_amount ?? 0),
+      current_installment: String(installment.current_installment ?? 1),
+      total_installments: String(installment.total_installments ?? 1),
+    });
+    setShowInstallmentModal(true);
+  }
+
+  async function handleSaveInstallment(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const payload = {
+        card_id: installmentForm.card_id,
+        description: installmentForm.description.trim(),
+        total_amount: Math.max(0, Number(installmentForm.total_amount) || 0),
+        monthly_amount: Math.max(0, Number(installmentForm.monthly_amount) || 0),
+        current_installment: Math.max(1, Number(installmentForm.current_installment) || 1),
+        total_installments: Math.max(1, Number(installmentForm.total_installments) || 1),
+      };
+
+      if (!payload.card_id) {
+        alert('Selecione um cartão para o parcelamento.');
+        return;
+      }
+      if (!payload.description) {
+        alert('Informe a descrição do parcelamento.');
+        return;
+      }
+
+      if (editingInstallment) {
+        const { error } = await db
+          .from('mf_card_installments')
+          .update(payload)
+          .eq('id', editingInstallment.id);
+        if (error) throw error;
+      } else {
+        const { error } = await db.from('mf_card_installments').insert(payload);
+        if (error) throw error;
+      }
+
+      setShowInstallmentModal(false);
+      setEditingInstallment(null);
+      fetchData();
+    } catch (err) {
+      console.error('Error saving installment:', err);
+      alert('Não foi possível salvar o parcelamento.');
+    }
+  }
+
+  async function handleDeleteInstallment(installment: CardInstallment) {
+    const ok = window.confirm(`Excluir o parcelamento "${installment.description}"?`);
+    if (!ok) return;
+
+    try {
+      const { error } = await db
+        .from('mf_card_installments')
+        .delete()
+        .eq('id', installment.id);
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      console.error('Error deleting installment:', err);
+      alert('Não foi possível excluir o parcelamento.');
     }
   }
 
@@ -822,6 +1125,30 @@ export default function Dashboard({ user }: { user: User }) {
     ],
   };
 
+  const latestOverviewTransactions = [...transactions]
+    .sort((a, b) => {
+      const aDate = parseTransactionDate(a.date);
+      const bDate = parseTransactionDate(b.date);
+      const aTime = aDate ? aDate.getTime() : 0;
+      const bTime = bDate ? bDate.getTime() : 0;
+
+      if (bTime !== aTime) return bTime - aTime;
+
+      const aCreated = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
+      const bCreated = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
+      if (bCreated !== aCreated) return bCreated - aCreated;
+
+      return String(b.id).localeCompare(String(a.id));
+    })
+    .slice(0, 3);
+
+  const overviewCardsUsed = cards.reduce((sum, card) => sum + (Number(card.used) || 0), 0);
+  const overviewCardsLimit = cards.reduce((sum, card) => sum + (Number(card.limit) || 0), 0);
+  const overviewCardsAvailable = Math.max(0, overviewCardsLimit - overviewCardsUsed);
+  const overviewCardsUsagePercent = overviewCardsLimit > 0
+    ? Math.min(100, (overviewCardsUsed / overviewCardsLimit) * 100)
+    : 0;
+
   const tabs = [
     { id: 'overview', label: 'Visão Geral' },
     { id: 'details', label: 'Detalhes' },
@@ -1032,14 +1359,15 @@ export default function Dashboard({ user }: { user: User }) {
                 <HistoryIcon size={14} className="text-white/40" />
               </h3>
               <div className="flex-1 space-y-2 overflow-hidden">
-                {transactions.slice(0, 3).map(t => (
+                {latestOverviewTransactions.map(t => (
                   <div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5">
                     <div className="truncate mr-2">
                       <div className="font-bold truncate">{t.description || t.category}</div>
                       <div className="text-white/40">
                         {(() => {
                           try {
-                            return format(new Date(t.date), 'dd/MM');
+                            const parsed = parseTransactionDate(t.date);
+                            return parsed ? format(parsed, 'dd/MM') : '??/??';
                           } catch {
                             return '??/??';
                           }
@@ -1063,15 +1391,24 @@ export default function Dashboard({ user }: { user: User }) {
                 <div className="space-y-1">
                   <div className="flex justify-between text-[10px]">
                     <span className="text-white/40">Utilizado</span>
-                    <span className="font-bold">R$ 1.240</span>
+                    <span className="font-bold">
+                      R$ {overviewCardsUsed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                   <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full bg-brand-secondary" style={{ width: '60%' }}></div>
+                    <div className="h-full bg-brand-secondary" style={{ width: `${overviewCardsUsagePercent}%` }}></div>
                   </div>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
                   <span className="text-[10px] text-white/40">Disponível</span>
-                  <span className="text-xs font-bold text-brand-primary">R$ 3.760</span>
+                  <span className="text-xs font-bold text-brand-primary">
+                    R$ {overviewCardsAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="text-[10px] text-white/40">
+                  {cards.length > 0
+                    ? `${cards.length} cartão(ões) • Limite total R$ ${overviewCardsLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : 'Nenhum cartão cadastrado'}
                 </div>
               </div>
             </div>
@@ -1107,6 +1444,12 @@ export default function Dashboard({ user }: { user: User }) {
           <Cartoes 
             cards={cards} 
             installments={installments} 
+            onAddCard={openAddCardModal}
+            onEditCard={openEditCardModal}
+            onDeleteCard={handleDeleteCard}
+            onAddInstallment={openAddInstallmentModal}
+            onEditInstallment={openEditInstallmentModal}
+            onDeleteInstallment={handleDeleteInstallment}
           />
         )}
         {activeTab === 'import' && (
@@ -1212,6 +1555,211 @@ export default function Dashboard({ user }: { user: User }) {
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">Cancelar</button>
                 <button type="submit" className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold hover:opacity-90 transition-opacity">Confirmar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Credit Card Modal */}
+      {showCardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-md animate-fade-in">
+            <h2 className="text-xl font-bold mb-6">
+              {editingCard ? 'Editar Cartão' : 'Novo Cartão'}
+            </h2>
+            <form onSubmit={handleSaveCard} className="space-y-4">
+              <div>
+                <label className="block text-sm text-white/60 mb-1">Nome do Cartão</label>
+                <input
+                  type="text"
+                  required
+                  value={cardForm.name}
+                  onChange={e => setCardForm({ ...cardForm, name: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  placeholder="Ex: Nubank Roxinho"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-white/60 mb-1">Bandeira</label>
+                <input
+                  type="text"
+                  value={cardForm.brand}
+                  onChange={e => setCardForm({ ...cardForm, brand: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  placeholder="Visa, Mastercard..."
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Limite</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={cardForm.limit}
+                    onChange={e => setCardForm({ ...cardForm, limit: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Utilizado</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={cardForm.used}
+                    onChange={e => setCardForm({ ...cardForm, used: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Dia de Fechamento</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={cardForm.closing_day}
+                    onChange={e => setCardForm({ ...cardForm, closing_day: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Dia de Vencimento</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={cardForm.due_day}
+                    onChange={e => setCardForm({ ...cardForm, due_day: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCardModal(false);
+                    setEditingCard(null);
+                  }}
+                  className="flex-1 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold hover:opacity-90 transition-opacity"
+                >
+                  {editingCard ? 'Salvar' : 'Cadastrar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Installment Modal */}
+      {showInstallmentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-md animate-fade-in">
+            <h2 className="text-xl font-bold mb-6">
+              {editingInstallment ? 'Editar Parcelamento' : 'Novo Parcelamento'}
+            </h2>
+            <form onSubmit={handleSaveInstallment} className="space-y-4">
+              <div>
+                <label className="block text-sm text-white/60 mb-1">Cartão</label>
+                <select
+                  required
+                  value={installmentForm.card_id}
+                  onChange={e => setInstallmentForm({ ...installmentForm, card_id: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                >
+                  <option value="" disabled>Selecione um cartão</option>
+                  {cards.map(card => (
+                    <option key={card.id} value={card.id}>{card.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-white/60 mb-1">Descrição</label>
+                <input
+                  type="text"
+                  required
+                  value={installmentForm.description}
+                  onChange={e => setInstallmentForm({ ...installmentForm, description: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  placeholder="Ex: Notebook, Celular..."
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Valor Total</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={installmentForm.total_amount}
+                    onChange={e => setInstallmentForm({ ...installmentForm, total_amount: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Valor Mensal</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={installmentForm.monthly_amount}
+                    onChange={e => setInstallmentForm({ ...installmentForm, monthly_amount: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Parcela Atual</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={installmentForm.current_installment}
+                    onChange={e => setInstallmentForm({ ...installmentForm, current_installment: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-1">Total de Parcelas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={installmentForm.total_installments}
+                    onChange={e => setInstallmentForm({ ...installmentForm, total_installments: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInstallmentModal(false);
+                    setEditingInstallment(null);
+                  }}
+                  className="flex-1 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold hover:opacity-90 transition-opacity"
+                >
+                  {editingInstallment ? 'Salvar' : 'Cadastrar'}
+                </button>
               </div>
             </form>
           </div>

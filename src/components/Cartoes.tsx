@@ -12,7 +12,9 @@ import {
   Clock,
   PieChart as PieChartIcon,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  Trash2,
+  Pencil
 } from 'lucide-react';
 
 interface CartoesProps {
@@ -20,9 +22,27 @@ interface CartoesProps {
   installments: CardInstallment[];
   onAddCard?: () => void;
   onEditCard?: (card: CreditCard) => void;
+  onDeleteCard?: (card: CreditCard) => void;
+  onAddInstallment?: () => void;
+  onEditInstallment?: (installment: CardInstallment) => void;
+  onDeleteInstallment?: (installment: CardInstallment) => void;
 }
 
-export default function Cartoes({ cards, installments, onAddCard, onEditCard }: CartoesProps) {
+export default function Cartoes({
+  cards,
+  installments,
+  onAddCard,
+  onEditCard,
+  onDeleteCard,
+  onAddInstallment,
+  onEditInstallment,
+  onDeleteInstallment
+}: CartoesProps) {
+  const cardNameById = useMemo(
+    () => Object.fromEntries(cards.map(card => [card.id, card.name])),
+    [cards]
+  );
+
   const summary = useMemo(() => {
     const totalLimit = cards.reduce((sum, c) => sum + c.limit, 0);
     const totalUsed = cards.reduce((sum, c) => sum + c.used, 0);
@@ -149,9 +169,17 @@ export default function Cartoes({ cards, installments, onAddCard, onEditCard }: 
                   <Calendar size={12} />
                   <span>Fecha dia {card.closing_day}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-white/40">
+                <div className="flex items-center gap-2 text-white/40">
                   <Clock size={12} />
                   <span>Vence dia {card.due_day}</span>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCard?.(card)}
+                    className="ml-2 text-white/25 hover:text-red-400 transition-colors"
+                    title="Excluir cartão"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -249,7 +277,16 @@ export default function Cartoes({ cards, installments, onAddCard, onEditCard }: 
             <h3 className="font-bold text-sm flex items-center gap-2">
               <Clock size={16} className="text-white/60" /> Parcelamentos Ativos
             </h3>
-            <div className="text-[10px] text-white/40 uppercase font-bold">Impacto Mensal: R$ {monthlyInstallmentsTotal.toLocaleString('pt-BR')}</div>
+            <div className="flex items-center gap-3">
+              <div className="text-[10px] text-white/40 uppercase font-bold">Impacto Mensal: R$ {monthlyInstallmentsTotal.toLocaleString('pt-BR')}</div>
+              <button
+                type="button"
+                onClick={onAddInstallment}
+                className="px-2.5 py-1.5 rounded-lg bg-brand-primary/20 text-brand-primary text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/30 transition-all"
+              >
+                Novo Parcelamento
+              </button>
+            </div>
           </div>
           
           <div className="space-y-2 max-h-[180px] overflow-y-auto no-scrollbar">
@@ -261,12 +298,33 @@ export default function Cartoes({ cards, installments, onAddCard, onEditCard }: 
                   </div>
                   <div>
                     <div className="text-xs font-bold">{inst.description}</div>
-                    <div className="text-[10px] text-white/40 uppercase">Parcela {inst.current_installment} de {inst.total_installments}</div>
+                    <div className="text-[10px] text-white/40 uppercase">
+                      {cardNameById[inst.card_id] ? `${cardNameById[inst.card_id]} • ` : ''}
+                      Parcela {inst.current_installment} de {inst.total_installments}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-bold">R$ {inst.monthly_amount.toLocaleString('pt-BR')}</div>
                   <div className="text-[8px] text-white/40 uppercase">Total: R$ {inst.total_amount.toLocaleString('pt-BR')}</div>
+                </div>
+                <div className="ml-3 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onEditInstallment?.(inst)}
+                    className="p-1.5 text-white/30 hover:text-white transition-colors"
+                    title="Editar parcelamento"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteInstallment?.(inst)}
+                    className="p-1.5 text-white/30 hover:text-red-400 transition-colors"
+                    title="Excluir parcelamento"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               </div>
             ))}

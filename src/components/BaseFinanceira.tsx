@@ -96,7 +96,7 @@ export default function BaseFinanceira({
   const [newDaily, setNewDaily] = useState({
     name: '',
     average_amount: '',
-    category: 'AlimentaÃ§Ã£o',
+    category: 'Alimentação',
     frequency: 'weekly' as 'weekly' | 'monthly'
   });
 
@@ -244,7 +244,7 @@ export default function BaseFinanceira({
 
       if (error) {
         if (error.code === 'PGRST205') {
-          alert('Tabela mf_fixed_bills nÃ£o encontrada. Crie-a no Supabase para salvar permanentemente.');
+          alert('Tabela mf_fixed_bills não encontrada. Crie-a no Supabase para salvar permanentemente.');
           return;
         }
         throw error;
@@ -276,14 +276,14 @@ export default function BaseFinanceira({
 
       if (error) {
         if (error.code === 'PGRST205') {
-          alert('Tabela mf_daily_bills nÃ£o encontrada. Crie-a no Supabase para salvar permanentemente.');
+          alert('Tabela mf_daily_bills não encontrada. Crie-a no Supabase para salvar permanentemente.');
           return;
         }
         throw error;
       }
 
       setShowAddDaily(false);
-      setNewDaily({ name: '', average_amount: '', category: 'AlimentaÃ§Ã£o', frequency: 'weekly' });
+      setNewDaily({ name: '', average_amount: '', category: 'Alimentação', frequency: 'weekly' });
       onRefresh();
     } catch (err: any) {
       console.error('Error adding daily bill:', err);
@@ -381,7 +381,7 @@ export default function BaseFinanceira({
           {isBalanceCritical ? (
             <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold animate-pulse">SALDO INSUFICIENTE PARA CONTAS</span>
           ) : (
-            <span className="text-[10px] bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded-full font-bold">CONFIGURAÃ‡ÃƒO ATIVA</span>
+            <span className="text-[10px] bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded-full font-bold">CONFIGURAÇÃO ATIVA</span>
           )}
         </div>
         <div className="grid grid-cols-6 gap-4">
@@ -394,7 +394,7 @@ export default function BaseFinanceira({
             <span className="font-bold text-sm text-red-400/80">R$ {totalPendingFixed.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">LÃ­quido Est.</span>
+            <span className="text-[10px] text-white/40 uppercase">Líquido Est.</span>
             <span className="font-bold text-sm">R$ {estimatedNetSalary.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
@@ -402,7 +402,7 @@ export default function BaseFinanceira({
             <span className="font-bold text-sm uppercase">{formData.payday_cycle === 'monthly' ? 'Mensal' : 'Quinzenal'}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">PrÃ³x. Pgto</span>
+            <span className="text-[10px] text-white/40 uppercase">Próx. Pgto</span>
             <span className="font-bold text-sm">Dia {formData.payday_1 || 1}</span>
           </div>
           <div className="flex flex-col">
@@ -418,7 +418,7 @@ export default function BaseFinanceira({
           <h3 className="font-bold text-sm flex items-center gap-2">
             <Wallet size={16} className="text-white/60" /> Saldo Atual em Conta
           </h3>
-          <p className="text-xs text-white/40">Este valor Ã© o ponto de partida do seu ciclo atual.</p>
+          <p className="text-xs text-white/40">Este valor é o ponto de partida do seu ciclo atual.</p>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold">R$</span>
             <input 
@@ -437,7 +437,7 @@ export default function BaseFinanceira({
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-[10px] text-white/40 uppercase font-bold">SalÃ¡rio Bruto</label>
+              <label className="text-[10px] text-white/40 uppercase font-bold">Salário Bruto</label>
               <input 
                 type="number" 
                 value={formData.gross_salary}
@@ -446,16 +446,16 @@ export default function BaseFinanceira({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] text-brand-primary uppercase font-bold">LÃ­quido Estimado</label>
+              <label className="text-[10px] text-brand-primary uppercase font-bold">Líquido Estimado</label>
               <input 
                 type="number" 
                 value={estimatedNetSalary}
                 readOnly
                 aria-readonly="true"
-                title="Calculado automaticamente: SalÃ¡rio Bruto - Descontos"
+                title="Calculado automaticamente: Salário Bruto - Descontos"
                 className="w-full bg-brand-primary/5 border border-brand-primary/20 rounded-xl py-2 px-4 outline-none font-bold text-brand-primary cursor-not-allowed"
               />
-              <p className="text-[10px] text-white/40">Calculado automaticamente: SalÃ¡rio Bruto - Descontos.</p>
+              <p className="text-[10px] text-white/40">Calculado automaticamente: Salário Bruto - Descontos.</p>
             </div>
           </div>
         </div>
@@ -651,14 +651,14 @@ export default function BaseFinanceira({
           </div>
         </div>
 
-        {/* 7. PrevisÃ£o LÃ­quida / Base Real */}
+        {/* 7. Previsão Líquida / Base Real */}
         <div className="glass-card !p-5 bg-brand-secondary/5 border-brand-secondary/20 flex flex-col justify-between">
           <h3 className="font-bold text-sm flex items-center gap-2 mb-4">
             <Calculator size={16} className="text-brand-secondary" /> Base Real Estimada
           </h3>
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-white/40">SalÃ¡rio Bruto</span>
+              <span className="text-white/40">Salário Bruto</span>
               <span className="font-bold">R$ {(formData.gross_salary || 0).toLocaleString('pt-BR')}</span>
             </div>
             <div className="flex justify-between text-xs">
@@ -677,14 +677,14 @@ export default function BaseFinanceira({
         </div>
       </div>
 
-      {/* 8 & 9. Impacto e AÃ§Ãµes */}
+      {/* 8 & 9. Impacto e Ações */}
       <div className="grid grid-cols-12 gap-4 items-stretch">
         <div className="col-span-8 glass-card !p-4 flex items-center gap-4 bg-white/5">
           <div className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center shrink-0 text-white/40">
             <Info size={20} />
           </div>
           <p className="text-xs text-white/60 leading-relaxed">
-            A **Base Financeira** Ã© o motor do MFinanceiro. AlteraÃ§Ãµes aqui impactam imediatamente seu **Limite DiÃ¡rio**, **Saldo Projetado** e todos os **Insights** de inteligÃªncia. Mantenha estes dados atualizados para garantir a precisÃ£o do sistema.
+            A **Base Financeira** é o motor do MFinanceiro. Alterações aqui impactam imediatamente seu **Limite Diário**, **Saldo Projetado** e todos os **Insights** de inteligência. Mantenha estes dados atualizados para garantir a precisão do sistema.
           </p>
         </div>
         <div className="col-span-4 flex flex-col gap-2">
@@ -703,14 +703,14 @@ export default function BaseFinanceira({
             ) : (
               <>
                 <Save size={20} />
-                <span>Salvar ConfiguraÃ§Ã£o</span>
+                <span>Salvar Configuração</span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* 10. GestÃ£o de Contas (Fixed & Daily) */}
+      {/* 10. Gestão de Contas (Fixed & Daily) */}
       <div className="grid grid-cols-2 gap-4">
         {/* Contas Fixas */}
         <div className="glass-card flex flex-col gap-4">
@@ -737,7 +737,7 @@ export default function BaseFinanceira({
                   </button>
                   <div>
                     <div className="text-sm font-bold">{bill.name}</div>
-                    <div className="text-[10px] text-white/40">Dia {bill.due_day} â€¢ {bill.category}</div>
+                    <div className="text-[10px] text-white/40">Dia {bill.due_day} • {bill.category}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -781,7 +781,7 @@ export default function BaseFinanceira({
                   </div>
                   <div>
                     <div className="text-sm font-bold">{bill.name}</div>
-                    <div className="text-[10px] text-white/40">{bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'} â€¢ {bill.category}</div>
+                    <div className="text-[10px] text-white/40">{bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'} • {bill.category}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -849,8 +849,8 @@ export default function BaseFinanceira({
                   className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-brand-primary"
                 >
                   <option value="Moradia">Moradia</option>
-                  <option value="ServiÃ§os">ServiÃ§os</option>
-                  <option value="EducaÃ§Ã£o">EducaÃ§Ã£o</option>
+                  <option value="Serviços">Serviços</option>
+                  <option value="Educação">Educação</option>
                   <option value="Assinaturas">Assinaturas</option>
                   <option value="Outros">Outros</option>
                 </select>
@@ -876,11 +876,11 @@ export default function BaseFinanceira({
                   value={newDaily.name}
                   onChange={e => setNewDaily({...newDaily, name: e.target.value})}
                   className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-brand-secondary"
-                  placeholder="Ex: Supermercado, CombustÃ­vel..."
+                  placeholder="Ex: Supermercado, Combustível..."
                 />
               </div>
               <div>
-                <label className="block text-sm text-white/60 mb-1">MÃ©dia de Valor</label>
+                <label className="block text-sm text-white/60 mb-1">Média de Valor</label>
                 <input 
                   type="number" step="0.01" required
                   value={newDaily.average_amount}
@@ -891,7 +891,7 @@ export default function BaseFinanceira({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">FrequÃªncia</label>
+                  <label className="block text-sm text-white/60 mb-1">Frequência</label>
                   <select 
                     value={newDaily.frequency}
                     onChange={e => setNewDaily({...newDaily, frequency: e.target.value as any})}
@@ -908,10 +908,10 @@ export default function BaseFinanceira({
                     onChange={e => setNewDaily({...newDaily, category: e.target.value})}
                     className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-brand-secondary"
                   >
-                    <option value="AlimentaÃ§Ã£o">AlimentaÃ§Ã£o</option>
+                    <option value="Alimentação">Alimentação</option>
                     <option value="Transporte">Transporte</option>
                     <option value="Lazer">Lazer</option>
-                    <option value="SaÃºde">SaÃºde</option>
+                    <option value="Saúde">Saúde</option>
                     <option value="Outros">Outros</option>
                   </select>
                 </div>
@@ -927,4 +927,3 @@ export default function BaseFinanceira({
     </div>
   );
 }
-
