@@ -1,4 +1,3 @@
-
 import React, { useMemo } from 'react';
 import { CreditCard, CardInstallment } from '../types';
 import { 
@@ -44,8 +43,8 @@ export default function Cartoes({
   );
 
   const summary = useMemo(() => {
-    const totalLimit = cards.reduce((sum, c) => sum + c.limit, 0);
-    const totalUsed = cards.reduce((sum, c) => sum + c.used, 0);
+    const totalLimit = cards.reduce((sum, c) => sum + Number(c.limit || 0), 0);
+    const totalUsed = cards.reduce((sum, c) => sum + Number(c.used || 0), 0);
     const totalAvailable = totalLimit - totalUsed;
     const usagePercent = totalLimit > 0 ? (totalUsed / totalLimit) * 100 : 0;
     
@@ -71,7 +70,7 @@ export default function Cartoes({
   }, [cards]);
 
   const monthlyInstallmentsTotal = useMemo(() => 
-    installments.reduce((sum, i) => sum + i.monthly_amount, 0), 
+    installments.reduce((sum, i) => sum + Number(i.monthly_amount || 0), 0), 
   [installments]);
 
   return (
@@ -135,9 +134,14 @@ export default function Cartoes({
                     <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{card.brand}</span>
                   </div>
                 </div>
-                <button onClick={() => onEditCard?.(card)} className="p-1.5 text-white/20 hover:text-white transition-colors">
-                  <MoreVertical size={16} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => onEditCard?.(card)} className="p-1.5 text-white/20 hover:text-white transition-colors">
+                    <Pencil size={16} />
+                  </button>
+                  <button onClick={() => onDeleteCard?.(card)} className="p-1.5 text-white/20 hover:text-red-400 transition-colors">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -172,14 +176,6 @@ export default function Cartoes({
                 <div className="flex items-center gap-2 text-white/40">
                   <Clock size={12} />
                   <span>Vence dia {card.due_day}</span>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteCard?.(card)}
-                    className="ml-2 text-white/25 hover:text-red-400 transition-colors"
-                    title="Excluir cartão"
-                  >
-                    <Trash2 size={12} />
-                  </button>
                 </div>
               </div>
             </div>
@@ -290,44 +286,66 @@ export default function Cartoes({
           </div>
           
           <div className="space-y-2 max-h-[180px] overflow-y-auto no-scrollbar">
-            {installments.map(inst => (
-              <div key={inst.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group hover:border-white/10 transition-all">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center text-white/40">
-                    <ArrowUpRight size={16} />
+            {installments.map(inst => {
+              const remaining = inst.total_installments - inst.current_installment;
+              const isBoleto = !inst.card_id;
+              
+              return (
+                <div key={inst.id} className="p-4 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group hover:border-white/10 transition-all">
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${isBoleto ? 'bg-yellow-500/10 text-yellow-400' : 'bg-brand-secondary/10 text-brand-secondary'}`}>
+                      {isBoleto ? <Calendar size={20} /> : <CardIcon size={20} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold truncate">{inst.description}</span>
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold ${isBoleto ? 'bg-yellow-500/20 text-yellow-500' : 'bg-brand-secondary/20 text-brand-secondary'}`}>
+                          {isBoleto ? 'Boleto' : cardNameById[inst.card_id!] || 'Cartão'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1">
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 size={12} className="text-green-400" />
+                          <span className="text-[10px] text-white/40 uppercase font-medium">Pagas: <span className="text-white">{inst.current_installment}</span></span>
+                        </div>
+                        <div className="flex items-center gap-1.5 border-l border-white/10 pl-3">
+                          <Clock size={12} className="text-brand-primary" />
+                          <span className="text-[10px] text-white/40 uppercase font-medium">Restam: <span className="text-white">{remaining}</span></span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-xs font-bold">{inst.description}</div>
-                    <div className="text-[10px] text-white/40 uppercase">
-                      {cardNameById[inst.card_id] ? `${cardNameById[inst.card_id]} • ` : ''}
-                      Parcela {inst.current_installment} de {inst.total_installments}
+                  
+                  <div className="flex items-center gap-6">
+                    <div className="text-right">
+                      <div className="text-[10px] text-white/40 uppercase font-bold mb-0.5">Mensal</div>
+                      <div className="text-sm font-bold">R$ {inst.monthly_amount.toLocaleString('pt-BR')}</div>
+                    </div>
+                    <div className="text-right min-w-[100px]">
+                      <div className="text-[10px] text-white/40 uppercase font-bold mb-0.5">Total Compra</div>
+                      <div className="text-sm font-bold text-white/80">R$ {inst.total_amount.toLocaleString('pt-BR')}</div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1 border-l border-white/10 pl-4">
+                      <button
+                        type="button"
+                        onClick={() => onEditInstallment?.(inst)}
+                        className="p-2 text-white/20 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteInstallment?.(inst)}
+                        className="p-2 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-xs font-bold">R$ {inst.monthly_amount.toLocaleString('pt-BR')}</div>
-                  <div className="text-[8px] text-white/40 uppercase">Total: R$ {inst.total_amount.toLocaleString('pt-BR')}</div>
-                </div>
-                <div className="ml-3 flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onEditInstallment?.(inst)}
-                    className="p-1.5 text-white/30 hover:text-white transition-colors"
-                    title="Editar parcelamento"
-                  >
-                    <Pencil size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteInstallment?.(inst)}
-                    className="p-1.5 text-white/30 hover:text-red-400 transition-colors"
-                    title="Excluir parcelamento"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {installments.length === 0 && (
               <div className="text-xs text-white/20 text-center py-8">Nenhum parcelamento ativo identificado.</div>
             )}

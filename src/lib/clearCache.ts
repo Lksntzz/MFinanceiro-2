@@ -1,29 +1,28 @@
+
+import { APP_VERSION, STORAGE_PREFIX } from './constants';
+
 export function clearLegacyCache() {
   if (typeof window === 'undefined') return;
+
+  const currentVersion = localStorage.getItem(`${STORAGE_PREFIX}version`);
   
-  // Limpar sessão exceto Supabase
-  try {
-    const keysToKeep = [];
+  if (currentVersion !== APP_VERSION) {
+    console.log(`Version mismatch (Old: ${currentVersion}, New: ${APP_VERSION}). Clearing cache...`);
+    
+    const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-        keysToKeep.push({ key, value: localStorage.getItem(key) });
+      // Remove mfinanceiro keys AND legacy mf_ keys
+      if (key && (
+        key.startsWith('mf_') || 
+        key.startsWith('mfinanceiro-') || 
+        key.startsWith('mfinanceiro:')
+      )) {
+        keysToRemove.push(key);
       }
     }
     
-    // Clear everything
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    // Restore Supabase keys
-    keysToKeep.forEach(item => {
-      if (item.value) {
-        localStorage.setItem(item.key, item.value);
-      }
-    });
-
-    console.log('[MFinanceiro] Cache legado limpo com sucesso.');
-  } catch (err) {
-    console.error('Falha ao limpar o cache:', err);
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    localStorage.setItem(`${STORAGE_PREFIX}version`, APP_VERSION);
   }
 }

@@ -26,4 +26,3 @@ export function resolvePdfBank(selectedBank: string, fullText: string): string {
 export function getPdfBankParser(bank: string): PdfBankParser {
   return BANK_PDF_PARSERS[bank] || parseGenericPdf;
 }
-

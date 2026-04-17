@@ -6,4 +6,3 @@ export const parseC6BankPdf: PdfBankParser = (context) => {
   if (fromLines.length > 0) return fromLines;
   return parseByBlockRegex(context);
 };
-

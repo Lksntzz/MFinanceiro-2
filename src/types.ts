@@ -1,4 +1,3 @@
-
 export type TransactionType = 'expense' | 'income' | 'transfer';
 
 export interface Transaction {
@@ -9,7 +8,20 @@ export interface Transaction {
   description: string;
   date: string;
   type: TransactionType;
+  status?: 'pending' | 'completed' | 'ready' | 'duplicate' | 'error' | 'paid';
+  source?: string;
 }
+
+export type NormalizedTransaction = Transaction & {
+  bank_source?: string;
+  running_balance?: number;
+  duplicateKey?: string;
+  transactionDate?: string;
+  normalizedDescription?: string;
+  bankName?: string;
+  sourceFormat?: string;
+  [key: string]: any;
+};
 
 export interface UserSettings {
   id: string;
@@ -22,11 +34,14 @@ export interface UserSettings {
   payday_cycle: 'monthly' | 'biweekly';
   payday_1: number; // Day of month (1-31)
   payday_2?: number; // Optional second payday
+  payday_1_percentage?: number;
+  payday_2_percentage?: number;
 }
 
 export interface RhythmData {
   labels: string[];
   data: number[];
+  incomeData?: number[];
 }
 
 export interface PriorityItem {
@@ -69,7 +84,8 @@ export interface CreditCard {
 
 export interface CardInstallment {
   id: string;
-  card_id: string;
+  user_id: string;
+  card_id?: string;
   description: string;
   total_amount: number;
   monthly_amount: number;

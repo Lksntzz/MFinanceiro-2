@@ -15,4 +15,3 @@ export interface PdfParserContext {
 }
 
 export type PdfBankParser = (context: PdfParserContext) => ExtractedPdfTransaction[];
-

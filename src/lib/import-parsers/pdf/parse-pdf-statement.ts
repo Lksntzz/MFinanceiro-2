@@ -1,4 +1,5 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
+// @ts-ignore
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { ImportedTransaction } from '../../../types';
 import { getPdfBankParser, resolvePdfBank } from './index';
@@ -100,4 +101,3 @@ export async function parsePdfStatement(file: File, selectedBank: string): Promi
     };
   });
 }
-

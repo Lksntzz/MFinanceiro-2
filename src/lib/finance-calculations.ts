@@ -1,4 +1,4 @@
-﻿
+
 import { Transaction, UserSettings, FinanceSummary, RhythmData, PriorityItem, FixedBill, CreditCard, DailyBill, CardInstallment } from '../types';
 import { 
   differenceInCalendarDays,
@@ -7,9 +7,9 @@ import {
   isWithinInterval, 
   addMonths, 
   setDate, 
-  getDaysInMonth,
   isAfter,
   startOfMonth,
+  endOfMonth,
   eachDayOfInterval,
   eachWeekOfInterval,
   format,
@@ -17,75 +17,11 @@ import {
   isSameWeek,
   isSameMonth,
   subDays,
-  subWeeks,
   subMonths,
   startOfWeek,
   endOfWeek
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-function parseCalendarDate(value: string): Date | null {
-  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const year = Number(iso[1]);
-    const month = Number(iso[2]);
-    const day = Number(iso[3]);
-    return new Date(year, month - 1, day, 12, 0, 0, 0);
-  }
-
-  // Fallback para ISO completo quando não houver prefixo de data reconhecível.
-  // Preserva o dia local apenas como última opção.
-  if (value.includes('T')) {
-    const parsedIso = new Date(value);
-    if (!isNaN(parsedIso.getTime())) {
-      return new Date(
-        parsedIso.getFullYear(),
-        parsedIso.getMonth(),
-        parsedIso.getDate(),
-        12,
-        0,
-        0,
-        0
-      );
-    }
-  }
-
-  const br = value.match(/^(\d{2})[/-](\d{2})[/-](\d{2,4})/);
-  if (br) {
-    const day = Number(br[1]);
-    const month = Number(br[2]);
-    const year = Number(br[3].length === 2 ? `20${br[3]}` : br[3]);
-    return new Date(year, month - 1, day, 12, 0, 0, 0);
-  }
-
-  const parsed = new Date(value);
-  if (isNaN(parsed.getTime())) return null;
-  return new Date(
-    parsed.getFullYear(),
-    parsed.getMonth(),
-    parsed.getDate(),
-    12,
-    0,
-    0,
-    0
-  );
-}
-
-function toSignedAmount(t: Transaction): number {
-  const raw = Number(t.amount) || 0;
-  if (t.type === 'income') return Math.abs(raw);
-  if (t.type === 'expense') return -Math.abs(raw);
-  // transfer (ou legado): respeita sinal existente
-  return raw;
-}
-
-function isOutflow(t: Transaction): boolean {
-  return toSignedAmount(t) < 0;
-}
-
-function formatCurrencyBRL(value: number): string {
-  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export function calculateFinanceSummary(
   transactions: Transaction[],
@@ -98,11 +34,7 @@ export function calculateFinanceSummary(
 ): FinanceSummary {
   // 1. Determine next payday
   const nextPayday = getNextPayday(settings, currentDate);
-  const daysRemaining = Math.max(
-    0,
-    differenceInCalendarDays(startOfDay(nextPayday), startOfDay(currentDate))
-  );
-  const daysRemainingForLimit = Math.max(1, daysRemaining);
+  const daysRemaining = Math.max(1, differenceInCalendarDays(nextPayday, currentDate));
 
   // 2. Balances & Commitments
   const currentBalance = settings.current_balance;
@@ -140,234 +72,140 @@ export function calculateFinanceSummary(
   const cycleInterval = { start: startOfDay(lastPayday), end: endOfDay(nextPayday) };
 
   // 4. Spending stats
+  const todayStart = startOfDay(currentDate);
+  const todayEnd = endOfDay(currentDate);
+  
   const cycleExpenses = transactions.filter(t => {
-    const d = parseCalendarDate(t.date);
-    if (!d) return false;
-    return isOutflow(t) && isWithinInterval(d, cycleInterval);
+    try {
+      const d = new Date(t.date);
+      if (isNaN(d.getTime())) return false;
+      return t.type === 'expense' && isWithinInterval(d, cycleInterval);
+    } catch {
+      return false;
+    }
   });
 
-  const todaySpent = transactions
+  const todaySpent = cycleExpenses
     .filter(t => {
-      const d = parseCalendarDate(t.date);
-      if (!d) return false;
-      return isOutflow(t) && isSameDay(d, currentDate);
+      try {
+        const d = new Date(t.date);
+        return isWithinInterval(d, { start: todayStart, end: todayEnd });
+      } catch {
+        return false;
+      }
     })
-    .reduce((acc, t) => acc + Math.abs(toSignedAmount(t)), 0);
+    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
-  const totalSpentInCycle = cycleExpenses.reduce((acc, t) => acc + Math.abs(toSignedAmount(t)), 0);
+  const totalSpentInCycle = cycleExpenses.reduce((acc, t) => acc + Math.abs(t.amount), 0);
   
-  const daysPassedInCycle = Math.max(
-    1,
-    differenceInCalendarDays(startOfDay(currentDate), startOfDay(lastPayday))
-  );
+  const daysPassedInCycle = Math.max(1, differenceInCalendarDays(currentDate, lastPayday));
   const averageDailySpent = totalSpentInCycle / daysPassedInCycle;
 
   // 5. Daily limit
-  const dailyLimit = availableForDaily / daysRemainingForLimit;
+  const dailyLimit = availableForDaily / daysRemaining;
 
-  // 6. Dominant category & Top categories (gasto real do usuário)
-  // Usa todas as saídas registradas para refletir a categoria onde mais gasta.
-  const allOutflows = transactions.filter(t => isOutflow(t));
+  // 6. Dominant category & Top categories
   const categoryTotals: Record<string, number> = {};
-  allOutflows.forEach(t => {
-    const category = t.category || 'Geral';
-    categoryTotals[category] = (categoryTotals[category] || 0) + Math.abs(toSignedAmount(t));
+  cycleExpenses.forEach(t => {
+    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Math.abs(t.amount);
   });
-  const totalCategorySpent = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
-
+  
   const sortedCategories = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])
     .map(([name, amount]) => ({
       name,
       amount,
-      percentage: totalCategorySpent > 0 ? (amount / totalCategorySpent) * 100 : 0
+      percentage: totalSpentInCycle > 0 ? (amount / totalSpentInCycle) * 100 : 0
     }));
 
   const dominantCategory = sortedCategories[0]?.name || 'Nenhuma';
 
   // 7. Rhythm Data
-  const rhythm = calculateRhythm(transactions, currentDate);
-
-  const parsedTransactions = transactions
-    .map(t => {
-      const parsedDate = parseCalendarDate(t.date);
-      if (!parsedDate) return null;
-      return {
-        ...t,
-        parsedDate,
-        signedAmount: toSignedAmount(t),
-      };
-    })
-    .filter((t): t is Transaction & { parsedDate: Date; signedAmount: number } => t !== null);
-
-  const latestTransactionDate = parsedTransactions.length > 0
-    ? new Date(Math.max(...parsedTransactions.map(t => t.parsedDate.getTime())))
-    : null;
-  const referenceDateForAnalysis = latestTransactionDate ?? currentDate;
+  const rhythm = calculateRhythm(transactions, currentDate, fixedBills, dailyBills);
 
   // 8. Smart Alert
   let smartAlert: FinanceSummary['smartAlert'] = null;
-  const paceProjection = currentBalance - (averageDailySpent * daysRemaining);
-  const overspendRatio = dailyLimit > 0 ? (averageDailySpent / dailyLimit) : (averageDailySpent > 0 ? Number.POSITIVE_INFINITY : 1);
-  const weekStart = startOfWeek(referenceDateForAnalysis, { locale: ptBR });
-  const weekEnd = endOfWeek(referenceDateForAnalysis, { locale: ptBR });
-  const weekOutflows = parsedTransactions.filter(t =>
-    t.signedAmount < 0 &&
-    isWithinInterval(t.parsedDate, { start: weekStart, end: weekEnd })
-  );
-  const weekSpentTotal = weekOutflows.reduce((sum, t) => sum + Math.abs(t.signedAmount), 0);
-  const weekDailyTotals = eachDayOfInterval({ start: weekStart, end: weekEnd }).map(day => {
-    const spent = weekOutflows
-      .filter(t => isSameDay(t.parsedDate, day))
-      .reduce((sum, t) => sum + Math.abs(t.signedAmount), 0);
-    return { day, spent };
-  });
-  const peakWeekDay = weekDailyTotals.sort((a, b) => b.spent - a.spent)[0] || { day: referenceDateForAnalysis, spent: 0 };
-  const weekAverageSpentPerDay = weekSpentTotal / 7;
-  const hasWeeklySpike =
-    peakWeekDay.spent > 0 &&
-    weekAverageSpentPerDay > 0 &&
-    peakWeekDay.spent >= Math.max(weekAverageSpentPerDay * 2, dailyLimit > 0 ? dailyLimit * 1.4 : 0);
-
   if (currentBalance < 0) {
-    smartAlert = {
-      message: `Saldo negativo de R$ ${formatCurrencyBRL(Math.abs(currentBalance))}. Priorize cobrir esse valor antes de novos gastos.`,
-      type: 'danger'
-    };
-  } else if (paceProjection < 0) {
-    smartAlert = {
-      message: `No ritmo atual, voce fecha o ciclo com rombo de R$ ${formatCurrencyBRL(Math.abs(paceProjection))}. Reduza a media diaria para evitar saldo negativo.`,
-      type: 'danger'
-    };
+    smartAlert = { message: "Seu saldo está negativo! Priorize cobrir o rombo imediatamente.", type: 'danger' };
   } else if (totalCommitments > currentBalance) {
-    const deficit = totalCommitments - currentBalance;
-    smartAlert = {
-      message: `Compromissos de R$ ${formatCurrencyBRL(totalCommitments)} superam seu saldo atual em R$ ${formatCurrencyBRL(deficit)}.`,
-      type: 'danger'
-    };
-  } else if (dailyLimit <= 0 && averageDailySpent > 0) {
-    smartAlert = {
-      message: `Sem margem diaria livre no ciclo, mas sua media atual e R$ ${formatCurrencyBRL(averageDailySpent)} por dia.`,
-      type: 'warning'
-    };
-  } else if (overspendRatio >= 1.25 && dailyLimit > 0) {
-    smartAlert = {
-      message: `Ritmo de gastos acima do limite: media de R$ ${formatCurrencyBRL(averageDailySpent)}/dia vs limite de R$ ${formatCurrencyBRL(dailyLimit)}/dia.`,
-      type: 'warning'
-    };
-  } else if (hasWeeklySpike) {
-    const peakLabel = format(peakWeekDay.day, 'dd/MM', { locale: ptBR });
-    const vsWeeklyAverage = ((peakWeekDay.spent / weekAverageSpentPerDay) - 1) * 100;
-    smartAlert = {
-      message: `Pico de gasto em ${peakLabel}: R$ ${formatCurrencyBRL(peakWeekDay.spent)} (${vsWeeklyAverage.toFixed(0)}% acima da media diaria da semana).`,
-      type: 'warning'
-    };
-  } else if (transactions.length === 0) {
-    smartAlert = {
-      message: `Sem lancamentos no periodo. Registre movimentacoes para gerar alertas mais precisos.`,
-      type: 'success'
-    };
-  } else {
-    smartAlert = {
-      message: `Ciclo sob controle: saldo de R$ ${formatCurrencyBRL(currentBalance)} com limite diario de R$ ${formatCurrencyBRL(dailyLimit)}.`,
-      type: 'success'
-    };
+    smartAlert = { message: `Atenção: Suas dívidas e compromissos (R$ ${totalCommitments.toLocaleString('pt-BR')}) superam seu saldo atual. Você terá um rombo de R$ ${(totalCommitments - currentBalance).toLocaleString('pt-BR')} no próximo pagamento.`, type: 'danger' };
+  } else if (dailyLimit < averageDailySpent * 0.7 && dailyLimit > 0) {
+    smartAlert = { message: "Atenção: Seu ritmo de gastos está 30% acima do limite diário projetado.", type: 'warning' };
+  } else if (daysRemaining < 3 && currentBalance > 500) {
+    smartAlert = { message: "Parabéns! Você chegou ao fim do ciclo com uma boa reserva.", type: 'success' };
   }
 
-  // 9. Insights (prioriza o insight do dia com base em dados reais)
-  const insightReferenceDate = latestTransactionDate ?? currentDate;
-  const insightDateLabel = format(insightReferenceDate, 'dd/MM', { locale: ptBR });
-
-  const dayTransactions = parsedTransactions.filter(t => isSameDay(t.parsedDate, insightReferenceDate));
-  const dayOutflows = dayTransactions.filter(t => t.signedAmount < 0);
-  const dayInflows = dayTransactions.filter(t => t.signedAmount > 0);
-  const daySpent = dayOutflows.reduce((sum, t) => sum + Math.abs(t.signedAmount), 0);
-  const dayIncome = dayInflows.reduce((sum, t) => sum + t.signedAmount, 0);
-  const dayNet = dayIncome - daySpent;
-
-  const dayCategoryTotals: Record<string, number> = {};
-  dayOutflows.forEach(t => {
-    const category = t.category || 'Geral';
-    dayCategoryTotals[category] = (dayCategoryTotals[category] || 0) + Math.abs(t.signedAmount);
-  });
-  const topDayCategory = Object.entries(dayCategoryTotals).sort((a, b) => b[1] - a[1])[0];
-
-  let dailyInsight = '';
-  if (parsedTransactions.length === 0) {
-    dailyInsight = `Sem lancamentos ainda. Seu limite diario projetado e R$ ${formatCurrencyBRL(dailyLimit)} ate o proximo pagamento.`;
-  } else if (daySpent === 0 && dayIncome === 0) {
-    dailyInsight = `Sem movimentacoes no dia ${insightDateLabel}. Saldo disponivel atual: R$ ${formatCurrencyBRL(currentBalance)}.`;
-  } else if (daySpent > 0 && dayIncome === 0) {
-    if (dailyLimit > 0 && daySpent > dailyLimit) {
-      dailyInsight = `No dia ${insightDateLabel}, voce gastou R$ ${formatCurrencyBRL(daySpent)}, acima do limite diario de R$ ${formatCurrencyBRL(dailyLimit)}.`;
-    } else if (dailyLimit > 0) {
-      dailyInsight = `No dia ${insightDateLabel}, voce gastou R$ ${formatCurrencyBRL(daySpent)}, dentro do limite diario de R$ ${formatCurrencyBRL(dailyLimit)}.`;
-    } else {
-      dailyInsight = `No dia ${insightDateLabel}, voce gastou R$ ${formatCurrencyBRL(daySpent)}.`;
-    }
-  } else if (dayIncome > 0 && daySpent === 0) {
-    dailyInsight = `No dia ${insightDateLabel}, entraram R$ ${formatCurrencyBRL(dayIncome)} e nao houve saidas.`;
-  } else {
-    const dayNetLabel = dayNet >= 0 ? `+R$ ${formatCurrencyBRL(dayNet)}` : `-R$ ${formatCurrencyBRL(Math.abs(dayNet))}`;
-    dailyInsight = `No dia ${insightDateLabel}, entraram R$ ${formatCurrencyBRL(dayIncome)} e sairam R$ ${formatCurrencyBRL(daySpent)} (saldo do dia: ${dayNetLabel}).`;
+  // 9. Insights
+  const insights: string[] = [];
+  if (dailyLimit < 50 && dailyLimit > 0) insights.push("Seu limite diário está crítico. Corte gastos supérfluos hoje.");
+  if (pendingBillsTotal > 0) insights.push(`Você ainda tem R$ ${pendingBillsTotal.toLocaleString('pt-BR')} em contas fixas pendentes.`);
+  
+  if (settings.payday_cycle === 'biweekly') {
+    const nextPaydayDate = getNextPayday(settings, currentDate);
+    const isPayday1 = nextPaydayDate.getDate() === settings.payday_1;
+    const percentage = isPayday1 ? (settings.payday_1_percentage || 50) : (settings.payday_2_percentage || 50);
+    const expectedAmount = (settings.net_salary_estimated * percentage) / 100;
+    insights.push(`Previsão de recebimento no dia ${nextPaydayDate.getDate()}: R$ ${expectedAmount.toLocaleString('pt-BR')} (${percentage}% do salário).`);
   }
 
-  if (topDayCategory && daySpent > 0) {
-    const topShare = (topDayCategory[1] / daySpent) * 100;
-    dailyInsight += ` Maior impacto do dia: ${topDayCategory[0]} (${topShare.toFixed(0)}%).`;
-  }
-
-  const insights: string[] = [dailyInsight];
-  const pushInsight = (message: string) => {
-    if (!message) return;
-    if (!insights.includes(message)) insights.push(message);
-  };
-
-  if (dailyLimit < 50 && dailyLimit > 0) pushInsight('Seu limite diario esta critico. Corte gastos superfluos hoje.');
-  if (pendingBillsTotal > 0) pushInsight(`Voce ainda tem R$ ${formatCurrencyBRL(pendingBillsTotal)} em contas fixas pendentes.`);
-  if (cardsTotal > 0) pushInsight(`Sua fatura de cartao atual soma R$ ${formatCurrencyBRL(cardsTotal)}.`);
-  if (installmentsTotal > 0) pushInsight(`Voce tem R$ ${formatCurrencyBRL(installmentsTotal)} em parcelas de cartao para este ciclo.`);
-  if (dailyBillsCommitment > 0) pushInsight(`Previsao de R$ ${formatCurrencyBRL(dailyBillsCommitment)} em gastos cotidianos ate o fim do ciclo.`);
+  if (cardsTotal > 0) insights.push(`Sua fatura de cartão atual soma R$ ${cardsTotal.toLocaleString('pt-BR')}.`);
+  if (installmentsTotal > 0) insights.push(`Você tem R$ ${installmentsTotal.toLocaleString('pt-BR')} em parcelas de cartão para este ciclo.`);
+  if (dailyBillsCommitment > 0) insights.push(`Previsão de R$ ${dailyBillsCommitment.toLocaleString('pt-BR')} em gastos cotidianos (café, pão, etc) até o fim do ciclo.`);
   
   if (dominantCategory !== 'Nenhuma' && sortedCategories[0].percentage > 40) {
-    pushInsight(`A categoria ${dominantCategory} representa ${sortedCategories[0].percentage.toFixed(0)}% dos seus gastos.`);
+    insights.push(`A categoria ${dominantCategory} representa ${sortedCategories[0].percentage.toFixed(0)}% dos seus gastos.`);
   }
   if (averageDailySpent > dailyLimit && dailyLimit > 0) {
-    pushInsight(`Voce esta gastando mais do que o ideal. Tente reduzir R$ ${formatCurrencyBRL(averageDailySpent - dailyLimit)} por dia.`);
+    insights.push("Você está gastando mais do que o ideal. Tente reduzir R$ " + (averageDailySpent - dailyLimit).toFixed(2) + " por dia.");
   }
 
   // 10. Priorities
   const priorities: PriorityItem[] = [];
-  const addPriority = (title: string, message: string, type: PriorityItem['type']) => {
-    priorities.push({ id: String(priorities.length + 1), title, message, type });
-  };
-
-  if (currentBalance < 0) {
-    addPriority('Saldo Negativo', 'Seu saldo está abaixo de zero. Priorize cobrir esse valor imediatamente.', 'urgent');
-  } else if (currentBalance < 100) {
-    addPriority('Saldo Crítico', 'Evite qualquer gasto não essencial até o próximo pagamento.', 'urgent');
+  
+  // Critical Balance
+  if (currentBalance < 100) {
+    priorities.push({ id: 'p-balance', title: 'Saldo Crítico', message: 'Evite qualquer gasto não essencial até o próximo pagamento.', type: 'urgent' });
   }
-
+  
+  // Over-commitment
   if (totalCommitments > currentBalance) {
-    addPriority('Comprometimento Alto', 'Seus compromissos financeiros já consomem todo seu saldo disponível.', 'urgent');
+    priorities.push({ id: 'p-commit', title: 'Comprometimento Alto', message: 'Seus compromissos financeiros já consomem todo seu saldo disponível.', type: 'urgent' });
   }
+  
+  // Pending Bills
+  fixedBills.filter(bill => bill.status === 'pending').forEach(bill => {
+    const today = currentDate.getDate();
+    const isDueSoon = bill.due_day === today || bill.due_day === today + 1;
+    
+    priorities.push({
+      id: `bill-${bill.id}`,
+      title: isDueSoon ? 'Pagar Hoje/Amanhã' : 'Conta Pendente',
+      message: `${bill.name}: R$ ${bill.amount.toLocaleString('pt-BR')} (Vence dia ${bill.due_day})`,
+      type: isDueSoon ? 'urgent' : 'warning'
+    });
+  });
+
+  // Credit Card Bills
+  cards.forEach(card => {
+    const today = currentDate.getDate();
+    const isDueSoon = card.due_day === today || card.due_day === today + 1;
+    
+    if (card.used > 0) {
+      priorities.push({
+        id: `card-${card.id}`,
+        title: isDueSoon ? 'Vencimento Cartão' : 'Fatura Cartão',
+        message: `${card.name}: R$ ${card.used.toLocaleString('pt-BR')} (Vence dia ${card.due_day})`,
+        type: isDueSoon ? 'urgent' : 'info'
+      });
+    }
+  });
 
   if (daysRemaining > 10 && availableForDaily < 500) {
-    addPriority('Pressão no Ciclo', 'Ainda faltam muitos dias e o saldo livre está baixo.', 'warning');
+    priorities.push({ id: 'p-pressure', title: 'Pressão no Ciclo', message: 'Ainda faltam muitos dias e o saldo livre está baixo.', type: 'warning' });
   }
-
-  if (dailyLimit > 0 && todaySpent > dailyLimit) {
-    addPriority('Meta Diária', 'Você já ultrapassou o limite de hoje.', 'warning');
-  } else if (dailyLimit > 0 && todaySpent > dailyLimit * 0.8) {
-    addPriority('Atenção Hoje', 'Você já consumiu mais de 80% do limite diário.', 'info');
-  }
-
-  if (priorities.length === 0) {
-    if (transactions.length === 0) {
-      addPriority('Comece o Registro', 'Adicione lançamentos para ativar prioridades inteligentes.', 'info');
-    } else {
-      addPriority('Cenário Estável', 'Sem alertas críticos no momento. Mantenha o ritmo de gastos atual.', 'info');
-    }
+  
+  if (todaySpent > dailyLimit && dailyLimit > 0) {
+    priorities.push({ id: 'p-limit', title: 'Meta Diária', message: 'Você já ultrapassou o limite de hoje.', type: 'info' });
   }
 
   return {
@@ -375,15 +213,15 @@ export function calculateFinanceSummary(
     projectedBalance: projectedBalance,
     dailyLimit,
     daysRemaining,
-    nextPaydayDate: format(nextPayday, 'yyyy-MM-dd'),
-    nextPaydayLabel: format(nextPayday, 'dd/MM'),
     todaySpent,
     totalSpentInCycle,
     averageDailySpent,
+    nextPaydayDate: format(nextPayday, 'dd/MM/yyyy'),
+    nextPaydayLabel: format(nextPayday, 'dd/MM'),
     dominantCategory,
     spendingTrend: averageDailySpent > dailyLimit ? 'up' : 'down',
-    dailyInsight,
     insights,
+    dailyInsight: insights[0] || '',
     smartAlert,
     rhythm,
     topCategories: sortedCategories.slice(0, 5),
@@ -391,107 +229,198 @@ export function calculateFinanceSummary(
   };
 }
 
-function calculateRhythm(transactions: Transaction[], now: Date): FinanceSummary['rhythm'] {
-  const validDates = transactions
-    .map(t => parseCalendarDate(t.date))
-    .filter((d): d is Date => d !== null);
-
-  // Sem extrato: usa a data atual.
-  // Com extrato de período anterior: ancora no último dia real importado.
-  const latestDate = validDates.length > 0
-    ? new Date(Math.max(...validDates.map(d => d.getTime())))
-    : now;
-
-  // Day rhythm (últimos 30 dias da referência)
-  const dayStart = startOfDay(subDays(latestDate, 29));
-  const dayEnd = endOfDay(latestDate);
-  const days = eachDayOfInterval({ start: dayStart, end: dayEnd });
+function calculateRhythm(
+  transactions: Transaction[], 
+  now: Date, 
+  fixedBills: FixedBill[] = [], 
+  dailyBills: DailyBill[] = []
+): FinanceSummary['rhythm'] {
+  // Use last 30 days for a more continuous rhythm view
+  const startDate = subDays(now, 29);
+  const days = eachDayOfInterval({ start: startDate, end: now });
+  
   const dayLabels = days.map(d => format(d, 'dd/MM'));
-  const dayData = days.map(d =>
-    transactions
-      .filter(t => {
-        const td = parseCalendarDate(t.date);
-        return !!td && isOutflow(t) && isSameDay(td, d);
-      })
-      .reduce((sum, t) => sum + Math.abs(toSignedAmount(t)), 0)
-  );
+  const dayData = days.map(d => {
+    const dateKey = format(d, 'yyyy-MM-dd');
+    
+    // 1. Real transactions (Manual + Imported)
+    const dayTransactions = transactions.filter(t => {
+      try {
+        const tDateKey = t.date.split('T')[0];
+        return tDateKey === dateKey;
+      } catch {
+        return false;
+      }
+    });
 
-  // Week rhythm (últimas 8 semanas da referência)
-  const weekStart = startOfWeek(subWeeks(latestDate, 7), { locale: ptBR });
-  const weekEnd = endOfWeek(latestDate, { locale: ptBR });
-  const weeks = eachWeekOfInterval({ start: weekStart, end: weekEnd }, { locale: ptBR });
-  const weekLabels = weeks.map(w => {
-    const weekEndDate = endOfWeek(w, { locale: ptBR });
-    return `${format(w, 'dd/MM')} - ${format(weekEndDate, 'dd/MM')}`;
+    const expenseTotal = dayTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+
+    const incomeTotal = dayTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+
+    // 2. Fixed bills due on this specific day
+    const fixedTotal = fixedBills
+      .filter(b => b.due_day === d.getDate())
+      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+    return { expense: expenseTotal + fixedTotal, income: incomeTotal };
   });
-  const weekData = weeks.map(w =>
-    transactions
-      .filter(t => {
-        const td = parseCalendarDate(t.date);
-        return !!td && isOutflow(t) && isSameWeek(td, w, { locale: ptBR });
-      })
-      .reduce((sum, t) => sum + Math.abs(toSignedAmount(t)), 0)
-  );
 
-  // Month rhythm (últimos 6 meses da referência)
-  const monthAnchors = Array.from({ length: 6 }, (_, idx) => startOfMonth(subMonths(latestDate, 5 - idx)));
-  const monthLabels = monthAnchors.map(m => format(m, 'MMM/yy', { locale: ptBR }));
-  const monthData = monthAnchors.map(m =>
-    transactions
-      .filter(t => {
-        const td = parseCalendarDate(t.date);
-        return !!td && isOutflow(t) && isSameMonth(td, m);
+  const dayExpenses = dayData.map(d => d.expense);
+  const dayIncomes = dayData.map(d => d.income);
+
+  // Week rhythm (Last 4 weeks)
+  const weekStart = subDays(now, 28);
+  const weeks = eachWeekOfInterval({ start: weekStart, end: now }, { locale: ptBR, weekStartsOn: 0 });
+  const weekLabels = weeks.map((w, i) => format(w, 'dd/MM'));
+  const weekData = weeks.map(w => {
+    const wInterval = { start: startOfWeek(w, { locale: ptBR }), end: endOfWeek(w, { locale: ptBR }) };
+    
+    const weekTransactions = transactions.filter(t => {
+      try {
+        const td = new Date(t.date);
+        return isWithinInterval(td, wInterval);
+      } catch {
+        return false;
+      }
+    });
+
+    const transExpense = weekTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+
+    const transIncome = weekTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+
+    const fixedTotal = fixedBills
+      .filter(b => {
+        const dueDate = setDate(now, b.due_day);
+        return isWithinInterval(dueDate, wInterval);
       })
-      .reduce((sum, t) => sum + Math.abs(toSignedAmount(t)), 0)
-  );
+      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+    return { expense: transExpense + fixedTotal, income: transIncome };
+  });
+
+  const weekExpenses = weekData.map(w => w.expense);
+  const weekIncomes = weekData.map(w => w.income);
+
+  // Month rhythm (Last 6 months)
+  const monthLabels: string[] = [];
+  const monthExpenses: number[] = [];
+  const monthIncomes: number[] = [];
+  
+  for (let i = 5; i >= 0; i--) {
+    const mDate = subMonths(now, i);
+    const mStart = startOfMonth(mDate);
+    const mEnd = endOfMonth(mDate);
+    
+    monthLabels.push(format(mDate, 'MMM', { locale: ptBR }));
+    
+    const monthTransactions = transactions.filter(t => {
+      try {
+        const td = new Date(t.date);
+        return isWithinInterval(td, { start: mStart, end: mEnd });
+      } catch {
+        return false;
+      }
+    });
+
+    const mExpense = monthTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+    
+    const mIncome = monthTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+
+    // For historical months, we only really have transactions
+    const isCurrentMonth = isSameMonth(mDate, now);
+    const fixedCurrent = isCurrentMonth ? fixedBills.filter(b => b.status === 'pending').reduce((s,b) => s + b.amount, 0) : 0;
+    
+    monthExpenses.push(mExpense + fixedCurrent);
+    monthIncomes.push(mIncome);
+  }
 
   return {
-    day: { labels: dayLabels, data: dayData },
-    week: { labels: weekLabels, data: weekData },
-    month: { labels: monthLabels, data: monthData }
+    day: { labels: dayLabels, data: dayExpenses, incomeData: dayIncomes },
+    week: { labels: weekLabels, data: weekExpenses, incomeData: weekIncomes },
+    month: { labels: monthLabels, data: monthExpenses, incomeData: monthIncomes }
   };
 }
+
 function getNextPayday(settings: UserSettings, now: Date): Date {
   const today = startOfDay(now);
-  const normalizePayday = (rawDay: number | undefined, fallbackDay: number): number => {
-    const parsed = Number(rawDay);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return Math.min(Math.max(1, Math.round(parsed)), 31);
-    }
-    return Math.min(Math.max(1, Math.round(fallbackDay || 1)), 31);
-  };
+  
+  // Default to payday_1
+  const p1 = Number(settings.payday_1) || 5;
+  let paydayDate = startOfDay(setDate(now, p1));
+  
+  // If today is payday or after payday, move to next month
+  if (isAfter(today, paydayDate) || isSameDay(today, paydayDate)) {
+    paydayDate = addMonths(paydayDate, 1);
+  }
 
-  const buildNextPayday = (paydayDay: number): Date => {
-    const normalizedDay = Math.min(Math.max(1, paydayDay || 1), 31);
-
-    const thisMonthDay = Math.min(normalizedDay, getDaysInMonth(today));
-    let candidate = startOfDay(setDate(today, thisMonthDay));
-
-    // Se o dia já passou, agenda no próximo mês.
-    // Se for hoje, mantém hoje para exibir 0 dias restantes.
-    if (isAfter(today, candidate)) {
-      const nextMonth = addMonths(today, 1);
-      const nextMonthDay = Math.min(normalizedDay, getDaysInMonth(nextMonth));
-      candidate = startOfDay(setDate(nextMonth, nextMonthDay));
-    }
-
-    return candidate;
-  };
-
-  const firstPayday = normalizePayday(settings.payday_1, 5);
-  const paydayDate = buildNextPayday(firstPayday);
-
-  // Respeita o ciclo configurado na Base Financeira.
-  // Se o ciclo for quinzenal e o segundo dia estiver vazio/inválido,
-  // usa um dia inferido (+15 dias) para não quebrar o cálculo.
+  // For biweekly, we have two potential dates each month
   if (settings.payday_cycle === 'biweekly') {
-    const inferredSecondPayday = firstPayday >= 16 ? firstPayday - 15 : firstPayday + 15;
-    const secondPayday = normalizePayday(settings.payday_2, inferredSecondPayday);
-    const payday2Date = buildNextPayday(secondPayday);
+    const p2 = Number(settings.payday_2) || 20;
 
-    // Retorna sempre a data mais próxima entre os dois pagamentos.
-    return isAfter(paydayDate, payday2Date) ? payday2Date : paydayDate;
+    const candidates: Date[] = [
+      startOfDay(setDate(now, p1)),
+      startOfDay(setDate(addMonths(now, 1), p1)),
+      startOfDay(setDate(now, p2)),
+      startOfDay(setDate(addMonths(now, 1), p2))
+    ];
+
+    const futureCandidates = candidates
+      .filter(d => isAfter(d, today))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    if (futureCandidates.length > 0) {
+      return futureCandidates[0];
+    }
   }
 
   return paydayDate;
+}
+
+export function calculateBrazilianTaxes(grossSalary: number): { inss: number; irrf: number; totalDeductions: number } {
+  // INSS 2024/2025
+  let inss = 0;
+  if (grossSalary <= 1412.00) {
+    inss = grossSalary * 0.075;
+  } else if (grossSalary <= 2666.68) {
+    inss = (1412.00 * 0.075) + ((grossSalary - 1412.00) * 0.09);
+  } else if (grossSalary <= 4000.03) {
+    inss = (1412.00 * 0.075) + ((2666.68 - 1412.00) * 0.09) + ((grossSalary - 2666.68) * 0.12);
+  } else if (grossSalary <= 7786.02) {
+    inss = (1412.00 * 0.075) + ((2666.68 - 1412.00) * 0.09) + ((4000.03 - 2666.68) * 0.12) + ((grossSalary - 4000.03) * 0.14);
+  } else {
+    inss = 908.85; // Ceiling
+  }
+
+  // IRRF 2024/2025
+  const irrfBase = grossSalary - inss;
+  let irrf = 0;
+  if (irrfBase <= 2259.20) {
+    irrf = 0;
+  } else if (irrfBase <= 2826.65) {
+    irrf = (irrfBase * 0.075) - 169.44;
+  } else if (irrfBase <= 3751.05) {
+    irrf = (irrfBase * 0.15) - 381.44;
+  } else if (irrfBase <= 4664.68) {
+    irrf = (irrfBase * 0.225) - 662.77;
+  } else {
+    irrf = (irrfBase * 0.275) - 896.00;
+  }
+
+  return {
+    inss: Math.max(0, inss),
+    irrf: Math.max(0, irrf),
+    totalDeductions: Math.max(0, inss + irrf)
+  };
 }

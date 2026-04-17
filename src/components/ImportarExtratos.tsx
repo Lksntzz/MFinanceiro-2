@@ -265,32 +265,32 @@ function inferColumnByRatio(rows: string[][], predicate: (value: string | undefi
   return bestRatio >= minRatio ? bestIdx : -1;
 }
 
-function inferCategory(description: string): string {
+function inferCategory(description: string, type: 'income' | 'expense'): string {
   const text = normalizeHeader(description);
-  if (/(rendimento|rendimentos|juros)/.test(text)) return 'Rendimentos';
-  if (/(pixrecebido|pixenviado|pix)/.test(text)) return 'Transferencia';
-  if (/(reservado|dinheiroreservado|carro)/.test(text)) return 'Reserva';
-  if (/(uber|99|taxi|combustivel|posto|ipiranga|shell|estacionamento)/.test(text)) return 'Transporte';
-  if (/(mercado|supermercado|ifood|restaurante|padaria|food|acougue)/.test(text)) return 'Alimentacao';
-  if (/(farmacia|hospital|clinica|medic)/.test(text)) return 'Saude';
-  if (/(netflix|spotify|cinema|stream|show|lazer)/.test(text)) return 'Lazer';
-  if (/(aluguel|condominio|energia|agua|internet|telefone|conta)/.test(text)) return 'Contas Fixas';
-  if (/(salario|pagamento|recebido|pixrecebido|tedrecebida|docrecebido)/.test(text)) return 'Receita';
+  
+  // Entradas Específicas
+  if (type === 'income') {
+    if (/(salario|pagamento|folha|remunera|provento|vencimento)/.test(text)) return 'Salário';
+    if (/(vr|va|ticket|alimentacao|refeicao|beneficio|auxilio)/.test(text)) return 'Benefícios';
+    if (/(rendimento|juros|aplicacao|poupanca|cdb|selic|resgate)/.test(text)) return 'Rendimentos';
+    if (/(pix|ted|doc|transferencia|recebido|enviado)/.test(text)) return 'Transferência';
+    return 'Geral';
+  }
+
+  // Saídas
+  if (/(uber|99|taxi|combustivel|posto|ipiranga|shell|estacionamento|shellbox)/.test(text)) return 'Transporte';
+  if (/(mercado|supermercado|ifood|restaurante|padaria|food|acougue|fast|pizza|burger)/.test(text)) return 'Alimentação';
+  if (/(farmacia|hospital|clinica|medic|droga|saude)/.test(text)) return 'Saúde';
+  if (/(netflix|spotify|cinema|stream|show|lazer|ingresso|tour|viagem)/.test(text)) return 'Lazer';
+  if (/(aluguel|condominio|energia|agua|internet|telefone|vivo|claro|tim|oito|luz|cpfl|enel)/.test(text)) return 'Contas Fixas';
+  if (/(escola|faculdade|curso|livros|estudo|educa)/.test(text)) return 'Educação';
+  
   return 'Geral';
 }
 
 function inferCategoryFromStatement(description: string, type: 'income' | 'expense'): string {
-  const text = normalizeHeader(description);
-
-  if (/(rendimento|rendimentos|juros)/.test(text)) return 'Rendimentos';
-  if (/(pixrecebido|recebido)/.test(text)) return 'Transferencia';
-  if (/(pixenviado|enviado)/.test(text)) return 'Transferencia';
-  if (/(dinheiroreservado|reservado|reserva)/.test(text)) return 'Reserva';
-  if (/(uber|autopass|99|taxi|estacionamento|combustivel|posto)/.test(text)) return 'Transporte';
-  if (/(ifood|pizzaria|esfiha|supermercado|mercado|food|coffee|padaria|doce|restaurante)/.test(text)) return 'Alimentacao';
-  if (/(farmacia|clinica|hospital|medic)/.test(text)) return 'Saude';
-
-  return type === 'income' ? 'Receita' : 'Despesa';
+  // Unifica a lógica usando a mesma engine de inferência aprimorada
+  return inferCategory(description, type);
 }
 
 function generateId(prefix: string, index: number): string {
@@ -433,15 +433,15 @@ function parseCsvTransactions(content: string, bank: string): ImportedTransactio
   return dataLines.map((line, index) => {
     const cols = parseCsvLine(line, delimiter);
     const description = pickDescription(cols, inferredDescriptionIdx);
-    const category = ((categoryIdx >= 0 ? cols[categoryIdx] : '') || '').trim() || inferCategory(description);
-
     const amount = pickAmount(cols, inferredAmountIdx, debitIdx, creditIdx);
 
     const explicitType = typeIdx >= 0 ? normalizeHeader(cols[typeIdx]) : '';
     const type: 'income' | 'expense' =
-      /(receita|income|credito|entrada|recebido|rendimentos|deposito)/.test(explicitType) || amount > 0
+      /(receita|income|credito|entrada|recebido|rendimentos|rendimento|deposito|ganho|bonus)/.test(explicitType) || amount > 0
         ? 'income'
         : 'expense';
+        
+    const category = ((categoryIdx >= 0 ? cols[categoryIdx] : '') || '').trim() || inferCategory(description, type);
     const rawDate = inferredDateIdx >= 0 ? cols[inferredDateIdx] : (looksLikeDate(cols[0]) ? cols[0] : '');
     const normalizedAmount = Math.abs(amount);
     const status: ImportedTransaction['status'] = description !== 'Sem descricao' && normalizedAmount > 0 ? 'ready' : 'error';
@@ -491,7 +491,7 @@ function parseOfxTransactions(content: string, bank: string): ImportedTransactio
       description,
       amount: Math.abs(trnAmt),
       type,
-      category: inferCategory(description),
+      category: inferCategory(description, type),
       status,
       confidence: trnAmt !== 0 ? 0.96 : 0.45,
       original_description: description,
@@ -524,7 +524,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
 
     const withRunning = importedData
       .map((item, idx) => ({ item, idx }))
-      .filter(entry => typeof entry.item.running_balance === 'number' && Number.isFinite(entry.item.running_balance));
+      .filter(entry => entry.item.running_balance !== undefined && Number.isFinite(entry.item.running_balance));
 
     if (withRunning.length === 0) return null;
 

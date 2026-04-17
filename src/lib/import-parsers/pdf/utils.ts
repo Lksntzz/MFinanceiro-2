@@ -160,4 +160,3 @@ export function parseByBlockRegex(context: PdfParserContext): ExtractedPdfTransa
 
   return extracted;
 }
-
