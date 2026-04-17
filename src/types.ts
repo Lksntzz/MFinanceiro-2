@@ -91,6 +91,7 @@ export interface CardInstallment {
   monthly_amount: number;
   current_installment: number;
   total_installments: number;
+  start_date?: string;
 }
 
 export interface ImportedTransaction {

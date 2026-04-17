@@ -379,46 +379,46 @@ export default function BaseFinanceira({
             <ShieldCheck size={18} className={isBalanceCritical ? 'text-red-400' : 'text-brand-primary'} /> Resumo da Base Financeira
           </h2>
           {isBalanceCritical ? (
-            <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold animate-pulse">SALDO INSUFICIENTE PARA CONTAS</span>
+            <span className="text-[11px] sm:text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold animate-pulse">SALDO INSUFICIENTE PARA CONTAS</span>
           ) : (
-            <span className="text-[10px] bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded-full font-bold">CONFIGURAÇÃO ATIVA</span>
+            <span className="text-[11px] sm:text-[10px] bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded-full font-bold">CONFIGURAÇÃO ATIVA</span>
           )}
         </div>
-        <div className="grid grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Saldo Atual</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Saldo Atual</span>
             <span className={`font-bold text-sm ${isBalanceCritical ? 'text-red-400' : ''}`}>R$ {(formData.current_balance || 0).toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Contas Pend.</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Contas Pend.</span>
             <span className="font-bold text-sm text-red-400/80">R$ {totalPendingFixed.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Líquido Est.</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Líquido Est.</span>
             <span className="font-bold text-sm">R$ {estimatedNetSalary.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Ciclo</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Ciclo</span>
             <span className="font-bold text-sm uppercase">{formData.payday_cycle === 'monthly' ? 'Mensal' : 'Quinzenal'}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Próx. Pgto</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Próx. Pgto</span>
             <span className="font-bold text-sm">Dia {formData.payday_1 || 1}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-brand-primary uppercase">Base Real</span>
+            <span className="text-[11px] sm:text-[10px] text-brand-primary uppercase">Base Real</span>
             <span className="font-bold text-sm text-brand-primary">R$ {(netRealBase || 0).toLocaleString('pt-BR')}</span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* 2. Saldo Atual */}
         <div className="glass-card !p-5 space-y-4">
           <h3 className="font-bold text-sm flex items-center gap-2">
             <Wallet size={16} className="text-white/60" /> Saldo Atual em Conta
           </h3>
-          <p className="text-xs text-white/40">Este valor é o ponto de partida do seu ciclo atual.</p>
+          <p className="text-sm sm:text-xs text-white/40">Este valor é o ponto de partida do seu ciclo atual.</p>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold">R$</span>
             <input 
@@ -435,9 +435,9 @@ export default function BaseFinanceira({
           <h3 className="font-bold text-sm flex items-center gap-2">
             <Banknote size={16} className="text-white/60" /> Estrutura Salarial
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-[10px] text-white/40 uppercase font-bold">Salário Bruto</label>
+              <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Salário Bruto</label>
               <input 
                 type="number" 
                 value={formData.gross_salary}
@@ -446,7 +446,7 @@ export default function BaseFinanceira({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] text-brand-primary uppercase font-bold">Líquido Estimado</label>
+              <label className="text-[11px] sm:text-[10px] text-brand-primary uppercase font-bold">Líquido Estimado</label>
               <input 
                 type="number" 
                 value={estimatedNetSalary}
@@ -455,7 +455,7 @@ export default function BaseFinanceira({
                 disabled
                 className="w-full bg-brand-primary/5 border border-brand-primary/20 rounded-xl py-2 px-4 outline-none font-bold text-brand-primary cursor-not-allowed"
               />
-              <p className="text-[10px] text-white/40">Calculado automaticamente: Salário Bruto - Descontos.</p>
+              <p className="text-[11px] sm:text-[10px] text-white/40">Calculado automaticamente: Salário Bruto - Descontos.</p>
             </div>
           </div>
         </div>
@@ -468,20 +468,20 @@ export default function BaseFinanceira({
           <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
             <button 
               onClick={() => handleChange('payday_cycle', 'monthly')}
-              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.payday_cycle === 'monthly' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`flex-1 py-2 rounded-lg text-sm sm:text-xs font-bold transition-all ${formData.payday_cycle === 'monthly' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Mensal (1x)
             </button>
             <button 
               onClick={() => handleChange('payday_cycle', 'biweekly')}
-              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.payday_cycle === 'biweekly' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`flex-1 py-2 rounded-lg text-sm sm:text-xs font-bold transition-all ${formData.payday_cycle === 'biweekly' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Quinzenal (2x)
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-[10px] text-white/40 uppercase font-bold">Dia do Pagamento</label>
+              <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Dia do Pagamento</label>
               <input 
                 type="number" 
                 min="1" max="31"
@@ -506,7 +506,7 @@ export default function BaseFinanceira({
             </div>
             {formData.payday_cycle === 'biweekly' && (
               <div className="space-y-2">
-                <label className="text-[10px] text-white/40 uppercase font-bold">Segundo Pagamento</label>
+                <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Segundo Pagamento</label>
                 <input 
                   type="number" 
                   min="1" max="31"
@@ -536,7 +536,7 @@ export default function BaseFinanceira({
           <h3 className="font-bold text-sm flex items-center gap-2">
             <MinusCircle size={16} className="text-red-400/60" /> Descontos em Folha
           </h3>
-          <p className="text-xs text-white/40">Cálculo automático com base no salário bruto e benefícios marcados como desconto em folha.</p>
+          <p className="text-sm sm:text-xs text-white/40">Cálculo automático com base no salário bruto e benefícios marcados como desconto em folha.</p>
           <div className="space-y-2">
             <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm">
               <span className="text-white/60">INSS</span>
@@ -562,16 +562,16 @@ export default function BaseFinanceira({
           <h3 className="font-bold text-sm flex items-center gap-2">
             <PlusCircle size={16} className="text-green-400/60" /> Benefícios (VR, VA, Auxílios)
           </h3>
-          <p className="text-xs text-white/40">Lance os benefícios da empresa e marque os que são descontados na folha.</p>
+          <p className="text-sm sm:text-xs text-white/40">Lance os benefícios da empresa e marque os que são descontados na folha.</p>
 
           <form onSubmit={handleAddBenefit} className="space-y-2">
-            <div className="grid grid-cols-12 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
               <input
                 type="text"
                 value={newBenefit.name}
                 onChange={(e) => setNewBenefit(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="Ex: VR, VA"
-                className="col-span-6 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-green-400 text-sm"
+                className="sm:col-span-6 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-green-400 text-sm"
               />
               <input
                 type="number"
@@ -580,16 +580,16 @@ export default function BaseFinanceira({
                 value={newBenefit.amount}
                 onChange={(e) => setNewBenefit(prev => ({ ...prev, amount: e.target.value }))}
                 placeholder="Valor"
-                className="col-span-3 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-green-400 text-sm"
+                className="sm:col-span-3 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-green-400 text-sm"
               />
               <button
                 type="submit"
-                className="col-span-3 bg-green-500/20 border border-green-500/30 text-green-300 rounded-xl py-2 px-3 font-bold text-xs hover:bg-green-500/30 transition-all"
+                className="sm:col-span-3 bg-green-500/20 border border-green-500/30 text-green-300 rounded-xl py-2 px-3 font-bold text-sm sm:text-xs hover:bg-green-500/30 transition-all"
               >
                 Add
               </button>
             </div>
-            <label className="flex items-center gap-2 text-xs text-white/60">
+            <label className="flex items-center gap-2 text-sm sm:text-xs text-white/60">
               <input
                 type="checkbox"
                 checked={newBenefit.payrollDeducted}
@@ -602,10 +602,10 @@ export default function BaseFinanceira({
 
           <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar pr-1">
             {benefitEntries.map(item => (
-              <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs flex items-center justify-between gap-2">
+              <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm sm:text-xs flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-bold truncate">{item.name}</div>
-                  <div className={`text-[10px] ${item.payrollDeducted ? 'text-red-300' : 'text-green-300'}`}>
+                  <div className={`text-[11px] sm:text-[10px] ${item.payrollDeducted ? 'text-red-300' : 'text-green-300'}`}>
                     {item.payrollDeducted ? 'Desconta na folha' : 'Não desconta'}
                   </div>
                 </div>
@@ -624,15 +624,15 @@ export default function BaseFinanceira({
             <Calculator size={16} className="text-brand-secondary" /> Base Real Estimada
           </h3>
           <div className="space-y-2">
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-sm sm:text-xs">
               <span className="text-white/40">Salário Bruto</span>
               <span className="font-bold">R$ {(formData.gross_salary || 0).toLocaleString('pt-BR')}</span>
             </div>
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-sm sm:text-xs">
               <span className="text-red-400/60">(-) Descontos Est.</span>
               <span className="font-bold text-red-400">- R$ {calculatedDeductions.toLocaleString('pt-BR')}</span>
             </div>
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-sm sm:text-xs">
               <span className="text-green-400/60">(+) Benefícios</span>
               <span className="font-bold text-green-400">+ R$ {totalBenefitsOffered.toLocaleString('pt-BR')}</span>
             </div>
@@ -645,12 +645,12 @@ export default function BaseFinanceira({
       </div>
 
       {/* 8 & 9. Impacto e Ações */}
-      <div className="grid grid-cols-12 gap-4 items-stretch">
-        <div className="col-span-8 glass-card !p-4 flex items-center gap-4 bg-white/5">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+        <div className="xl:col-span-8 glass-card !p-4 flex items-center gap-4 bg-white/5">
           <Info size={20} className="text-white/40 shrink-0" />
-          <p className="text-xs text-white/60">A Base Financeira impacta seu Limite Diário e todos os Insights. Mantenha os dados atualizados.</p>
+          <p className="text-sm sm:text-xs text-white/60">A Base Financeira impacta seu Limite Diário e todos os Insights. Mantenha os dados atualizados.</p>
         </div>
-        <div className="col-span-4 flex flex-col gap-2">
+        <div className="xl:col-span-4 flex flex-col gap-2">
           <button 
             onClick={handleSave}
             disabled={isSaving}
@@ -662,9 +662,9 @@ export default function BaseFinanceira({
       </div>
 
       {/* 10. Gestão de Contas (Fixed & Daily) */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="glass-card flex flex-col gap-4">
-          <div className="flex items-center justify-between"><h3 className="font-bold text-sm flex items-center gap-2"><Calendar size={16} className="text-brand-primary" /> Contas Fixas</h3><button onClick={() => setShowAddFixed(true)} className="p-1.5 bg-brand-primary/10 text-brand-primary rounded-lg shadow-sm hover:bg-brand-primary/20"><Plus size={16} /></button></div>
+          <div className="flex items-center justify-between"><h3 className="font-bold text-sm flex items-center gap-2"><Calendar size={16} className="text-brand-primary" /> Contas Fixas</h3><button onClick={() => setShowAddFixed(true)} className="p-2 min-h-9 min-w-9 bg-brand-primary/10 text-brand-primary rounded-lg shadow-sm hover:bg-brand-primary/20"><Plus size={16} /></button></div>
           <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
             {fixedBills.map(bill => (
               <div key={bill.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group">
@@ -672,7 +672,7 @@ export default function BaseFinanceira({
                   <button onClick={() => onToggleBillStatus(bill.id)} className={`h-8 w-8 rounded-lg flex items-center justify-center ${bill.status === 'paid' ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40'}`}>
                     {bill.status === 'paid' ? <CheckCircle2 size={16} /> : <Clock size={16} />}
                   </button>
-                  <div><div className="text-sm font-bold">{bill.name}</div><div className="text-[10px] text-white/40">Dia {bill.due_day}</div></div>
+                  <div><div className="text-sm font-bold">{bill.name}</div><div className="text-[11px] sm:text-[10px] text-white/40">Dia {bill.due_day}</div></div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-bold">R$ {bill.amount.toLocaleString('pt-BR')}</span>
@@ -684,11 +684,11 @@ export default function BaseFinanceira({
         </div>
 
         <div className="glass-card flex flex-col gap-4">
-          <div className="flex items-center justify-between"><h3 className="font-bold text-sm flex items-center gap-2"><Activity size={16} className="text-brand-secondary" /> Gastos Operacionais</h3><button onClick={() => setShowAddDaily(true)} className="p-1.5 bg-brand-secondary/10 text-brand-secondary rounded-lg hover:bg-brand-secondary/20"><Plus size={16} /></button></div>
+          <div className="flex items-center justify-between"><h3 className="font-bold text-sm flex items-center gap-2"><Activity size={16} className="text-brand-secondary" /> Gastos Operacionais</h3><button onClick={() => setShowAddDaily(true)} className="p-2 min-h-9 min-w-9 bg-brand-secondary/10 text-brand-secondary rounded-lg hover:bg-brand-secondary/20"><Plus size={16} /></button></div>
           <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
             {dailyBills.map(bill => (
               <div key={bill.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group">
-                <div className="flex items-center gap-3"><TrendingDown size={16} className="text-brand-secondary" /><div><div className="text-sm font-bold">{bill.name}</div><div className="text-[10px] text-white/40">{bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'}</div></div></div>
+                <div className="flex items-center gap-3"><TrendingDown size={16} className="text-brand-secondary" /><div><div className="text-sm font-bold">{bill.name}</div><div className="text-[11px] sm:text-[10px] text-white/40">{bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'}</div></div></div>
                 <div className="flex items-center gap-3"><span className="text-sm font-bold">R$ {bill.average_amount.toLocaleString('pt-BR')}</span><button onClick={() => handleDeleteDaily(bill.id)} className="p-1 text-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><X size={14} /></button></div>
               </div>
             ))}
@@ -702,7 +702,7 @@ export default function BaseFinanceira({
             <h2 className="text-xl font-bold mb-6">Nova Conta Fixa</h2>
             <form onSubmit={handleAddFixed} className="space-y-4">
               <input type="text" placeholder="Nome" required value={newFixed.name} onChange={e => setNewFixed({...newFixed, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input type="number" placeholder="Valor" required value={newFixed.amount} onChange={e => setNewFixed({...newFixed, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
                 <select value={newFixed.category} onChange={e => setNewFixed({...newFixed, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none">
                   {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -721,7 +721,7 @@ export default function BaseFinanceira({
             <h2 className="text-xl font-bold mb-6">Novo Gasto</h2>
             <form onSubmit={handleAddDaily} className="space-y-4">
               <input type="text" placeholder="Nome" required value={newDaily.name} onChange={e => setNewDaily({...newDaily, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input type="number" placeholder="Valor" required value={newDaily.average_amount} onChange={e => setNewDaily({...newDaily, average_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
                 <select value={newDaily.category} onChange={e => setNewDaily({...newDaily, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none">
                   {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -735,3 +735,4 @@ export default function BaseFinanceira({
     </div>
   );
 }
+

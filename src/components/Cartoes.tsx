@@ -81,40 +81,40 @@ export default function Cartoes({
           <h2 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
             <PieChartIcon size={18} className="text-brand-secondary" /> Resumo de Crédito
           </h2>
-          <span className="text-[10px] bg-brand-secondary/20 text-brand-secondary px-2 py-0.5 rounded-full font-bold">VISÃO CONSOLIDADA</span>
+          <span className="text-[11px] sm:text-[10px] bg-brand-secondary/20 text-brand-secondary px-2 py-0.5 rounded-full font-bold">VISÃO CONSOLIDADA</span>
         </div>
-        <div className="grid grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Cartões</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Cartões</span>
             <span className="font-bold text-sm">{summary.count} Ativos</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Limite Total</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Limite Total</span>
             <span className="font-bold text-sm">R$ {summary.totalLimit.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Total Utilizado</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Total Utilizado</span>
             <span className="font-bold text-sm text-brand-secondary">R$ {summary.totalUsed.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Total Disponível</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Total Disponível</span>
             <span className="font-bold text-sm text-brand-primary">R$ {summary.totalAvailable.toLocaleString('pt-BR')}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Uso Global</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Uso Global</span>
             <span className={`font-bold text-sm ${summary.usagePercent > 80 ? 'text-red-400' : 'text-white'}`}>
               {summary.usagePercent.toFixed(1)}%
             </span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40 uppercase">Próx. Vencimento</span>
+            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Próx. Vencimento</span>
             <span className="font-bold text-sm">{summary.nextInvoice ? `Dia ${summary.nextInvoice.due_day}` : '--'}</span>
           </div>
         </div>
       </div>
 
       {/* 2. Lista / Grade de Cartões */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {cards.map(card => {
           const usage = card.limit > 0 ? (card.used / card.limit) * 100 : 0;
           const isHighPressure = usage > 80;
@@ -131,21 +131,21 @@ export default function Cartoes({
                   </div>
                   <div>
                     <h3 className="font-bold text-sm">{card.name}</h3>
-                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{card.brand}</span>
+                    <span className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold tracking-widest">{card.brand}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => onEditCard?.(card)} className="p-1.5 text-white/20 hover:text-white transition-colors">
+                  <button onClick={() => onEditCard?.(card)} className="p-2 min-h-9 min-w-9 text-white/20 hover:text-white transition-colors">
                     <Pencil size={16} />
                   </button>
-                  <button onClick={() => onDeleteCard?.(card)} className="p-1.5 text-white/20 hover:text-red-400 transition-colors">
+                  <button onClick={() => onDeleteCard?.(card)} className="p-2 min-h-9 min-w-9 text-white/20 hover:text-red-400 transition-colors">
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between text-[10px] uppercase font-bold text-white/40">
+                <div className="flex justify-between text-[11px] sm:text-[10px] uppercase font-bold text-white/40">
                   <span>Uso do Limite</span>
                   <span className={isHighPressure ? 'text-red-400' : 'text-white'}>{usage.toFixed(0)}%</span>
                 </div>
@@ -157,18 +157,18 @@ export default function Cartoes({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div>
-                  <span className="text-[10px] text-white/40 uppercase block">Utilizado</span>
+                  <span className="text-[11px] sm:text-[10px] text-white/40 uppercase block">Utilizado</span>
                   <span className="font-bold text-sm">R$ {card.used.toLocaleString('pt-BR')}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] text-white/40 uppercase block">Disponível</span>
+                  <span className="text-[11px] sm:text-[10px] text-white/40 uppercase block">Disponível</span>
                   <span className="font-bold text-sm text-brand-primary">R$ {(card.limit - card.used).toLocaleString('pt-BR')}</span>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-white/5 flex justify-between items-center text-[10px]">
+              <div className="pt-3 border-t border-white/5 flex justify-between items-center text-[11px] sm:text-[10px]">
                 <div className="flex items-center gap-1.5 text-white/40">
                   <Calendar size={12} />
                   <span>Fecha dia {card.closing_day}</span>
@@ -190,46 +190,46 @@ export default function Cartoes({
           <div className="h-12 w-12 rounded-full border-2 border-dashed border-current flex items-center justify-center group-hover:scale-110 transition-transform">
             <Plus size={24} />
           </div>
-          <span className="text-xs font-bold uppercase tracking-widest">Novo Cartão</span>
+          <span className="text-sm sm:text-xs font-bold uppercase tracking-widest">Novo Cartão</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* 8. Visão Consolidada de Limite & 9. Faturas */}
-        <div className="col-span-8 glass-card !p-5 flex flex-col gap-6">
+        <div className="xl:col-span-8 glass-card !p-5 flex flex-col gap-6">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm flex items-center gap-2">
               <TrendingUp size={16} className="text-brand-secondary" /> Saúde do Crédito Global
             </h3>
-            <div className="text-[10px] text-white/40 uppercase font-bold">Total em Aberto: R$ {summary.totalUsed.toLocaleString('pt-BR')}</div>
+            <div className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Total em Aberto: R$ {summary.totalUsed.toLocaleString('pt-BR')}</div>
           </div>
           
-          <div className="grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="space-y-4">
               <div className="flex items-end gap-2">
                 <span className="text-3xl font-bold">{summary.usagePercent.toFixed(0)}%</span>
-                <span className="text-xs text-white/40 mb-1.5 uppercase font-bold">do limite total em uso</span>
+                <span className="text-sm sm:text-xs text-white/40 mb-1.5 uppercase font-bold">do limite total em uso</span>
               </div>
               <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden flex">
                 <div className="h-full bg-brand-secondary" style={{ width: `${summary.usagePercent}%` }}></div>
                 <div className="h-full bg-white/10" style={{ width: `${100 - summary.usagePercent}%` }}></div>
               </div>
-              <p className="text-[10px] text-white/40 leading-relaxed">
+              <p className="text-[11px] sm:text-[10px] text-white/40 leading-relaxed">
                 Você ainda possui **R$ {summary.totalAvailable.toLocaleString('pt-BR')}** de fôlego financeiro nos seus cartões.
               </p>
             </div>
 
             <div className="space-y-3">
-              <h4 className="text-[10px] uppercase font-bold text-white/40 tracking-widest">Próximas Faturas</h4>
+              <h4 className="text-[11px] sm:text-[10px] uppercase font-bold text-white/40 tracking-widest">Próximas Faturas</h4>
               <div className="space-y-2">
                 {cards.slice(0, 3).map(card => (
                   <div key={card.id} className="flex items-center justify-between p-2 bg-white/5 rounded-lg border border-white/5">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-full bg-brand-secondary"></div>
-                      <span className="text-xs font-bold">{card.name}</span>
+                      <span className="text-sm sm:text-xs font-bold">{card.name}</span>
                     </div>
                     <div className="text-right">
-                      <div className="text-xs font-bold">R$ {card.used.toLocaleString('pt-BR')}</div>
+                      <div className="text-sm sm:text-xs font-bold">R$ {card.used.toLocaleString('pt-BR')}</div>
                       <div className="text-[8px] text-white/40 uppercase">Vence dia {card.due_day}</div>
                     </div>
                   </div>
@@ -240,7 +240,7 @@ export default function Cartoes({
         </div>
 
         {/* 10. Cartão com Maior Pressão */}
-        <div className="col-span-4 glass-card !p-5 bg-red-500/5 border-red-500/20 flex flex-col justify-between">
+        <div className="xl:col-span-4 glass-card !p-5 bg-red-500/5 border-red-500/20 flex flex-col justify-between">
           <div>
             <h3 className="font-bold text-sm flex items-center gap-2 mb-4 text-red-400">
               <AlertTriangle size={16} /> Foco de Atenção
@@ -248,37 +248,37 @@ export default function Cartoes({
             {summary.pressureCard ? (
               <div className="space-y-4">
                 <div className="p-3 bg-red-500/10 rounded-xl border border-red-500/20">
-                  <div className="text-[10px] text-red-400/60 uppercase font-bold mb-1">Cartão mais pressionado</div>
+                  <div className="text-[11px] sm:text-[10px] text-red-400/60 uppercase font-bold mb-1">Cartão mais pressionado</div>
                   <div className="text-lg font-bold">{summary.pressureCard.name}</div>
-                  <div className="text-xs text-white/60">Uso de {((summary.pressureCard.used / summary.pressureCard.limit) * 100).toFixed(0)}% do limite</div>
+                  <div className="text-sm sm:text-xs text-white/60">Uso de {((summary.pressureCard.used / summary.pressureCard.limit) * 100).toFixed(0)}% do limite</div>
                 </div>
-                <p className="text-[10px] text-white/40 leading-relaxed">
+                <p className="text-[11px] sm:text-[10px] text-white/40 leading-relaxed">
                   Este cartão concentra o maior risco de estouro de limite. Evite novas compras parceladas nele neste ciclo.
                 </p>
               </div>
             ) : (
-              <div className="text-xs text-white/20 text-center py-8">Nenhum cartão cadastrado.</div>
+              <div className="text-sm sm:text-xs text-white/20 text-center py-8">Nenhum cartão cadastrado.</div>
             )}
           </div>
-          <button className="w-full py-2 bg-red-500/20 text-red-400 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/30 transition-all">
+          <button className="w-full py-2 bg-red-500/20 text-red-400 rounded-lg text-[11px] sm:text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/30 transition-all">
             Analisar Fatura
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* 12. Parcelamentos e Compromissos Futuros */}
-        <div className="col-span-7 glass-card !p-5 flex flex-col gap-4">
+        <div className="xl:col-span-7 glass-card !p-5 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm flex items-center gap-2">
               <Clock size={16} className="text-white/60" /> Parcelamentos Ativos
             </h3>
-            <div className="flex items-center gap-3">
-              <div className="text-[10px] text-white/40 uppercase font-bold">Impacto Mensal: R$ {monthlyInstallmentsTotal.toLocaleString('pt-BR')}</div>
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <div className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Impacto Mensal: R$ {monthlyInstallmentsTotal.toLocaleString('pt-BR')}</div>
               <button
                 type="button"
                 onClick={onAddInstallment}
-                className="px-2.5 py-1.5 rounded-lg bg-brand-primary/20 text-brand-primary text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/30 transition-all"
+                className="px-2.5 py-1.5 rounded-lg bg-brand-primary/20 text-brand-primary text-[11px] sm:text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/30 transition-all"
               >
                 Novo Parcelamento
               </button>
@@ -291,7 +291,7 @@ export default function Cartoes({
               const isBoleto = !inst.card_id;
               
               return (
-                <div key={inst.id} className="p-4 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group hover:border-white/10 transition-all">
+                <div key={inst.id} className="p-4 bg-white/5 rounded-xl border border-white/5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 group hover:border-white/10 transition-all">
                   <div className="flex items-center gap-4 flex-1">
                     <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${isBoleto ? 'bg-yellow-500/10 text-yellow-400' : 'bg-brand-secondary/10 text-brand-secondary'}`}>
                       {isBoleto ? <Calendar size={20} /> : <CardIcon size={20} />}
@@ -306,23 +306,23 @@ export default function Cartoes({
                       <div className="flex items-center gap-3 mt-1">
                         <div className="flex items-center gap-1.5">
                           <CheckCircle2 size={12} className="text-green-400" />
-                          <span className="text-[10px] text-white/40 uppercase font-medium">Pagas: <span className="text-white">{inst.current_installment}</span></span>
+                          <span className="text-[11px] sm:text-[10px] text-white/40 uppercase font-medium">Pagas: <span className="text-white">{inst.current_installment}</span></span>
                         </div>
                         <div className="flex items-center gap-1.5 border-l border-white/10 pl-3">
                           <Clock size={12} className="text-brand-primary" />
-                          <span className="text-[10px] text-white/40 uppercase font-medium">Restam: <span className="text-white">{remaining}</span></span>
+                          <span className="text-[11px] sm:text-[10px] text-white/40 uppercase font-medium">Restam: <span className="text-white">{remaining}</span></span>
                         </div>
                       </div>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-4 lg:gap-6 flex-wrap lg:flex-nowrap w-full lg:w-auto justify-between lg:justify-start">
                     <div className="text-right">
-                      <div className="text-[10px] text-white/40 uppercase font-bold mb-0.5">Mensal</div>
+                      <div className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold mb-0.5">Mensal</div>
                       <div className="text-sm font-bold">R$ {inst.monthly_amount.toLocaleString('pt-BR')}</div>
                     </div>
                     <div className="text-right min-w-[100px]">
-                      <div className="text-[10px] text-white/40 uppercase font-bold mb-0.5">Total Compra</div>
+                      <div className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold mb-0.5">Total Compra</div>
                       <div className="text-sm font-bold text-white/80">R$ {inst.total_amount.toLocaleString('pt-BR')}</div>
                     </div>
                     
@@ -347,13 +347,13 @@ export default function Cartoes({
               );
             })}
             {installments.length === 0 && (
-              <div className="text-xs text-white/20 text-center py-8">Nenhum parcelamento ativo identificado.</div>
+              <div className="text-sm sm:text-xs text-white/20 text-center py-8">Nenhum parcelamento ativo identificado.</div>
             )}
           </div>
         </div>
 
         {/* 13. Alertas de Cartão */}
-        <div className="col-span-5 glass-card !p-5 flex flex-col gap-4">
+        <div className="xl:col-span-5 glass-card !p-5 flex flex-col gap-4">
           <h3 className="font-bold text-sm flex items-center gap-2">
             <Info size={16} className="text-brand-primary" /> Alertas de Crédito
           </h3>
@@ -361,7 +361,7 @@ export default function Cartoes({
             {summary.usagePercent > 70 && (
               <div className="flex items-start gap-3 p-3 bg-red-500/10 rounded-xl border border-red-500/20">
                 <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
-                <div className="text-[10px] leading-relaxed">
+                <div className="text-[11px] sm:text-[10px] leading-relaxed">
                   <span className="font-bold text-red-400 block uppercase mb-1">Limite Global Crítico</span>
                   Você já utilizou mais de 70% do seu crédito total. Isso pode impactar seu score e reduzir sua margem de emergência.
                 </div>
@@ -370,7 +370,7 @@ export default function Cartoes({
             {monthlyInstallmentsTotal > 1000 && (
               <div className="flex items-start gap-3 p-3 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
                 <Clock size={16} className="text-yellow-400 shrink-0 mt-0.5" />
-                <div className="text-[10px] leading-relaxed">
+                <div className="text-[11px] sm:text-[10px] leading-relaxed">
                   <span className="font-bold text-yellow-400 block uppercase mb-1">Pressão de Parcelamento</span>
                   Suas parcelas de cartão somam R$ {monthlyInstallmentsTotal.toLocaleString('pt-BR')} este mês. Este valor já está comprometido nos próximos ciclos.
                 </div>
@@ -379,7 +379,7 @@ export default function Cartoes({
             {summary.usagePercent <= 50 && (
               <div className="flex items-start gap-3 p-3 bg-green-500/10 rounded-xl border border-green-500/20">
                 <CheckCircle2 size={16} className="text-green-400 shrink-0 mt-0.5" />
-                <div className="text-[10px] leading-relaxed">
+                <div className="text-[11px] sm:text-[10px] leading-relaxed">
                   <span className="font-bold text-green-400 block uppercase mb-1">Uso Saudável</span>
                   Seu uso de crédito está abaixo de 50%. Esta é uma excelente zona de segurança para sua saúde financeira.
                 </div>
@@ -390,15 +390,15 @@ export default function Cartoes({
       </div>
 
       {/* 14. Ações de Gerenciamento */}
-      <div className="flex items-center justify-between pt-4 border-t border-white/5 shrink-0">
-        <p className="text-[10px] text-white/20 uppercase font-bold tracking-widest">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 pt-4 border-t border-white/5 shrink-0">
+        <p className="text-[11px] sm:text-[10px] text-white/20 uppercase font-bold tracking-widest">
           O uso inteligente do cartão de crédito é a base da alavancagem financeira.
         </p>
-        <div className="flex gap-2">
-          <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all">
+        <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+          <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[11px] sm:text-[10px] font-bold uppercase tracking-widest transition-all">
             Exportar Relatório
           </button>
-          <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all">
+          <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[11px] sm:text-[10px] font-bold uppercase tracking-widest transition-all">
             Ajustar Limites
           </button>
         </div>
@@ -406,3 +406,4 @@ export default function Cartoes({
     </div>
   );
 }
+

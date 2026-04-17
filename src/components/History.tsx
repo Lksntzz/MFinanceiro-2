@@ -138,41 +138,41 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
       {/* Filters & Search */}
-      <div className="glass-card !p-4 flex flex-wrap items-center gap-4 shrink-0">
-        <div className="flex-1 min-w-[200px] relative">
+      <div className="glass-card !p-4 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4 shrink-0">
+        <div className="w-full lg:flex-1 lg:min-w-[220px] relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
           <input 
             type="text" 
             placeholder="Buscar descrição, categoria ou valor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 outline-none focus:border-brand-primary transition-all text-sm"
+            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-brand-primary transition-all text-sm"
           />
         </div>
         
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-lg border border-white/10 mr-2">
+        <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-lg border border-white/10 overflow-x-auto no-scrollbar">
             <button 
               onClick={() => { setGroupBy('day'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'day' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-2 min-h-9 text-[11px] sm:text-[10px] font-bold rounded-md transition-all ${groupBy === 'day' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Dia
             </button>
             <button 
               onClick={() => { setGroupBy('week'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'week' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-2 min-h-9 text-[11px] sm:text-[10px] font-bold rounded-md transition-all ${groupBy === 'week' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Semana
             </button>
             <button 
               onClick={() => { setGroupBy('month'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'month' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-2 min-h-9 text-[11px] sm:text-[10px] font-bold rounded-md transition-all ${groupBy === 'month' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Mês
             </button>
             <button 
               onClick={() => { setGroupBy('none'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'none' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-2 min-h-9 text-[11px] sm:text-[10px] font-bold rounded-md transition-all ${groupBy === 'none' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Total
             </button>
@@ -182,7 +182,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           <select 
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as any)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary"
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-brand-primary"
           >
             <option value="all">Tipos</option>
             <option value="income">Entradas</option>
@@ -192,7 +192,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           <select 
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary max-w-[120px]"
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-brand-primary"
           >
             <option value="all">Categorias</option>
             {categories.filter(c => c !== 'all').map(cat => (
@@ -203,7 +203,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           {onDeleteAll && transactions.length > 0 && (
             <button 
               onClick={() => onDeleteAll()}
-              className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-bold border border-red-500/20 transition-all ml-2"
+              className="flex items-center gap-2 px-3 py-2 min-h-10 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-bold border border-red-500/20 transition-all ml-2"
             >
               <Trash2 size={14} />
               Apagar Tudo
@@ -213,7 +213,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 shrink-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         <div className="glass-card !p-3 flex flex-col justify-between border-green-500/20">
           <span className="text-[10px] text-white/40 uppercase font-bold">Entradas</span>
           <div className="text-lg font-bold text-green-400">R$ {summary.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
@@ -240,12 +240,12 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-[#1a1a1a] z-10">
               <tr className="border-b border-white/5">
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold">Lançamento</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold">Categoria</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold">Origem</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold text-right">Valor</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold text-center">Status</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold text-center">Ações</th>
+                <th className="p-3 sm:p-4 text-[11px] sm:text-[10px] uppercase text-white/40 font-bold">Lançamento</th>
+                <th className="p-3 sm:p-4 text-[11px] sm:text-[10px] uppercase text-white/40 font-bold">Categoria</th>
+                <th className="p-3 sm:p-4 text-[11px] sm:text-[10px] uppercase text-white/40 font-bold">Origem</th>
+                <th className="p-3 sm:p-4 text-[11px] sm:text-[10px] uppercase text-white/40 font-bold text-right">Valor</th>
+                <th className="p-3 sm:p-4 text-[11px] sm:text-[10px] uppercase text-white/40 font-bold text-center">Status</th>
+                <th className="p-3 sm:p-4 text-[11px] sm:text-[10px] uppercase text-white/40 font-bold text-center">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -299,12 +299,12 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
                         <div className="flex items-center justify-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
                             onClick={() => onDelete?.(t.id)}
-                            className="p-1.5 text-white/20 hover:text-red-400 transition-colors"
+                            className="p-2 min-h-9 min-w-9 text-white/20 hover:text-red-400 transition-colors"
                             title="Excluir lançamento"
                           >
                             <Trash2 size={16} />
                           </button>
-                          <button className="p-1.5 text-white/20 hover:text-white transition-colors">
+                          <button className="p-2 min-h-9 min-w-9 text-white/20 hover:text-white transition-colors">
                             <MoreVertical size={16} />
                           </button>
                         </div>
@@ -326,7 +326,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
 
         {/* Pagination Footer */}
         {totalPages > 1 && (
-          <div className="p-4 border-t border-white/5 flex items-center justify-between bg-white/5 shrink-0">
+          <div className="p-4 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white/5 shrink-0">
             <span className="text-xs text-white/40">
               Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredTransactions.length)} de {filteredTransactions.length}
             </span>
@@ -353,3 +353,4 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
     </div>
   );
 }
+

@@ -657,7 +657,7 @@ export default function Dashboard({ user }: { user: User }) {
   ] as const;
 
   return (
-    <div className="h-screen w-full p-4 flex flex-col gap-4 overflow-hidden bg-[#050505] text-white no-scrollbar">
+    <div className="min-h-screen w-full p-3 sm:p-4 flex flex-col gap-4 overflow-x-hidden bg-[#050505] text-white no-scrollbar">
       {missingTables.length > 0 && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -680,57 +680,57 @@ export default function Dashboard({ user }: { user: User }) {
         </div>
       )}
 
-      <header className="flex items-center justify-between shrink-0 mb-2">
+      <header className="flex flex-wrap items-center gap-3 shrink-0 mb-1">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center"><Wallet className="text-white" size={18} /></div>
           <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
         </div>
-        <nav className="flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar max-w-[700px] mx-4">
+	        <nav className="order-3 w-full flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{tab.label}</button>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 min-h-10 rounded-lg text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{tab.label}</button>
           ))}
         </nav>
-        <div className="flex items-center gap-3">
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-3 py-1.5 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity"><Plus size={16} /><span>Lançar</span></button>
-          <button onClick={() => setShowSettingsModal(true)} className="p-1.5 text-white/60 hover:text-white transition-colors"><Settings size={18} /></button>
-          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-1.5 text-white/60 hover:text-white transition-colors"><LogOut size={18} /></button>
+        <div className="flex items-center gap-3 ml-auto">
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-3 py-2 min-h-10 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity"><Plus size={16} /><span>Lançar</span></button>
+          <button onClick={() => setShowSettingsModal(true)} className="p-2.5 min-h-10 min-w-10 text-white/60 hover:text-white transition-colors"><Settings size={18} /></button>
+          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-2.5 min-h-10 min-w-10 text-white/60 hover:text-white transition-colors"><LogOut size={18} /></button>
         </div>
       </header>
 
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {activeTab === 'overview' && (
-          <main className="flex-1 grid grid-cols-12 grid-rows-[auto_auto_1.2fr_1fr_1.2fr] gap-4 overflow-hidden animate-fade-in">
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
+	          <main className="flex-1 min-h-0 grid grid-cols-2 xl:grid-cols-12 xl:grid-rows-[auto_auto_1.2fr_1fr_1.2fr] auto-rows-min gap-3 sm:gap-4 overflow-y-auto xl:overflow-hidden animate-fade-in pb-4">
+	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Saldo Disponível</span>
-              <div className="text-2xl font-bold">R$ {(summary?.currentBalance ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+	              <div className="text-xl sm:text-2xl font-bold">R$ {(summary?.currentBalance ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
             </div>
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between border-brand-primary/30">
+	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between border-brand-primary/30">
               <span className="text-brand-primary text-xs font-medium uppercase tracking-wider">Limite Diário</span>
-              <div className="text-2xl font-bold text-brand-primary">R$ {(summary?.dailyLimit ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+	              <div className="text-xl sm:text-2xl font-bold text-brand-primary">R$ {(summary?.dailyLimit ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
+	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Dias Restantes</span>
-              <div className="text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
+	              <div className="text-xl sm:text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
             </div>
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
+	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Gasto Hoje</span>
-              <div className={`text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>R$ {(summary?.todaySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+	              <div className={`text-xl sm:text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>R$ {(summary?.todaySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
             </div>
 
-            <div className={`col-span-6 glass-card !p-3 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
+	            <div className={`col-span-2 xl:col-span-6 glass-card !p-3 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
               <AlertCircle className={summary?.smartAlert?.type === 'danger' ? 'text-red-400' : 'text-brand-primary'} size={20} />
               <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Alerta Inteligente</h3><p className="text-xs text-white/70 truncate">{summary?.smartAlert?.message || "Ciclo estável."}</p></div>
             </div>
-            <div className="col-span-6 glass-card !p-3 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
+	            <div className="col-span-2 xl:col-span-6 glass-card !p-3 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
               <TrendingUp className="text-brand-secondary" size={20} />
               <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Insight do Dia</h3><p className="text-xs text-white/70 truncate">{summary?.dailyInsight || summary?.insights?.[0] || "Mantenha o ritmo."}</p></div>
             </div>
 
-            <div className="col-span-8 glass-card !p-4 flex flex-col">
+	            <div className="col-span-2 xl:col-span-8 glass-card !p-4 flex flex-col min-h-[260px] sm:min-h-[280px]">
               <h3 className="font-bold text-sm mb-2">Evolução do Saldo</h3>
               <div className="flex-1 min-h-0"><Line data={lineChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }} /></div>
             </div>
-            <div className="col-span-4 glass-card !p-4 flex flex-col justify-between">
+	            <div className="col-span-2 xl:col-span-4 glass-card !p-4 flex flex-col justify-between">
               <h3 className="font-bold text-sm mb-2">Resumo do Período</h3>
               <div className="space-y-3">
                 <div className="flex justify-between text-xs"><span className="text-white/40">Média Diária</span><span className="font-bold">R$ {(summary?.averageDailySpent ?? 0).toLocaleString('pt-BR')}</span></div>
@@ -738,27 +738,27 @@ export default function Dashboard({ user }: { user: User }) {
               </div>
             </div>
 
-            <div className="col-span-12 glass-card !p-4 flex flex-col">
+	            <div className="col-span-2 xl:col-span-12 glass-card !p-4 flex flex-col min-h-[260px]">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-bold text-sm">Ritmo de Gastos</h3>
-                <div className="flex bg-white/5 p-1 rounded-lg">
+                <div className="flex bg-white/5 p-1 rounded-lg overflow-x-auto no-scrollbar">
                   {(['day', 'week', 'month'] as const).map(f => (
-                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
+                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-3 py-2 min-h-9 rounded-md text-[11px] sm:text-[10px] font-bold uppercase transition-all whitespace-nowrap ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
                   ))}
                 </div>
               </div>
               <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false }} /></div>
             </div>
 
-            <div className="col-span-4 glass-card !p-3 flex flex-col">
+	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 flex flex-col min-h-[190px]">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Top Categorias</span><PieChartIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-hidden">{summary?.topCategories?.map(cat => (<div key={cat.name} className="flex flex-col gap-1"><div className="flex justify-between text-[10px]"><span className="text-white/70 truncate">{cat.name}</span><span className="font-bold">R$ {cat.amount.toFixed(0)}</span></div><div className="h-1 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div></div></div>))}</div>
+              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">{summary?.topCategories?.map(cat => (<div key={cat.name} className="flex flex-col gap-1"><div className="flex justify-between text-[10px]"><span className="text-white/70 truncate">{cat.name}</span><span className="font-bold">R$ {cat.amount.toFixed(0)}</span></div><div className="h-1 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div></div></div>))}</div>
             </div>
-            <div className="col-span-4 glass-card !p-3 flex flex-col">
+	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 flex flex-col min-h-[190px]">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Lançamentos</span><HistoryIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-hidden">{latestOverviewTransactions.map(t => (<div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5"><div className="truncate mr-2"><div className="font-bold truncate">{t.description || t.category}</div><div className="text-white/40">{format(new Date(t.date), 'dd/MM')}</div></div><div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>{t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toFixed(0)}</div></div>))}</div>
+              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">{latestOverviewTransactions.map(t => (<div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5"><div className="truncate mr-2"><div className="font-bold truncate">{t.description || t.category}</div><div className="text-white/40">{format(new Date(t.date), 'dd/MM')}</div></div><div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>{t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toFixed(0)}</div></div>))}</div>
             </div>
-            <div className="col-span-4 glass-card !p-3 flex flex-col">
+	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 flex flex-col min-h-[190px]">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Cartões</span><CreditCardIcon size={14} className="text-white/40" /></h3>
               <div className="flex-1 flex flex-col justify-center gap-3">
                 <div className="flex justify-between text-[10px]"><span className="text-white/40">Utilizado</span><span className="font-bold">R$ {overviewCardsUsed.toLocaleString('pt-BR')}</span></div>
@@ -774,7 +774,7 @@ export default function Dashboard({ user }: { user: User }) {
         {activeTab === 'history' && <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />}
         {activeTab === 'cards' && <Cartoes cards={cards} installments={installments} onAddCard={openAddCardModal} onEditCard={openEditCardModal} onDeleteCard={handleDeleteCard} onAddInstallment={openAddInstallmentModal} onEditInstallment={openEditInstallmentModal} onDeleteInstallment={handleDeleteInstallment} />}
         {activeTab === 'import' && <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setActiveTab('overview')} />}
-        {activeTab === 'base' && <div className="flex-1 overflow-hidden flex flex-col gap-4"><div className="flex items-center justify-between shrink-0"><h2 className="text-lg font-bold">Base Financeira</h2><button onClick={() => setShowSetupHelper(true)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"><Database size={14} />Configurar</button></div>{settings ? <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} /> : <div className="flex-1 flex items-center justify-center text-white/40 animate-pulse">Carregando...</div>}</div>}
+        {activeTab === 'base' && <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 pb-4"><div className="flex items-center justify-between gap-3 shrink-0"><h2 className="text-lg font-bold">Base Financeira</h2><button onClick={() => setShowSetupHelper(true)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"><Database size={14} />Configurar</button></div>{settings ? <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} /> : <div className="flex-1 flex items-center justify-center text-white/40 animate-pulse">Carregando...</div>}</div>}
       </div>
 
       {showAddModal && (
@@ -812,7 +812,7 @@ export default function Dashboard({ user }: { user: User }) {
           <div className="glass-card w-full max-w-lg overflow-y-auto max-h-[90vh] no-scrollbar">
             <h2 className="text-xl font-bold mb-6 p-6 pb-0">Configurações Base</h2>
             <form onSubmit={(e) => { e.preventDefault(); handleUpdateSettings(editSettings as UserSettings); }} className="space-y-4 p-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><label className="text-sm text-white/60">Saldo Atual</label><input type="number" step="0.01" value={editSettings.current_balance} onChange={e => setEditSettings({...editSettings, current_balance: parseFloat(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" /></div>
                 <div><label className="text-sm text-white/60">Benefícios</label><input type="number" step="0.01" value={editSettings.benefits} onChange={e => setEditSettings({...editSettings, benefits: parseFloat(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" /></div>
               </div>
@@ -875,7 +875,7 @@ export default function Dashboard({ user }: { user: User }) {
                 <input type="text" placeholder="Ex: iPhone 15, Notebook..." required value={installmentForm.description} onChange={e => setInstallmentForm({...installmentForm, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Valor Total</label>
                   <input type="number" step="0.01" placeholder="0.00" required value={installmentForm.total_amount} onChange={e => setInstallmentForm({...installmentForm, total_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
@@ -886,7 +886,7 @@ export default function Dashboard({ user }: { user: User }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Parcela Atual</label>
                   <input type="number" required value={installmentForm.current_installment} onChange={e => setInstallmentForm({...installmentForm, current_installment: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
@@ -908,3 +908,4 @@ export default function Dashboard({ user }: { user: User }) {
     </div>
   );
 }
+

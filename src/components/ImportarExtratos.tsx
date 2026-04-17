@@ -665,7 +665,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Database className="text-brand-secondary" size={24} /> Importar Extratos
           </h2>
-          <p className="text-xs text-white/40">Traga suas movimentacoes bancarias para o MFinanceiro de forma inteligente.</p>
+          <p className="text-sm sm:text-xs text-white/40">Traga suas movimentacoes bancarias para o MFinanceiro de forma inteligente.</p>
         </div>
         <button onClick={onCancel} className="p-2 text-white/20 hover:text-white transition-colors">
           <X size={20} />
@@ -674,8 +674,8 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
 
       {step === 'upload' && (
         <div className="flex-1 flex flex-col gap-4 overflow-y-auto no-scrollbar">
-          <div className="grid grid-cols-12 gap-4">
-            <div className="col-span-8 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-8 space-y-4">
               <div
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
@@ -689,7 +689,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                 </div>
                 <div className="text-center">
                   <p className="font-bold text-sm">Arraste seu extrato aqui</p>
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Ou clique para selecionar</p>
+                  <p className="text-[11px] sm:text-[10px] text-white/40 uppercase tracking-widest mt-1">Ou clique para selecionar</p>
                 </div>
                 <input
                   type="file"
@@ -699,14 +699,14 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="glass-card !p-4 flex items-start gap-3">
                   <div className="h-8 w-8 rounded-lg bg-brand-secondary/20 flex items-center justify-center text-brand-secondary">
                     <FileText size={18} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold">Formatos Suportados</h4>
-                    <p className="text-[10px] text-white/40 mt-1">CSV, OFX e PDF com mapeamento automatico de campos.</p>
+                    <h4 className="text-sm sm:text-xs font-bold">Formatos Suportados</h4>
+                    <p className="text-[11px] sm:text-[10px] text-white/40 mt-1">CSV, OFX e PDF com mapeamento automatico de campos.</p>
                   </div>
                 </div>
                 <div className="glass-card !p-4 flex items-start gap-3">
@@ -714,24 +714,24 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                     <ShieldCheck size={18} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold">Seguranca de Dados</h4>
-                    <p className="text-[10px] text-white/40 mt-1">Seus dados sao processados localmente.</p>
+                    <h4 className="text-sm sm:text-xs font-bold">Seguranca de Dados</h4>
+                    <p className="text-[11px] sm:text-[10px] text-white/40 mt-1">Seus dados sao processados localmente.</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="col-span-4 space-y-4">
+            <div className="lg:col-span-4 space-y-4">
               <div className="glass-card !p-5 space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                <h3 className="text-sm sm:text-xs font-bold uppercase tracking-widest flex items-center gap-2">
                   <Filter size={14} className="text-white/40" /> Configuracao
                 </h3>
                 <div>
-                  <label className="text-[10px] text-white/40 uppercase font-bold block mb-1.5">Banco / Origem</label>
+                  <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold block mb-1.5">Banco / Origem</label>
                   <select
                     value={bank}
                     onChange={(e) => setBank(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-primary transition-all"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm sm:text-xs focus:outline-none focus:border-brand-primary transition-all"
                   >
                     <option value="auto">Deteccao Automatica</option>
                     <option value="nubank">Nubank</option>
@@ -745,10 +745,10 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
               </div>
 
               <div className="glass-card !p-5 bg-brand-primary/5 border-brand-primary/20">
-                <h3 className="text-xs font-bold flex items-center gap-2 mb-2">
+                <h3 className="text-sm sm:text-xs font-bold flex items-center gap-2 mb-2">
                   <Info size={14} className="text-brand-primary" /> Dica Pro
                 </h3>
-                <p className="text-[10px] text-white/60 leading-relaxed">
+                <p className="text-[11px] sm:text-[10px] text-white/60 leading-relaxed">
                   OFX costuma ter mais precisao na importacao por trazer identificadores unicos e valor consolidado por transacao.
                 </p>
               </div>
@@ -762,7 +762,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
           <Loader2 size={48} className="text-brand-secondary animate-spin" />
           <div className="text-center">
             <p className="font-bold">Interpretando Extrato...</p>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Normalizando dados e detectando duplicidades</p>
+            <p className="text-[11px] sm:text-[10px] text-white/40 uppercase tracking-widest mt-1">Normalizando dados e detectando duplicidades</p>
           </div>
         </div>
       )}
@@ -773,8 +773,8 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
             <div className={`glass-card !p-3 shrink-0 border ${balanceValidation.isClose ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}>
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">Validação de Saldo (pré-importação)</div>
-                  <div className="text-xs text-white/80 mt-1">
+                  <div className="text-[11px] sm:text-[10px] uppercase tracking-widest text-white/50 font-bold">Validação de Saldo (pré-importação)</div>
+                  <div className="text-sm sm:text-xs text-white/80 mt-1">
                     Saldo final esperado x saldo do extrato
                   </div>
                 </div>
@@ -787,14 +787,14 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                 </div>
               </div>
               {!balanceValidation.isClose && (
-                <div className="text-[10px] text-yellow-200/90 mt-2">
+                <div className="text-[11px] sm:text-[10px] text-yellow-200/90 mt-2">
                   A diferença indica que algum lançamento pode estar pendente, desmarcado ou com valor/categoria incorreto.
                 </div>
               )}
             </div>
           )}
 
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 shrink-0">
             <div className="flex-1 glass-card !p-3 flex items-center justify-between">
               <div className="flex items-center gap-6">
                 <div className="flex flex-col">
@@ -812,7 +812,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
               </div>
               <button
                 onClick={handleFinalImport}
-                className="px-4 py-2 bg-brand-primary text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-brand-primary/80 transition-all flex items-center gap-2"
+                className="px-4 py-2 bg-brand-primary text-white text-[11px] sm:text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-brand-primary/80 transition-all flex items-center gap-2"
               >
                 Confirmar Importacao <ChevronRight size={14} />
               </button>
@@ -835,15 +835,15 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold truncate">{item.description}</span>
+                    <span className="text-sm sm:text-xs font-bold truncate">{item.description}</span>
                     {item.status === 'error' && (
                       <span className="text-[8px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded uppercase font-bold">Campo faltando</span>
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[10px] text-white/40">{new Date(item.date).toLocaleDateString('pt-BR')}</span>
-                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-tighter bg-white/5 px-1.5 rounded">{item.category}</span>
-                    <span className="text-[10px] text-white/20 truncate">{item.original_description}</span>
+                    <span className="text-[11px] sm:text-[10px] text-white/40">{new Date(item.date).toLocaleDateString('pt-BR')}</span>
+                    <span className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold tracking-tighter bg-white/5 px-1.5 rounded">{item.category}</span>
+                    <span className="text-[11px] sm:text-[10px] text-white/20 truncate">{item.original_description}</span>
                   </div>
                 </div>
 
@@ -871,7 +871,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
               </div>
             ))}
             {importedData.length === 0 && (
-              <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-xs text-yellow-300">
+              <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-sm sm:text-xs text-yellow-300">
                 Nenhum lancamento valido encontrado. Para XLSX/imagem ainda falta parser no app. Se puder, exporte o extrato em CSV, OFX ou PDF.
               </div>
             )}
@@ -881,3 +881,4 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
     </div>
   );
 }
+

@@ -30,21 +30,21 @@ export default function Details({ transactions, summary }: DetailsProps) {
   };
 
   return (
-    <div className="flex-1 grid grid-cols-12 grid-rows-[auto_1fr_1fr] gap-4 overflow-hidden animate-fade-in">
+    <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr_1fr] auto-rows-min gap-4 overflow-y-auto lg:overflow-hidden animate-fade-in pb-4">
       {/* Row 1: Summary Cards */}
-      <div className="col-span-3 glass-card !p-4">
+      <div className="lg:col-span-3 glass-card !p-4">
         <span className="text-[10px] text-white/40 uppercase font-bold">Total Gasto no Ciclo</span>
         <div className="text-2xl font-bold mt-1">R$ {(summary?.totalSpentInCycle ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
       </div>
-      <div className="col-span-3 glass-card !p-4">
+      <div className="lg:col-span-3 glass-card !p-4">
         <span className="text-[10px] text-white/40 uppercase font-bold">Média Diária Real</span>
         <div className="text-2xl font-bold mt-1">R$ {(summary?.averageDailySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
       </div>
-      <div className="col-span-3 glass-card !p-4">
+      <div className="lg:col-span-3 glass-card !p-4">
         <span className="text-[10px] text-white/40 uppercase font-bold">Categoria Dominante</span>
         <div className="text-2xl font-bold mt-1 text-brand-primary">{summary?.dominantCategory ?? 'Nenhuma'}</div>
       </div>
-      <div className="col-span-3 glass-card !p-4">
+      <div className="lg:col-span-3 glass-card !p-4">
         <span className="text-[10px] text-white/40 uppercase font-bold">Saúde do Ciclo</span>
         <div className={`text-2xl font-bold mt-1 ${summary?.spendingTrend === 'up' ? 'text-red-400' : 'text-green-400'}`}>
           {summary?.spendingTrend === 'up' ? 'Em Risco' : 'Saudável'}
@@ -52,7 +52,7 @@ export default function Details({ transactions, summary }: DetailsProps) {
       </div>
 
       {/* Row 2: Distribution & Top Categories */}
-      <div className="col-span-5 glass-card flex flex-col items-center justify-center relative">
+      <div className="lg:col-span-5 glass-card flex flex-col items-center justify-center relative min-h-[320px]">
         <h3 className="absolute top-4 left-4 font-bold text-sm flex items-center gap-2">
           <PieChartIcon size={16} /> Distribuição de Gastos
         </h3>
@@ -65,7 +65,7 @@ export default function Details({ transactions, summary }: DetailsProps) {
         </div>
       </div>
 
-      <div className="col-span-7 glass-card flex flex-col">
+      <div className="lg:col-span-7 glass-card flex flex-col min-h-[320px]">
         <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
           <Activity size={16} /> Análise por Categoria
         </h3>
@@ -88,7 +88,7 @@ export default function Details({ transactions, summary }: DetailsProps) {
       </div>
 
       {/* Row 3: Temporal Analysis & Insights */}
-      <div className="col-span-8 glass-card flex flex-col">
+      <div className="lg:col-span-8 glass-card flex flex-col min-h-[280px]">
         <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
           <TrendingUp size={16} /> Ritmo de Gasto (Semanal)
         </h3>
@@ -110,7 +110,7 @@ export default function Details({ transactions, summary }: DetailsProps) {
         </div>
       </div>
 
-      <div className="col-span-4 glass-card flex flex-col">
+      <div className="lg:col-span-4 glass-card flex flex-col">
         <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
           <Target size={16} /> Maiores Impactos
         </h3>
