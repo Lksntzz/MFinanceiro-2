@@ -63,7 +63,7 @@ export default function AuthCallback() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white p-6">
+    <div className="flex h-dvh items-center justify-center overflow-hidden bg-[#050505] text-white p-6">
       <div className="glass-card w-full max-w-md p-8 text-center space-y-3">
         {!error ? (
           <>
@@ -87,4 +87,5 @@ export default function AuthCallback() {
     </div>
   );
 }
+
 

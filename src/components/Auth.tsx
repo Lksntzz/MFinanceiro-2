@@ -36,7 +36,7 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="h-dvh flex items-center justify-center overflow-hidden p-6">
       <div className="glass-card w-full max-w-md p-8 animate-fade-in">
         <div className="flex flex-col items-center mb-8">
           <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4">
@@ -104,3 +104,4 @@ export default function Auth() {
     </div>
   );
 }
+

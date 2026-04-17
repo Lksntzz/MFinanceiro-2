@@ -3,7 +3,7 @@ import { AlertCircle, ExternalLink } from 'lucide-react';
 
 export default function ConfigRequired() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="h-dvh flex items-center justify-center overflow-hidden p-6">
       <div className="glass-card w-full max-w-lg p-8 text-center animate-fade-in">
         <div className="h-16 w-16 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500 mx-auto mb-6">
           <AlertCircle size={32} />
@@ -37,3 +37,4 @@ export default function ConfigRequired() {
     </div>
   );
 }
+

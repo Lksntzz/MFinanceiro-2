@@ -29,7 +29,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { hasError: b
   override render() {
     if (this.state.hasError) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-[#050505] p-6 text-white">
+        <div className="flex h-dvh items-center justify-center overflow-hidden bg-[#050505] p-6 text-white">
           <div className="max-w-lg rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
             <h1 className="mb-2 text-xl font-bold text-red-400">Erro ao carregar o app</h1>
             <p className="text-sm text-white/70">
@@ -51,3 +51,4 @@ createRoot(document.getElementById('root')!).render(
     </RootErrorBoundary>
   </StrictMode>,
 );
+

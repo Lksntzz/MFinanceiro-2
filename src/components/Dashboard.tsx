@@ -22,7 +22,8 @@ import {
   Info,
   Check,
   CheckCircle2,
-  Circle
+  Circle,
+  Wrench
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -42,14 +43,20 @@ import BaseFinanceira from './BaseFinanceira';
 import Cartoes from './Cartoes';
 import ImportarExtratos from './ImportarExtratos';
 
-export default function Dashboard({ user }: { user: User }) {
+export default function Dashboard({
+  user,
+  maintenanceActive = false,
+}: {
+  user: User;
+  maintenanceActive?: boolean;
+}) {
   useEffect(() => {
     clearLegacyCache();
   }, []);
 
   if (!supabase) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+      <div className="flex h-dvh items-center justify-center overflow-hidden bg-[#050505] text-white">
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
           Supabase não está configurado.
         </div>
@@ -657,7 +664,7 @@ export default function Dashboard({ user }: { user: User }) {
   ] as const;
 
   return (
-    <div className="min-h-screen w-full p-3 sm:p-4 flex flex-col gap-4 overflow-x-hidden bg-[#050505] text-white no-scrollbar">
+    <div className="min-h-dvh h-dvh w-full p-3 sm:p-4 flex flex-col gap-4 overflow-hidden bg-[#050505] text-white no-scrollbar">
       {missingTables.length > 0 && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -680,17 +687,23 @@ export default function Dashboard({ user }: { user: User }) {
         </div>
       )}
 
-      <header className="flex flex-wrap items-center gap-3 shrink-0 mb-1">
-        <div className="flex items-center gap-2">
+      <header className="flex flex-wrap lg:flex-nowrap items-center gap-3 shrink-0 mb-1">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center"><Wallet className="text-white" size={18} /></div>
           <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
+          {maintenanceActive && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-2 py-1 text-[10px] sm:text-[11px] font-bold text-yellow-200">
+              <Wrench size={12} />
+              Manutenção ativa
+            </span>
+          )}
         </div>
-	        <nav className="order-3 w-full flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar">
+	        <nav className="order-3 w-full lg:order-2 lg:w-auto lg:flex-1 lg:max-w-[760px] lg:mx-auto flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar">
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 min-h-10 rounded-lg text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{tab.label}</button>
           ))}
         </nav>
-        <div className="flex items-center gap-3 ml-auto">
+        <div className="order-2 lg:order-3 flex items-center gap-3 ml-auto lg:ml-0 shrink-0">
           <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-3 py-2 min-h-10 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity"><Plus size={16} /><span>Lançar</span></button>
           <button onClick={() => setShowSettingsModal(true)} className="p-2.5 min-h-10 min-w-10 text-white/60 hover:text-white transition-colors"><Settings size={18} /></button>
           <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-2.5 min-h-10 min-w-10 text-white/60 hover:text-white transition-colors"><LogOut size={18} /></button>
@@ -699,7 +712,7 @@ export default function Dashboard({ user }: { user: User }) {
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {activeTab === 'overview' && (
-	          <main className="flex-1 min-h-0 grid grid-cols-2 xl:grid-cols-12 xl:grid-rows-[auto_auto_1.2fr_1fr_1.2fr] auto-rows-min gap-3 sm:gap-4 overflow-y-auto xl:overflow-hidden animate-fade-in pb-4">
+	          <main className="flex-1 min-h-0 grid grid-cols-2 xl:grid-cols-12 xl:grid-rows-[minmax(72px,_0.78fr)_minmax(68px,_0.74fr)_minmax(176px,_1.85fr)_minmax(136px,_1.15fr)_minmax(146px,_1.3fr)] auto-rows-min gap-3 sm:gap-4 xl:gap-3 overflow-y-auto xl:overflow-hidden animate-fade-in pb-24 sm:pb-8 xl:pb-0">
 	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Saldo Disponível</span>
 	              <div className="text-xl sm:text-2xl font-bold">R$ {(summary?.currentBalance ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
@@ -726,7 +739,7 @@ export default function Dashboard({ user }: { user: User }) {
               <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Insight do Dia</h3><p className="text-xs text-white/70 truncate">{summary?.dailyInsight || summary?.insights?.[0] || "Mantenha o ritmo."}</p></div>
             </div>
 
-	            <div className="col-span-2 xl:col-span-8 glass-card !p-4 flex flex-col min-h-[260px] sm:min-h-[280px]">
+	            <div className="col-span-2 xl:col-span-8 glass-card !p-4 xl:!p-3.5 flex flex-col min-h-[240px] sm:min-h-[260px] xl:min-h-0">
               <h3 className="font-bold text-sm mb-2">Evolução do Saldo</h3>
               <div className="flex-1 min-h-0"><Line data={lineChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }} /></div>
             </div>
@@ -738,27 +751,55 @@ export default function Dashboard({ user }: { user: User }) {
               </div>
             </div>
 
-	            <div className="col-span-2 xl:col-span-12 glass-card !p-4 flex flex-col min-h-[260px]">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-sm">Ritmo de Gastos</h3>
+	            <div className="col-span-2 xl:col-span-12 glass-card !p-4 xl:!p-3 flex flex-col min-h-[220px] xl:min-h-0">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-3 min-w-0">
+                  <h3 className="font-bold text-sm whitespace-nowrap">Ritmo de Gastos</h3>
+                  <div className="flex items-center gap-3 text-[10px] sm:text-[11px] text-white/60">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="h-2 w-4 rounded-sm bg-red-500/70"></span>
+                      Saídas
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="h-2 w-4 rounded-sm bg-green-500/70"></span>
+                      Entradas
+                    </span>
+                  </div>
+                </div>
                 <div className="flex bg-white/5 p-1 rounded-lg overflow-x-auto no-scrollbar">
                   {(['day', 'week', 'month'] as const).map(f => (
                     <button key={f} onClick={() => setRhythmFilter(f)} className={`px-3 py-2 min-h-9 rounded-md text-[11px] sm:text-[10px] font-bold uppercase transition-all whitespace-nowrap ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false }} /></div>
+              <div className="flex-1 min-h-0 mt-0.5">
+                <Line
+                  data={rhythmChartData}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { display: false }
+                    },
+                    layout: {
+                      padding: {
+                        top: 0
+                      }
+                    }
+                  }}
+                />
+              </div>
             </div>
 
-	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 flex flex-col min-h-[190px]">
+	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 xl:!p-2.5 flex flex-col min-h-[180px] xl:min-h-0">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Top Categorias</span><PieChartIcon size={14} className="text-white/40" /></h3>
               <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">{summary?.topCategories?.map(cat => (<div key={cat.name} className="flex flex-col gap-1"><div className="flex justify-between text-[10px]"><span className="text-white/70 truncate">{cat.name}</span><span className="font-bold">R$ {cat.amount.toFixed(0)}</span></div><div className="h-1 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div></div></div>))}</div>
             </div>
-	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 flex flex-col min-h-[190px]">
+	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 xl:!p-2.5 flex flex-col min-h-[180px] xl:min-h-0">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Lançamentos</span><HistoryIcon size={14} className="text-white/40" /></h3>
               <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">{latestOverviewTransactions.map(t => (<div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5"><div className="truncate mr-2"><div className="font-bold truncate">{t.description || t.category}</div><div className="text-white/40">{format(new Date(t.date), 'dd/MM')}</div></div><div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>{t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toFixed(0)}</div></div>))}</div>
             </div>
-	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 flex flex-col min-h-[190px]">
+	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 xl:!p-2.5 flex flex-col min-h-[180px] xl:min-h-0">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Cartões</span><CreditCardIcon size={14} className="text-white/40" /></h3>
               <div className="flex-1 flex flex-col justify-center gap-3">
                 <div className="flex justify-between text-[10px]"><span className="text-white/40">Utilizado</span><span className="font-bold">R$ {overviewCardsUsed.toLocaleString('pt-BR')}</span></div>
@@ -908,4 +949,5 @@ export default function Dashboard({ user }: { user: User }) {
     </div>
   );
 }
+
 
