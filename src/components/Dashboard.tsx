@@ -36,6 +36,10 @@ import { format, subDays, isAfter, isBefore, addDays, getDaysInMonth, isSameDay,
 import { ptBR } from 'date-fns/locale';
 import { clearLegacyCache } from '../lib/clearCache';
 import NotificationCenter from './NotificationCenter';
+import AppUpdateNotification from './AppUpdateNotification';
+import { AppUpdateInfo, fetchLatestAppUpdate } from '../lib/app-updates';
+import { fetchMaintenanceConfig } from '../lib/maintenance';
+import MaintenanceScreen from './MaintenanceScreen';
 
 ChartJS.register(...registerables);
 
@@ -47,9 +51,70 @@ import Cartoes from './Cartoes';
 import ImportarExtratos from './ImportarExtratos';
 
 export default function Dashboard({ user, isMaintenanceBypass }: { user: User, isMaintenanceBypass?: boolean }) {
+  const [hardMaintenanceLock, setHardMaintenanceLock] = useState<{
+    active: boolean;
+    message?: string;
+  }>({ active: false });
+
   useEffect(() => {
     clearLegacyCache();
   }, []);
+
+  useEffect(() => {
+    if (isMaintenanceBypass) return;
+    if (!supabase) return;
+    let active = true;
+
+    const enforceMaintenanceLock = async () => {
+      try {
+        const config = await fetchMaintenanceConfig(supabase);
+        if (!active) return;
+        if (config.maintenance_mode) {
+          setHardMaintenanceLock({
+            active: true,
+            message: config.maintenance_message,
+          });
+          await supabase.auth.signOut();
+        }
+      } catch (err) {
+        console.warn('Falha ao validar manutenção no Dashboard:', err);
+      }
+    };
+
+    const channel = supabase
+      .channel(`maintenance_lock_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mf_global_settings' },
+        () => {
+          enforceMaintenanceLock();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mf_app_config' },
+        () => {
+          enforceMaintenanceLock();
+        }
+      )
+      .subscribe();
+
+    const timer = window.setInterval(enforceMaintenanceLock, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [user.id, isMaintenanceBypass]);
+
+  if (hardMaintenanceLock.active && !isMaintenanceBypass) {
+    return (
+      <MaintenanceScreen
+        message={hardMaintenanceLock.message}
+      />
+    );
+  }
 
   if (!supabase) {
     return (
@@ -72,6 +137,9 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   const [missingTables, setMissingTables] = useState<string[]>([]);
   const [showSetupHelper, setShowSetupHelper] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [showAppUpdateNotification, setShowAppUpdateNotification] = useState(false);
+  const [latestAppUpdate, setLatestAppUpdate] = useState<AppUpdateInfo | null>(null);
+  const [hasUnreadAppUpdate, setHasUnreadAppUpdate] = useState(false);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +194,51 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   useEffect(() => {
     currentUserIdRef.current = user.id;
   }, [user.id]);
+
+  const getAppUpdateReadKey = (userId: string, version: string) =>
+    `mfinanceiro:app-update:read:${userId}:${version}`;
+
+  const markAppUpdateAsRead = () => {
+    if (latestAppUpdate?.version) {
+      localStorage.setItem(getAppUpdateReadKey(user.id, latestAppUpdate.version), '1');
+      setHasUnreadAppUpdate(false);
+    }
+    setShowAppUpdateNotification(false);
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    const loadLatestAppUpdate = async () => {
+      try {
+        const update = await fetchLatestAppUpdate(db);
+        if (!active) return;
+
+        setLatestAppUpdate(update);
+
+        if (!update?.version) {
+          setHasUnreadAppUpdate(false);
+          return;
+        }
+
+        const isRead =
+          localStorage.getItem(getAppUpdateReadKey(user.id, update.version)) === '1';
+        setHasUnreadAppUpdate(!isRead);
+
+        if (!isRead) {
+          setShowAppUpdateNotification(true);
+        }
+      } catch (err) {
+        console.warn('Falha ao carregar atualizacao do app:', err);
+      }
+    };
+
+    loadLatestAppUpdate();
+
+    return () => {
+      active = false;
+    };
+  }, [db, user.id]);
 
   const parseTransactionDate = (raw: string): Date | null => {
     if (!raw) return null;
@@ -1118,6 +1231,20 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          {latestAppUpdate && (
+            <button
+              onClick={() => setShowAppUpdateNotification(true)}
+              className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"
+              title="Novidades do aplicativo"
+            >
+              <Info size={18} />
+              {hasUnreadAppUpdate && (
+                <span className="absolute -top-1 -right-1 px-1.5 h-4 min-w-4 bg-brand-primary text-[9px] text-black font-bold rounded-full flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(0,242,255,0.4)]">
+                  Novo
+                </span>
+              )}
+            </button>
+          )}
           <button 
             onClick={() => setShowNotificationCenter(true)}
             className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"
@@ -1352,6 +1479,13 @@ NOTIFY pgrst, 'reload schema';`}
         onClose={() => setShowNotificationCenter(false)}
         notifications={notifications}
         onPay={handleNotificationPay}
+      />
+
+      <AppUpdateNotification
+        isOpen={showAppUpdateNotification}
+        updateInfo={latestAppUpdate}
+        onClose={() => setShowAppUpdateNotification(false)}
+        onAcknowledge={markAppUpdateAsRead}
       />
 
       {showCardModal && (
