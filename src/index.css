@@ -11,13 +11,6 @@
   color-scheme: dark;
 }
 
-html,
-body,
-#root {
-  height: 100%;
-  overflow: hidden;
-}
-
 body {
   @apply bg-[#050505] text-white font-sans antialiased overflow-hidden;
   background: radial-gradient(circle at top right, #1a1a2e 0%, #050505 100%);

@@ -32,43 +32,43 @@ function isMissingSchemaError(error: any): boolean {
 async function readFromGlobalSettingsTable(
   db: SupabaseClient
 ): Promise<MaintenanceConfig | null> {
-  const scoped = await db
+  const { data, error } = await db
     .from('mf_global_settings')
     .select('maintenance_mode, maintenance_message')
     .eq('key', 'global')
     .maybeSingle();
 
-  if (scoped.error) {
-    if (isMissingSchemaError(scoped.error)) return null;
-    throw scoped.error;
+  if (error) {
+    if (isMissingSchemaError(error)) return null;
+    throw error;
   }
 
   // Compatibilidade: se nao existir a linha key='global',
   // tenta ler a linha mais recente da tabela.
-  if (!scoped.data) {
-    const fallback = await db
+  if (!data) {
+    const { data: fallback, error: fallbackError } = await db
       .from('mf_global_settings')
       .select('maintenance_mode, maintenance_message')
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (fallback.error) {
-      if (isMissingSchemaError(fallback.error)) return null;
-      throw fallback.error;
+    if (fallbackError) {
+      if (isMissingSchemaError(fallbackError)) return null;
+      throw fallbackError;
     }
 
-    if (!fallback.data) return null;
+    if (!fallback) return null;
 
     return {
-      maintenance_mode: parseBoolean((fallback.data as any).maintenance_mode),
-      maintenance_message: parseMessage((fallback.data as any).maintenance_message),
+      maintenance_mode: parseBoolean((fallback as any).maintenance_mode),
+      maintenance_message: parseMessage((fallback as any).maintenance_message),
     };
   }
 
   return {
-    maintenance_mode: parseBoolean((scoped.data as any).maintenance_mode),
-    maintenance_message: parseMessage((scoped.data as any).maintenance_message),
+    maintenance_mode: parseBoolean((data as any).maintenance_mode),
+    maintenance_message: parseMessage((data as any).maintenance_message),
   };
 }
 
@@ -104,8 +104,12 @@ export async function fetchMaintenanceConfig(
   ];
 
   for (const read of strategies) {
-    const result = await read();
-    if (result) return result;
+    try {
+      const result = await read();
+      if (result) return result;
+    } catch (e) {
+      console.warn('Maintenance check strategy failed:', e);
+    }
   }
 
   return {
@@ -133,7 +137,7 @@ export function isMaintenanceAdmin(session: Session | null): boolean {
   if (session.user.user_metadata?.is_admin === true) return true;
 
   const adminEmails = parseAdminEmails(
-    import.meta.env.VITE_MAINTENANCE_ADMIN_EMAILS
+    (import.meta as any).env.VITE_MAINTENANCE_ADMIN_EMAILS
   );
   const userEmail = String(session.user.email || '').toLowerCase();
   return userEmail ? adminEmails.has(userEmail) : false;

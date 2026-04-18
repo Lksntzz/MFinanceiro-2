@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Transaction, UserSettings, FinanceSummary, FixedBill, DailyBill, CreditCard, CardInstallment, ImportedTransaction } from '../types';
 import { calculateFinanceSummary } from '../lib/finance-calculations';
@@ -14,6 +14,7 @@ import {
   Settings, 
   LogOut,
   AlertCircle,
+  ShieldAlert,
   PieChart as PieChartIcon,
   History as HistoryIcon,
   CreditCard as CreditCardIcon,
@@ -23,16 +24,18 @@ import {
   Check,
   CheckCircle2,
   Circle,
-  Wrench
+  Bell,
+  Pencil
 } from 'lucide-react';
 import {
   Chart as ChartJS,
   registerables
 } from 'chart.js';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
-import { format, subDays, isAfter, isBefore, addDays, getDaysInMonth } from 'date-fns';
+import { format, subDays, isAfter, isBefore, addDays, getDaysInMonth, isSameDay, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { clearLegacyCache } from '../lib/clearCache';
+import NotificationCenter from './NotificationCenter';
 
 ChartJS.register(...registerables);
 
@@ -43,20 +46,14 @@ import BaseFinanceira from './BaseFinanceira';
 import Cartoes from './Cartoes';
 import ImportarExtratos from './ImportarExtratos';
 
-export default function Dashboard({
-  user,
-  maintenanceActive = false,
-}: {
-  user: User;
-  maintenanceActive?: boolean;
-}) {
+export default function Dashboard({ user, isMaintenanceBypass }: { user: User, isMaintenanceBypass?: boolean }) {
   useEffect(() => {
     clearLegacyCache();
   }, []);
 
   if (!supabase) {
     return (
-      <div className="flex h-dvh items-center justify-center overflow-hidden bg-[#050505] text-white">
+      <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
           Supabase não está configurado.
         </div>
@@ -74,6 +71,7 @@ export default function Dashboard({
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
   const [missingTables, setMissingTables] = useState<string[]>([]);
   const [showSetupHelper, setShowSetupHelper] = useState(false);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +84,8 @@ export default function Dashboard({
     status: 'paid' as 'paid' | 'pending'
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [tempBalance, setTempBalance] = useState('');
   const [editSettings, setEditSettings] = useState<Partial<UserSettings>>({});
   const [rhythmFilter, setRhythmFilter] = useState<'day' | 'week' | 'month'>('day');
   const [showSalaryConfirmModal, setShowSalaryConfirmModal] = useState(false);
@@ -106,6 +106,11 @@ export default function Dashboard({
   });
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [editingInstallment, setEditingInstallment] = useState<CardInstallment | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    title: string;
+    message: string;
+    onConfirmed: () => void;
+  } | null>(null);
   const [installmentForm, setInstallmentForm] = useState({
     card_id: '',
     description: '',
@@ -113,6 +118,7 @@ export default function Dashboard({
     monthly_amount: '',
     current_installment: '1',
     total_installments: '1',
+    due_day: '1'
   });
   const currentUserIdRef = useRef(user.id);
   const fetchVersionRef = useRef(0);
@@ -417,12 +423,17 @@ export default function Dashboard({
         monthly_amount: Number(inst.monthly_amount) || Number(inst.valor_mensal) || 0,
         current_installment: Number(inst.current_installment) || Number(inst.parcela_atual) || 1,
         total_installments: Number(inst.total_installments) || Number(inst.total_parcelas) || 1,
+        due_day: Number(inst.due_day) || 1,
+        last_paid_month: inst.last_paid_month,
         card_id: inst.card_id
       }));
       if (!isStale()) setInstallments(normalizedInst);
 
       const { data: daily } = await db.from('mf_daily_bills').select('*').eq('user_id', user.id);
       if (!isStale()) setDailyBills(daily || []);
+
+      const { data: fixedData } = await db.from('mf_fixed_bills').select('*').eq('user_id', user.id);
+      if (!isStale()) setFixedBills(fixedData || []);
     } catch (e: any) {
       console.error('Fetch error:', e);
       if (e.code === 'PGRST205' || e.code === 'PGRST204') detectedMissing.push('database structure');
@@ -435,31 +446,82 @@ export default function Dashboard({
 
   async function handleToggleBillStatus(id: string) {
     const bill = fixedBills.find(b => b.id === id);
-    if (!bill || !settings) return;
-    const wasPaid = bill.status === 'paid';
-    let paidDateForLedger = new Date();
-    if (!wasPaid) {
-      const paidDateInput = window.prompt(`Informe a data do pagamento de "${bill.name}" (dd/mm/aaaa):`, format(new Date(), 'dd/MM/yyyy'));
-      if (!paidDateInput) return;
-      const parts = paidDateInput.split('/');
-      if (parts.length === 3) paidDateForLedger = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0, 0);
-      if (isNaN(paidDateForLedger.getTime())) { alert('Data inválida'); return; }
+    if (!bill || !settings || !user) return;
+    
+    const today = new Date();
+    const currentMonth = format(today, 'yyyy-MM');
+    const isAlreadyPaidThisMonth = bill.last_paid_month === currentMonth;
+
+    let targetMonth = currentMonth;
+    let message = `Deseja baixar o pagamento da conta "${bill.name}"?\n\nValor: R$ ${Math.abs(bill.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nEste valor será deduzido do seu saldo atual.`;
+
+    if (isAlreadyPaidThisMonth) {
+      const nextMonthDate = addMonths(today, 1);
+      targetMonth = format(nextMonthDate, 'yyyy-MM');
+      message = `Você já pagou esta conta este mês (${format(today, 'MMMM', { locale: ptBR })}).\n\nDeseja antecipar o pagamento do próximo mês (${format(nextMonthDate, 'MMMM', { locale: ptBR })})?\n\nValor: R$ ${Math.abs(bill.amount).toLocaleString('pt-BR')}`;
     }
-    const balanceDelta = wasPaid ? Math.abs(bill.amount) : -Math.abs(bill.amount);
-    try {
-      await db.from('mf_fixed_bills').update({ status: wasPaid ? 'pending' : 'paid' }).eq('id', id);
-      await resilientLedgerInsert({ user_id: user.id, amount: balanceDelta, category: 'Contas Fixas', description: (wasPaid ? 'Estorno: ' : 'Pagam.: ') + bill.name, type: balanceDelta >= 0 ? 'income' : 'expense', date: paidDateForLedger.toISOString() });
-      const nextBalance = (Number(settings.current_balance) || 0) + balanceDelta;
-      await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-      fetchData();
-    } catch (err) { console.error(err); }
+
+    // Trava de saldo insuficiente
+    if ((Number(settings.current_balance) || 0) < Math.abs(bill.amount)) {
+      alert(`Saldo Insuficiente!\n\nVocê precisa de R$ ${Math.abs(bill.amount).toLocaleString('pt-BR')} para pagar esta conta, mas seu saldo atual é de R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}.`);
+      return;
+    }
+
+    setConfirmConfig({
+      title: isAlreadyPaidThisMonth ? 'Antecipar Pagamento' : 'Confirmar Pagamento',
+      message: message,
+      onConfirmed: async () => {
+        try {
+          setLoading(true);
+          const balanceDelta = -Math.abs(bill.amount);
+          
+          // 1. Registro no Histórico
+          await resilientLedgerInsert({ 
+            user_id: user.id, 
+            amount: balanceDelta, 
+            category: bill.category || 'Contas Fixas', 
+            description: `Pagam.: ${bill.name} (${targetMonth})`, 
+            type: 'expense', 
+            date: today.toISOString() 
+          });
+
+          // 2. Atualiza a conta fixa
+          await db.from('mf_fixed_bills').update({ 
+            status: 'paid',
+            last_paid_month: targetMonth 
+          }).eq('id', id);
+
+          // 3. Atualiza saldo
+          const nextBalance = (Number(settings.current_balance) || 0) + balanceDelta;
+          await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
+          
+          if (settings) setSettings({ ...settings, current_balance: nextBalance });
+          fetchData();
+        } catch (err) { 
+          console.error('[ERROR] handleToggleBillStatus:', err);
+          alert('Erro ao processar pagamento.');
+        } finally {
+          setLoading(false);
+          setConfirmConfig(null);
+        }
+      }
+    });
   }
 
   async function handleAddTransaction(e: React.FormEvent) {
     e.preventDefault();
     try {
       const amt = parseFloat(newTransaction.amount);
+      if (isNaN(amt)) return;
+
       const finalAmt = newTransaction.type === 'expense' ? -Math.abs(amt) : Math.abs(amt);
+      
+      // Trava de saldo insuficiente para despesas manuais pagas
+      if (newTransaction.type === 'expense' && newTransaction.status === 'paid' && (Number(settings.current_balance) || 0) < Math.abs(amt)) {
+        alert(`Saldo Insuficiente!\n\nSeu saldo atual é R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}, insuficiente para este lançamento de R$ ${Math.abs(amt).toLocaleString('pt-BR')}.`);
+        return;
+      }
+
       const { success } = await resilientLedgerInsert({ user_id: user.id, amount: finalAmt, category: newTransaction.category, description: newTransaction.description, type: newTransaction.type, date: new Date().toISOString() });
       if (success && settings) {
         const next = settings.current_balance + finalAmt;
@@ -473,23 +535,75 @@ export default function Dashboard({
   }
 
   async function handleDeleteTransaction(id: string) {
-    try {
-      await db.from('mf_finance_ledger_entries').delete().eq('id', id);
-      fetchData();
-    } catch (err) { console.error(err); }
+    const transaction = transactions.find(t => t.id === id);
+    if (!transaction || !settings || !user) return;
+
+    setConfirmConfig({
+      title: 'Excluir Lançamento',
+      message: `Deseja realmente excluir "${transaction.description}"?\n\nO valor de R$ ${Math.abs(transaction.amount).toLocaleString('pt-BR')} será ${transaction.amount < 0 ? 'devolvido ao' : 'removido do'} seu saldo.`,
+      onConfirmed: async () => {
+        try {
+          // 1. Reverte o saldo
+          const reverseAmount = -transaction.amount; // Se era -100 (despesa), vira +100
+          const nextBalance = (Number(settings.current_balance) || 0) + reverseAmount;
+          
+          await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
+          
+          // 2. Deleta a transação
+          await db.from('mf_finance_ledger_entries').delete().eq('id', id);
+          
+          setSettings({ ...settings, current_balance: nextBalance });
+          fetchData();
+        } catch (err) { 
+          console.error('Erro ao excluir transação:', err);
+          alert('Falha ao processar a exclusão.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   }
 
   async function handleDeleteAllTransactions() {
-    if (!window.confirm('Apagar tudo?')) return;
-    try {
-      await db.from('mf_finance_ledger_entries').delete().eq('user_id', user.id);
-      fetchData();
-    } catch (err) { console.error(err); }
+    setConfirmConfig({
+      title: 'Limpar Histórico e Zerar Saldo',
+      message: 'Tem certeza que deseja apagar TODOS os lançamentos do histórico? Isso também zerará seu saldo disponível para R$ 0,00.',
+      onConfirmed: async () => {
+        try {
+          // 1. Zerar saldo no banco
+          await db.from('mf_user_settings').update({ current_balance: 0 }).eq('user_id', user.id);
+          
+          // 2. Apagar todas as transações
+          await db.from('mf_finance_ledger_entries').delete().eq('user_id', user.id);
+          
+          // 3. Atualizar estado local
+          if (settings) setSettings({ ...settings, current_balance: 0 });
+          fetchData();
+        } catch (err) { 
+          console.error('[ERROR] Falha ao limpar histórico:', err);
+          alert('Erro ao processar limpeza total.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   }
 
   const openAddCardModal = () => { setEditingCard(null); setCardForm({ name: '', brand: '', limit: '', used: '0', closing_day: '1', due_day: '10' }); setShowCardModal(true); };
   const openEditCardModal = (card: CreditCard) => { setEditingCard(card); setCardForm({ name: card.name, brand: card.brand, limit: card.limit.toString(), used: card.used.toString(), closing_day: card.closing_day.toString(), due_day: card.due_day.toString() }); setShowCardModal(true); };
-  const handleDeleteCard = async (card: CreditCard) => { if (window.confirm(`Deseja excluir o cartão ${card.name}?`)) { await db.from('mf_credit_cards').delete().eq('id', card.id); fetchData(); } };
+  const handleDeleteCard = async (card: CreditCard) => { 
+    setConfirmConfig({
+      title: 'Excluir Cartão',
+      message: `Deseja realmente excluir o cartão "${card.name}"?\n\nOs parcelamentos vinculados a este cartão não serão apagados, mas ficarão sem cartão associado.`,
+      onConfirmed: async () => {
+        try {
+          await db.from('mf_credit_cards').delete().eq('id', card.id); 
+          fetchData(); 
+        } catch (err) { console.error(err); }
+        setConfirmConfig(null);
+      }
+    });
+  };
   
   const handleSaveCard = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -527,7 +641,8 @@ export default function Dashboard({
       total_amount: '', 
       monthly_amount: '', 
       total_installments: '1', 
-      current_installment: '1' 
+      current_installment: '1',
+      due_day: '1'
     }); 
     setShowInstallmentModal(true); 
   };
@@ -535,27 +650,104 @@ export default function Dashboard({
   const openEditInstallmentModal = (inst: CardInstallment) => { 
     setEditingInstallment(inst); 
     setInstallmentForm({ 
-      card_id: inst.card_id, 
+      card_id: inst.card_id || 'boleto', 
       description: inst.description, 
       total_amount: inst.total_amount.toString(), 
       monthly_amount: inst.monthly_amount.toString(), 
       total_installments: inst.total_installments.toString(), 
-      current_installment: inst.current_installment.toString() 
+      current_installment: inst.current_installment.toString(),
+      due_day: (inst.due_day || 1).toString()
     }); 
     setShowInstallmentModal(true); 
   };
+
+  const handlePayInstallment = async (inst: CardInstallment) => {
+    if (!settings || !user) {
+      alert('Sessão ou configurações não carregadas. Tente atualizar a página.');
+      return;
+    }
+
+    const today = new Date();
+    const currentMonth = format(today, 'yyyy-MM');
+    const isAlreadyPaidThisMonth = inst.last_paid_month === currentMonth;
+    
+    let targetMonth = currentMonth;
+    const monthlyAmount = Number(inst.monthly_amount) || 0;
+    let message = `Deseja baixar o pagamento da parcela ${inst.current_installment}/${inst.total_installments} de "${inst.description}"?\n\nValor: R$ ${monthlyAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nEste valor será deduzido do seu saldo atual.`;
+
+    if (isAlreadyPaidThisMonth) {
+      const nextMonthDate = addMonths(today, 1);
+      targetMonth = format(nextMonthDate, 'yyyy-MM');
+      message = `Você já pagou a parcela deste mês (${format(today, 'MMMM', { locale: ptBR })}).\n\nDeseja antecipar o pagamento da próxima parcela (${format(nextMonthDate, 'MMMM', { locale: ptBR })})?\n\nValor: R$ ${monthlyAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    }
+    
+    // Trava de saldo insuficiente
+    if ((Number(settings.current_balance) || 0) < monthlyAmount) {
+      alert(`Saldo Insuficiente!\n\nO valor da parcela é R$ ${monthlyAmount.toLocaleString('pt-BR')}, mas seu saldo atual é de R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}.`);
+      return;
+    }
+
+    setConfirmConfig({
+      title: isAlreadyPaidThisMonth ? 'Antecipar Pagamento' : 'Confirmar Pagamento',
+      message: message,
+      onConfirmed: async () => {
+        try {
+          setLoading(true);
+          const amount = -Math.abs(monthlyAmount);
+          
+          // 1. Registro no Histórico
+          await resilientLedgerInsert({
+            user_id: user.id,
+            amount: amount,
+            category: 'Parcelamentos',
+            description: `Pagam. Parcela ${inst.current_installment}/${inst.total_installments}: ${inst.description} (${targetMonth})`,
+            type: 'expense',
+            date: today.toISOString()
+          });
+
+          // 2. Atualiza Saldo
+          const nextBalance = (Number(settings.current_balance) || 0) + amount;
+          await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
+          
+          // 3. Atualiza o Parcelamento
+          const nextInstallmentNum = inst.current_installment + 1;
+          const { error: instError } = await db.from('mf_card_installments').update({
+            last_paid_month: targetMonth,
+            current_installment: nextInstallmentNum
+          }).eq('id', inst.id).eq('user_id', user.id);
+
+          if (instError) throw instError;
+
+          setSettings(prev => prev ? { ...prev, current_balance: nextBalance } : null);
+          fetchData();
+        } catch (err: any) {
+          console.error('[ERROR] handlePayInstallment:', err);
+          alert(`Erro: ${err.message || 'Falha ao processar pagamento.'}`);
+        } finally {
+          setLoading(false);
+          setConfirmConfig(null);
+        }
+      }
+    });
+  };
   
   const handleDeleteInstallment = async (inst: CardInstallment) => { 
-    if (window.confirm(`Excluir parcelamento ${inst.description}?`)) { 
-      try {
-        const { error } = await db.from('mf_card_installments').delete().eq('id', inst.id); 
-        if (error) throw error;
-        fetchData(); 
-      } catch (err: any) {
-        console.error('Error deleting installment:', err);
-        setError('Falha ao excluir parcelamento.');
+    setConfirmConfig({
+      title: 'Excluir Parcelamento',
+      message: `Deseja realmente excluir o parcelamento "${inst.description}"?`,
+      onConfirmed: async () => {
+        try {
+          const { error } = await db.from('mf_card_installments').delete().eq('id', inst.id); 
+          if (error) throw error;
+          fetchData(); 
+        } catch (err: any) {
+          console.error('Error deleting installment:', err);
+          setError('Falha ao excluir parcelamento.');
+        } finally {
+          setConfirmConfig(null);
+        }
       }
-    } 
+    });
   };
 
   const handleSaveInstallment = async (e: React.FormEvent) => {
@@ -567,7 +759,8 @@ export default function Dashboard({
       total_amount: Number(installmentForm.total_amount), 
       monthly_amount: Number(installmentForm.monthly_amount), 
       current_installment: Number(installmentForm.current_installment), 
-      total_installments: Number(installmentForm.total_installments) 
+      total_installments: Number(installmentForm.total_installments),
+      due_day: Number(installmentForm.due_day) 
     };
 
     try {
@@ -575,34 +768,17 @@ export default function Dashboard({
         const { error } = await db.from('mf_card_installments').update(payload).eq('id', editingInstallment.id);
         if (error) throw error;
       } else {
-        // Try direct insert
         const { error } = await db.from('mf_card_installments').insert(payload);
-        
-        if (error) {
-          console.warn('Direct insert failed, trying resilient strategy for installments:', error);
-          
-          // Strategy: Try Portuguese column names if English fails
-          const ptPayload = {
-            user_id: user.id,
-            card_id: payload.card_id,
-            descricao: payload.description,
-            valor_total: payload.total_amount,
-            valor_mensal: payload.monthly_amount,
-            parcela_atual: payload.current_installment,
-            total_parcelas: payload.total_installments
-          };
-          
-          const { error: ptError } = await db.from('mf_card_installments').insert(ptPayload);
-          if (ptError) throw ptError;
-        }
+        if (error) throw error;
       }
       
       setShowInstallmentModal(false); 
       fetchData();
     } catch (err: any) {
       console.error('Error saving installment:', err);
-      setError('Falha ao salvar parcelamento. Verifique sua conexão ou se a tabela existe.');
-      // Don't close modal so user doesn't lose data
+      // Extrai a mensagem de erro real ou fornece uma alternativa clara
+      const errorMessage = err.message || JSON.stringify(err) || 'Falha ao conectar com o banco de dados.';
+      setError(`Erro ao salvar: ${errorMessage}`);
     }
   };
 
@@ -619,6 +795,161 @@ export default function Dashboard({
     } catch (err) { console.error(err); } finally { setSalaryPromptProcessing(false); }
   }
 
+  const notifications = useMemo(() => {
+    const alerts: any[] = [];
+    const today = new Date();
+    const todayDay = today.getDate();
+    const currentMonthStr = format(today, 'yyyy-MM');
+
+    // Helper para calcular próximo vencimento
+    const getNextDueDate = (dueDay: number, lastPaidMonth?: string) => {
+      const d = new Date(today.getFullYear(), today.getMonth(), dueDay, 12, 0, 0, 0);
+      if (lastPaidMonth === currentMonthStr) {
+        return addMonths(d, 1);
+      }
+      return d;
+    };
+
+    // 1. Contas Fixas
+    fixedBills.forEach(bill => {
+      const nextDate = getNextDueDate(bill.due_day || 1, bill.last_paid_month);
+      const isOverdue = isBefore(nextDate, today) && !isSameDay(nextDate, today) && bill.last_paid_month !== currentMonthStr;
+      const isDueToday = isSameDay(nextDate, today);
+      
+      // Mostra todas as contas fixas para que o usuário veja o "próximo boleto"
+      alerts.push({
+        id: `fixed-${bill.id}`,
+        type: 'fixed',
+        title: bill.name,
+        amount: bill.amount,
+        dueDate: bill.due_day,
+        nextDueDateLabel: format(nextDate, "dd 'de' MMMM", { locale: ptBR }),
+        status: isDueToday ? 'due_today' : (isOverdue ? 'overdue' : 'pending'),
+        originalData: bill
+      });
+    });
+
+    // 2. Parcelamentos
+    installments.forEach(inst => {
+      const isFinished = inst.current_installment > inst.total_installments;
+      if (!isFinished) {
+        const nextDate = getNextDueDate(inst.due_day || 1, inst.last_paid_month);
+        const isOverdue = isBefore(nextDate, today) && !isSameDay(nextDate, today) && inst.last_paid_month !== currentMonthStr;
+        const isDueToday = isSameDay(nextDate, today);
+
+        alerts.push({
+          id: `inst-${inst.id}`,
+          type: 'installment',
+          title: inst.description,
+          amount: inst.monthly_amount,
+          dueDate: inst.due_day,
+          nextDueDateLabel: format(nextDate, "dd 'de' MMMM", { locale: ptBR }),
+          status: isDueToday ? 'due_today' : (isOverdue ? 'overdue' : 'pending'),
+          originalData: inst
+        });
+      }
+    });
+
+    // 3. Cartões
+    cards.forEach(card => {
+      if (card.used > 0) {
+        const nextDate = new Date(today.getFullYear(), today.getMonth(), card.due_day, 12, 0, 0, 0);
+        const isOverdue = isBefore(nextDate, today) && !isSameDay(nextDate, today);
+        const isDueToday = isSameDay(nextDate, today);
+
+        alerts.push({
+          id: `card-${card.id}`,
+          type: 'card',
+          title: `Fatura: ${card.name}`,
+          amount: card.used,
+          dueDate: card.due_day,
+          nextDueDateLabel: format(nextDate, "dd 'de' MMMM", { locale: ptBR }),
+          status: isDueToday ? 'due_today' : (isOverdue ? 'overdue' : 'pending'),
+          originalData: card
+        });
+      }
+    });
+
+    return alerts.sort((a, b) => {
+        // Ordena por urgência primário
+        const priority = { overdue: 0, due_today: 1, pending: 2 };
+        if (priority[a.status] !== priority[b.status]) return priority[a.status] - priority[b.status];
+        return a.dueDate - b.dueDate;
+    });
+  }, [fixedBills, installments, cards]);
+
+  const handlePayCardBill = async (card: CreditCard) => {
+    if (!settings || !user) return;
+    
+    const amountToPay = Number(card.used) || 0;
+    if (amountToPay <= 0) {
+      alert('Não há saldo devedor neste cartão.');
+      return;
+    }
+
+    // Trava de saldo insuficiente
+    if ((Number(settings.current_balance) || 0) < amountToPay) {
+      alert(`Saldo Insuficiente!\n\nA fatura deste cartão é R$ ${amountToPay.toLocaleString('pt-BR')}, mas seu saldo atual é de R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}.`);
+      return;
+    }
+
+    const confirmMsg = `Deseja baixar o pagamento total da fatura do cartão "${card.name}"?\n\nValor: R$ ${amountToPay.toLocaleString('pt-BR')}\nEste valor será deduzido do seu saldo atual.`;
+
+    setConfirmConfig({
+      title: 'Confirmar Pagamento de Fatura',
+      message: confirmMsg,
+      onConfirmed: async () => {
+        try {
+          setLoading(true);
+          const today = new Date();
+          
+          // 1. Registro no Histórico
+          const ledgerResult = await resilientLedgerInsert({
+            user_id: user.id,
+            amount: -amountToPay,
+            category: 'Cartão de Crédito',
+            description: `Pagamento Fatura: ${card.name}`,
+            type: 'expense',
+            date: today.toISOString()
+          });
+
+          if (ledgerResult.error) throw new Error(ledgerResult.error);
+
+          // 2. Abate do Saldo
+          const nextBalance = (Number(settings.current_balance) || 0) - amountToPay;
+          const { error: settingsError } = await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
+          if (settingsError) throw settingsError;
+
+          // 3. Zera o uso do cartão
+          const { error: cardError } = await db.from('mf_credit_cards').update({ used: 0 }).eq('id', card.id);
+          if (cardError) throw cardError;
+
+          setSettings(prev => prev ? { ...prev, current_balance: nextBalance } : null);
+          alert('Pagamento da fatura realizado com sucesso!');
+          fetchData();
+        } catch (err: any) {
+          console.error('Erro pagando fatura:', err);
+          alert(`Falha ao processar pagamento: ${err.message || 'Erro interno.'}`);
+        } finally {
+          setLoading(false);
+          setConfirmConfig(null);
+        }
+      }
+    });
+  };
+
+  const handleNotificationPay = async (item: any) => {
+    if (item.type === 'installment') {
+      await handlePayInstallment(item.originalData);
+    } else if (item.type === 'fixed') {
+      await handleToggleBillStatus(item.originalData.id);
+    } else if (item.type === 'card') {
+      await handlePayCardBill(item.originalData);
+    }
+  };
+
+  const urgentNotifications = useMemo(() => notifications.filter(n => n.status === 'due_today' || n.status === 'overdue'), [notifications]);
+
   const latestOverviewTransactions = [...transactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
   const overviewCardsUsed = cards.reduce((s, c) => s + Number(c.used), 0);
   const overviewCardsLimit = cards.reduce((s, c) => s + Number(c.limit), 0);
@@ -627,9 +958,16 @@ export default function Dashboard({
 
   const timelineDays = 30;
   const dailyMap = new Map();
-  const latestDate = transactions.length > 0 ? new Date(Math.max(...transactions.map(t => new Date(t.date).getTime()))) : new Date();
-  const startDate = subDays(latestDate, timelineDays - 1);
-  for (let d = startDate; !isAfter(d, latestDate); d = addDays(d, 1)) dailyMap.set(format(d, 'yyyy-MM-dd'), { net: 0, inflow: 0 });
+  const today = new Date();
+  const todayKey = format(today, 'yyyy-MM-dd');
+  const startDate = subDays(today, timelineDays - 1);
+  
+  // Inicializa o mapa com os últimos 30 dias
+  for (let d = startDate; !isAfter(d, today); d = addDays(d, 1)) {
+    dailyMap.set(format(d, 'yyyy-MM-dd'), { net: 0, inflow: 0 });
+  }
+
+  // Preenche com as transações
   transactions.forEach(t => {
     const k = t.date.includes('T') ? t.date.split('T')[0] : t.date;
     if (dailyMap.has(k)) {
@@ -637,34 +975,110 @@ export default function Dashboard({
       if (t.amount > 0) dailyMap.get(k).inflow += t.amount;
     }
   });
-  const balanceSeries = []; let rb = (settings?.current_balance || 0) - Array.from(dailyMap.values()).reduce((s, v) => s + v.net, 0);
-  dailyMap.forEach(v => { rb += v.net; balanceSeries.push(Number(rb.toFixed(2))); });
+
+  // Calcula a série de saldo real de forma progressiva respeitando o saldo atual
+  const dailyKeys = Array.from(dailyMap.keys());
+  let firstActivityIdx = -1;
+  
+  // Encontra o dia da primeira transação no período
+  for (let i = 0; i < dailyKeys.length; i++) {
+    const dayData = dailyMap.get(dailyKeys[i]);
+    if (dayData.net !== 0 || dayData.inflow !== 0) {
+      firstActivityIdx = i;
+      break;
+    }
+  }
+
+  // Se não houve transação, a "atividade" é o ajuste manual de hoje
+  if (firstActivityIdx === -1) {
+    firstActivityIdx = dailyKeys.length - 1;
+  }
+
+  const balanceSeries: number[] = new Array(dailyKeys.length).fill(0);
+  let movingBalance = settings?.current_balance || 0;
+
+  // Preenche de trás para frente, do dia atual até a primeira atividade encontrada
+  // Isso garante que o ponto final (hoje) seja exatamente o saldo atual configurado
+  for (let i = dailyKeys.length - 1; i >= firstActivityIdx; i--) {
+    balanceSeries[i] = Number(Math.max(0, movingBalance).toFixed(2));
+    movingBalance -= dailyMap.get(dailyKeys[i]).net;
+  }
 
   const lineChartData = {
-    labels: Array.from(dailyMap.keys()).map(k => format(new Date(k + 'T12:00:00'), 'dd/MM')),
-    datasets: [{ label: 'Saldo', data: balanceSeries, borderColor: '#00f2ff', backgroundColor: 'rgba(0, 242, 255, 0.1)', fill: true, tension: 0.35 }]
+    labels: dailyKeys.map(k => format(new Date(k + 'T12:00:00'), 'dd/MM')),
+    datasets: [{ 
+      label: 'Saldo', 
+      data: balanceSeries, 
+      borderColor: '#00f2ff', 
+      backgroundColor: 'rgba(0, 242, 255, 0.1)', 
+      fill: true, 
+      tension: 0.35,
+      pointRadius: 2,
+      pointHoverRadius: 6,
+      borderWidth: 2
+    }]
   };
 
   const rhythmChartData = {
     labels: summary?.rhythm?.[rhythmFilter]?.labels || [],
     datasets: [
-      { label: 'Saídas', data: summary?.rhythm?.[rhythmFilter]?.data || [], backgroundColor: 'rgba(239, 68, 68, 0.5)', borderColor: '#ef4444', borderWidth: 1, borderRadius: 4 },
-      { label: 'Entradas', data: summary?.rhythm?.[rhythmFilter]?.incomeData || [], backgroundColor: 'rgba(34, 197, 94, 0.5)', borderColor: '#22c55e', borderWidth: 1, borderRadius: 4 }
+      { 
+        label: 'Saídas', 
+        data: summary?.rhythm?.[rhythmFilter]?.data || [], 
+        borderColor: '#ef4444', 
+        backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+        borderWidth: 2, 
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4
+      },
+      { 
+        label: 'Entradas', 
+        data: summary?.rhythm?.[rhythmFilter]?.incomeData || [], 
+        borderColor: '#22c55e', 
+        backgroundColor: 'rgba(34, 197, 94, 0.1)', 
+        borderWidth: 2, 
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4
+      }
     ]
+  };
+
+  const handleUpdateBalance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !settings) return;
+    
+    try {
+      setLoading(true);
+      const newAmount = parseFloat(tempBalance) || 0;
+      const { error } = await db.from('mf_user_settings').update({ current_balance: newAmount }).eq('user_id', user.id);
+      if (error) throw error;
+      
+      setSettings({ ...settings, current_balance: newAmount });
+      setShowBalanceModal(false);
+      fetchData();
+    } catch (err: any) {
+      console.error('Erro ao atualizar saldo:', err);
+      alert('Falha ao atualizar saldo.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const tabs = [
     { id: 'overview', label: 'Visão Geral' },
     { id: 'details', label: 'Detalhes' },
     { id: 'insights', label: 'Insights' },
-    { id: 'base', label: 'Base Financeira' },
     { id: 'history', label: 'Histórico' },
     { id: 'cards', label: 'Cartões' },
     { id: 'import', label: 'Importar' },
   ] as const;
 
   return (
-    <div className="min-h-dvh h-dvh w-full p-3 sm:p-4 flex flex-col gap-4 overflow-hidden bg-[#050505] text-white no-scrollbar">
+    <div className="h-screen w-full p-4 flex flex-col gap-4 overflow-hidden bg-[#050505] text-white no-scrollbar">
       {missingTables.length > 0 && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -687,63 +1101,110 @@ export default function Dashboard({
         </div>
       )}
 
-      <header className="flex flex-wrap lg:flex-nowrap items-center gap-3 shrink-0 mb-1">
-        <div className="flex items-center gap-2 shrink-0">
+      <header className="flex items-center justify-between shrink-0 mb-2">
+        <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center"><Wallet className="text-white" size={18} /></div>
           <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
-          {maintenanceActive && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-2 py-1 text-[10px] sm:text-[11px] font-bold text-yellow-200">
-              <Wrench size={12} />
-              Manutenção ativa
-            </span>
+          {isMaintenanceBypass && (
+            <div className="ml-2 flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-full animate-pulse">
+              <ShieldAlert size={12} className="text-yellow-500" />
+              <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider">Manutenção ativa</span>
+            </div>
           )}
         </div>
-	        <nav className="order-3 w-full lg:order-2 lg:w-auto lg:flex-1 lg:max-w-[760px] lg:mx-auto flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar">
+        <nav className="flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar max-w-[700px] mx-4">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 min-h-10 rounded-lg text-sm sm:text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{tab.label}</button>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{tab.label}</button>
           ))}
         </nav>
-        <div className="order-2 lg:order-3 flex items-center gap-3 ml-auto lg:ml-0 shrink-0">
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-3 py-2 min-h-10 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity"><Plus size={16} /><span>Lançar</span></button>
-          <button onClick={() => setShowSettingsModal(true)} className="p-2.5 min-h-10 min-w-10 text-white/60 hover:text-white transition-colors"><Settings size={18} /></button>
-          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-2.5 min-h-10 min-w-10 text-white/60 hover:text-white transition-colors"><LogOut size={18} /></button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowNotificationCenter(true)}
+            className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"
+          >
+            <Bell size={18} />
+            {urgentNotifications && urgentNotifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 w-4 bg-brand-primary text-[10px] text-black font-bold rounded-full flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(0,242,255,0.4)]">
+                {urgentNotifications.length}
+              </span>
+            )}
+          </button>
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-3 py-1.5 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity"><Plus size={16} /><span>Lançar</span></button>
+          <button 
+            onClick={() => setActiveTab('base')} 
+            className={`p-1.5 transition-colors ${activeTab === 'base' ? 'text-brand-primary' : 'text-white/60 hover:text-white'}`}
+          >
+            <Settings size={18} />
+          </button>
+          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-1.5 text-white/60 hover:text-white transition-colors"><LogOut size={18} /></button>
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+      <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab === 'overview' && (
-	          <main className="flex-1 min-h-0 grid grid-cols-2 xl:grid-cols-12 xl:grid-rows-[minmax(72px,_0.78fr)_minmax(68px,_0.74fr)_minmax(176px,_1.85fr)_minmax(136px,_1.15fr)_minmax(146px,_1.3fr)] auto-rows-min gap-3 sm:gap-4 xl:gap-3 overflow-y-auto xl:overflow-hidden animate-fade-in pb-24 sm:pb-8 xl:pb-0">
-	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
-              <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Saldo Disponível</span>
-	              <div className="text-xl sm:text-2xl font-bold">R$ {(summary?.currentBalance ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+          <main className="flex-1 grid grid-cols-12 grid-rows-[auto_auto_auto_1.2fr_1fr_1.2fr] gap-4 overflow-hidden animate-fade-in">
+            {urgentNotifications.length > 0 && (
+              <div className="col-span-12 glass-card !p-4 border-brand-primary/20 bg-brand-primary/5 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-full bg-brand-primary/20 flex items-center justify-center animate-pulse">
+                    <AlertCircle className="text-brand-primary" size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold">Você tem {urgentNotifications.length} conta(s) pendente(s) hoje!</h3>
+                    <p className="text-[10px] text-white/60 uppercase font-bold tracking-wider">Acesse a Central de Alertas (sino) ou clique abaixo para baixar.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowNotificationCenter(true)}
+                  className="px-4 py-2 bg-brand-primary text-black text-xs font-bold rounded-xl uppercase hover:opacity-90 transition-opacity"
+                >
+                  Ver Pendências
+                </button>
+              </div>
+            )}
+            
+            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between group">
+              <div className="flex items-center justify-between">
+                <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Saldo Disponível</span>
+                <button 
+                  onClick={() => {
+                    setTempBalance(settings?.current_balance?.toString() || '0');
+                    setShowBalanceModal(true);
+                  }}
+                  className="p-1.5 rounded-lg bg-white/5 text-white/40 hover:text-brand-primary hover:bg-brand-primary/10 transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <Pencil size={12} />
+                </button>
+              </div>
+              <div className="text-2xl font-bold">R$ {Math.max(0, summary?.currentBalance ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
             </div>
-	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between border-brand-primary/30">
+            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between border-brand-primary/30">
               <span className="text-brand-primary text-xs font-medium uppercase tracking-wider">Limite Diário</span>
-	              <div className="text-xl sm:text-2xl font-bold text-brand-primary">R$ {(summary?.dailyLimit ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="text-2xl font-bold text-brand-primary">R$ {(summary?.dailyLimit ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
-	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
+            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Dias Restantes</span>
-	              <div className="text-xl sm:text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
+              <div className="text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
             </div>
-	            <div className="col-span-1 xl:col-span-3 glass-card !p-3 sm:!p-4 flex flex-col justify-between">
+            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Gasto Hoje</span>
-	              <div className={`text-xl sm:text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>R$ {(summary?.todaySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+              <div className={`text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>R$ {Math.max(0, summary?.todaySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
             </div>
 
-	            <div className={`col-span-2 xl:col-span-6 glass-card !p-3 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
+            <div className={`col-span-6 glass-card !p-3 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
               <AlertCircle className={summary?.smartAlert?.type === 'danger' ? 'text-red-400' : 'text-brand-primary'} size={20} />
               <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Alerta Inteligente</h3><p className="text-xs text-white/70 truncate">{summary?.smartAlert?.message || "Ciclo estável."}</p></div>
             </div>
-	            <div className="col-span-2 xl:col-span-6 glass-card !p-3 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
+            <div className="col-span-6 glass-card !p-3 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
               <TrendingUp className="text-brand-secondary" size={20} />
               <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Insight do Dia</h3><p className="text-xs text-white/70 truncate">{summary?.dailyInsight || summary?.insights?.[0] || "Mantenha o ritmo."}</p></div>
             </div>
 
-	            <div className="col-span-2 xl:col-span-8 glass-card !p-4 xl:!p-3.5 flex flex-col min-h-[240px] sm:min-h-[260px] xl:min-h-0">
+            <div className="col-span-8 glass-card !p-4 flex flex-col">
               <h3 className="font-bold text-sm mb-2">Evolução do Saldo</h3>
-              <div className="flex-1 min-h-0"><Line data={lineChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }} /></div>
+              <div className="flex-1 min-h-0"><Line data={lineChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }} /></div>
             </div>
-	            <div className="col-span-2 xl:col-span-4 glass-card !p-4 flex flex-col justify-between">
+            <div className="col-span-4 glass-card !p-4 flex flex-col justify-between">
               <h3 className="font-bold text-sm mb-2">Resumo do Período</h3>
               <div className="space-y-3">
                 <div className="flex justify-between text-xs"><span className="text-white/40">Média Diária</span><span className="font-bold">R$ {(summary?.averageDailySpent ?? 0).toLocaleString('pt-BR')}</span></div>
@@ -751,55 +1212,27 @@ export default function Dashboard({
               </div>
             </div>
 
-	            <div className="col-span-2 xl:col-span-12 glass-card !p-4 xl:!p-3 flex flex-col min-h-[220px] xl:min-h-0">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="flex items-center gap-3 min-w-0">
-                  <h3 className="font-bold text-sm whitespace-nowrap">Ritmo de Gastos</h3>
-                  <div className="flex items-center gap-3 text-[10px] sm:text-[11px] text-white/60">
-                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                      <span className="h-2 w-4 rounded-sm bg-red-500/70"></span>
-                      Saídas
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                      <span className="h-2 w-4 rounded-sm bg-green-500/70"></span>
-                      Entradas
-                    </span>
-                  </div>
-                </div>
-                <div className="flex bg-white/5 p-1 rounded-lg overflow-x-auto no-scrollbar">
+            <div className="col-span-12 glass-card !p-4 flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold text-sm">Ritmo de Gastos</h3>
+                <div className="flex bg-white/5 p-1 rounded-lg">
                   {(['day', 'week', 'month'] as const).map(f => (
-                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-3 py-2 min-h-9 rounded-md text-[11px] sm:text-[10px] font-bold uppercase transition-all whitespace-nowrap ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
+                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0 mt-0.5">
-                <Line
-                  data={rhythmChartData}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false }
-                    },
-                    layout: {
-                      padding: {
-                        top: 0
-                      }
-                    }
-                  }}
-                />
-              </div>
+              <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }} /></div>
             </div>
 
-	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 xl:!p-2.5 flex flex-col min-h-[180px] xl:min-h-0">
+            <div className="col-span-4 glass-card !p-3 flex flex-col">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Top Categorias</span><PieChartIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">{summary?.topCategories?.map(cat => (<div key={cat.name} className="flex flex-col gap-1"><div className="flex justify-between text-[10px]"><span className="text-white/70 truncate">{cat.name}</span><span className="font-bold">R$ {cat.amount.toFixed(0)}</span></div><div className="h-1 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div></div></div>))}</div>
+              <div className="flex-1 space-y-2 overflow-hidden">{summary?.topCategories?.map(cat => (<div key={cat.name} className="flex flex-col gap-1"><div className="flex justify-between text-[10px]"><span className="text-white/70 truncate">{cat.name}</span><span className="font-bold">R$ {cat.amount.toFixed(0)}</span></div><div className="h-1 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div></div></div>))}</div>
             </div>
-	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 xl:!p-2.5 flex flex-col min-h-[180px] xl:min-h-0">
+            <div className="col-span-4 glass-card !p-3 flex flex-col">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Lançamentos</span><HistoryIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">{latestOverviewTransactions.map(t => (<div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5"><div className="truncate mr-2"><div className="font-bold truncate">{t.description || t.category}</div><div className="text-white/40">{format(new Date(t.date), 'dd/MM')}</div></div><div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>{t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toFixed(0)}</div></div>))}</div>
+              <div className="flex-1 space-y-2 overflow-hidden">{latestOverviewTransactions.map(t => (<div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5"><div className="truncate mr-2"><div className="font-bold truncate">{t.description || t.category}</div><div className="text-white/40">{format(new Date(t.date), 'dd/MM')}</div></div><div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>{t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toFixed(0)}</div></div>))}</div>
             </div>
-	            <div className="col-span-2 sm:col-span-1 xl:col-span-4 glass-card !p-3 xl:!p-2.5 flex flex-col min-h-[180px] xl:min-h-0">
+            <div className="col-span-4 glass-card !p-3 flex flex-col">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Cartões</span><CreditCardIcon size={14} className="text-white/40" /></h3>
               <div className="flex-1 flex flex-col justify-center gap-3">
                 <div className="flex justify-between text-[10px]"><span className="text-white/40">Utilizado</span><span className="font-bold">R$ {overviewCardsUsed.toLocaleString('pt-BR')}</span></div>
@@ -813,9 +1246,53 @@ export default function Dashboard({
         {activeTab === 'details' && <Details transactions={transactions} summary={summary} />}
         {activeTab === 'insights' && <Insights summary={summary} />}
         {activeTab === 'history' && <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />}
-        {activeTab === 'cards' && <Cartoes cards={cards} installments={installments} onAddCard={openAddCardModal} onEditCard={openEditCardModal} onDeleteCard={handleDeleteCard} onAddInstallment={openAddInstallmentModal} onEditInstallment={openEditInstallmentModal} onDeleteInstallment={handleDeleteInstallment} />}
+        {activeTab === 'cards' && <Cartoes 
+          cards={cards} 
+          installments={installments} 
+          onAddCard={openAddCardModal} 
+          onEditCard={openEditCardModal} 
+          onDeleteCard={handleDeleteCard} 
+          onAddInstallment={openAddInstallmentModal} 
+          onEditInstallment={openEditInstallmentModal} 
+          onDeleteInstallment={handleDeleteInstallment} 
+          onPayInstallment={handlePayInstallment}
+          onPayCardBill={handlePayCardBill}
+        />}
         {activeTab === 'import' && <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setActiveTab('overview')} />}
-        {activeTab === 'base' && <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 pb-4"><div className="flex items-center justify-between gap-3 shrink-0"><h2 className="text-lg font-bold">Base Financeira</h2><button onClick={() => setShowSetupHelper(true)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"><Database size={14} />Configurar</button></div>{settings ? <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} /> : <div className="flex-1 flex items-center justify-center text-white/40 animate-pulse">Carregando...</div>}</div>}
+        {activeTab === 'base' && (
+          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+            <div className="flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center">
+                  <Settings className="text-brand-primary" size={20} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Estrutura Salarial</h2>
+                  <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Ajustes e Configurações do Aplicativo</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowSetupHelper(true)} 
+                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"
+              >
+                <Database size={14} />Configurar
+              </button>
+            </div>
+            {settings ? (
+              <BaseFinanceira 
+                settings={settings} 
+                onSave={handleUpdateSettings} 
+                fixedBills={fixedBills} 
+                dailyBills={dailyBills} 
+                summary={summary} 
+                onToggleBillStatus={handleToggleBillStatus} 
+                onRefresh={fetchData} 
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-white/40 animate-pulse">Carregando...</div>
+            )}
+          </div>
+        )}
       </div>
 
       {showAddModal && (
@@ -848,20 +1325,6 @@ export default function Dashboard({
         </div>
       )}
 
-      {showSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-lg overflow-y-auto max-h-[90vh] no-scrollbar">
-            <h2 className="text-xl font-bold mb-6 p-6 pb-0">Configurações Base</h2>
-            <form onSubmit={(e) => { e.preventDefault(); handleUpdateSettings(editSettings as UserSettings); }} className="space-y-4 p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className="text-sm text-white/60">Saldo Atual</label><input type="number" step="0.01" value={editSettings.current_balance} onChange={e => setEditSettings({...editSettings, current_balance: parseFloat(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" /></div>
-                <div><label className="text-sm text-white/60">Benefícios</label><input type="number" step="0.01" value={editSettings.benefits} onChange={e => setEditSettings({...editSettings, benefits: parseFloat(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" /></div>
-              </div>
-              <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowSettingsModal(false)} className="flex-1 p-3 rounded-xl bg-white/5">Cancelar</button><button type="submit" className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold">Salvar</button></div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {showSetupHelper && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -871,7 +1334,11 @@ export default function Dashboard({
               <button onClick={() => setShowSetupHelper(false)}><X size={20} /></button>
             </div>
             <pre className="p-4 bg-black rounded-xl border border-white/10 text-[10px] text-brand-primary overflow-auto max-h-48">
-              {`-- Scripts para o Supabase SQL Editor...`}
+              {`-- Scripts para o Supabase SQL Editor:
+-- Adiciona colunas para monitoramento de parcelas
+ALTER TABLE public.mf_card_installments ADD COLUMN IF NOT EXISTS due_day INT DEFAULT 1;
+ALTER TABLE public.mf_card_installments ADD COLUMN IF NOT EXISTS last_paid_month TEXT;
+NOTIFY pgrst, 'reload schema';`}
             </pre>
             <div className="flex gap-3 mt-6">
               <button onClick={() => { setShowSetupHelper(false); fetchData(); }} className="flex-1 py-3 bg-brand-primary text-black rounded-xl font-bold">Já executei o SQL</button>
@@ -879,6 +1346,13 @@ export default function Dashboard({
           </div>
         </div>
       )}
+
+      <NotificationCenter 
+        isOpen={showNotificationCenter}
+        onClose={() => setShowNotificationCenter(false)}
+        notifications={notifications}
+        onPay={handleNotificationPay}
+      />
 
       {showCardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -916,7 +1390,7 @@ export default function Dashboard({
                 <input type="text" placeholder="Ex: iPhone 15, Notebook..." required value={installmentForm.description} onChange={e => setInstallmentForm({...installmentForm, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Valor Total</label>
                   <input type="number" step="0.01" placeholder="0.00" required value={installmentForm.total_amount} onChange={e => setInstallmentForm({...installmentForm, total_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
@@ -927,15 +1401,20 @@ export default function Dashboard({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Parcela Atual</label>
                   <input type="number" required value={installmentForm.current_installment} onChange={e => setInstallmentForm({...installmentForm, current_installment: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Total de Parcelas</label>
-                  <input type="number" required value={installmentForm.total_installments} onChange={e => setInstallmentForm({...installmentForm, total_installments: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
+                  <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Dia do Vencimento</label>
+                  <input type="number" min="1" max="31" required value={installmentForm.due_day} onChange={e => setInstallmentForm({...installmentForm, due_day: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Total de Parcelas</label>
+                <input type="number" required value={installmentForm.total_installments} onChange={e => setInstallmentForm({...installmentForm, total_installments: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -946,8 +1425,64 @@ export default function Dashboard({
           </div>
         </div>
       )}
+
+        {showBalanceModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="glass-card w-full max-w-xs p-6 border-brand-primary/30">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center">
+                  <Wallet className="text-brand-primary" size={20} />
+                </div>
+                <h2 className="text-lg font-bold">Saldo atual de conta</h2>
+              </div>
+              <form onSubmit={handleUpdateBalance} className="space-y-6">
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold">R$</span>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    autoFocus
+                    value={tempBalance}
+                    onChange={(e) => setTempBalance(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 outline-none focus:border-brand-primary transition-all font-bold text-xl"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setShowBalanceModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-sm font-bold">Cancelar</button>
+                  <button type="submit" className="flex-1 py-3 rounded-xl bg-brand-primary text-black text-sm font-bold">Salvar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {confirmConfig && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="glass-card w-full max-w-sm animate-fade-in border-brand-primary/30">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-brand-primary/10 flex items-center justify-center">
+                  <Info className="text-brand-primary" size={20} />
+                </div>
+                <h2 className="text-lg font-bold">{confirmConfig.title}</h2>
+              </div>
+              <p className="text-sm text-white/70 mb-8 whitespace-pre-wrap leading-relaxed">{confirmConfig.message}</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setConfirmConfig(null)} 
+                  className="flex-1 py-3 rounded-xl bg-white/5 text-sm font-bold border border-white/10 hover:bg-white/10 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => confirmConfig.onConfirmed()} 
+                  className="flex-1 py-3 rounded-xl bg-brand-primary text-black text-sm font-bold hover:brightness-110 transition-all shadow-[0_0_20px_rgba(0,242,255,0.2)]"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }
-
-

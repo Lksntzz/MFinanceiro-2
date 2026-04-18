@@ -49,4 +49,3 @@ on public.mf_global_settings
 for select
 to authenticated
 using (true);
-

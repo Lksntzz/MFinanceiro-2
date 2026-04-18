@@ -8,8 +8,7 @@ export interface Transaction {
   description: string;
   date: string;
   type: TransactionType;
-  status?: 'pending' | 'completed' | 'ready' | 'duplicate' | 'error' | 'paid';
-  source?: string;
+  status?: 'pending' | 'completed' | 'ready' | 'duplicate' | 'error';
 }
 
 export type NormalizedTransaction = Transaction & {
@@ -60,6 +59,7 @@ export interface FixedBill {
   due_day: number;
   status: 'paid' | 'pending';
   category: string;
+  last_paid_month?: string;
 }
 
 export interface DailyBill {
@@ -91,7 +91,8 @@ export interface CardInstallment {
   monthly_amount: number;
   current_installment: number;
   total_installments: number;
-  start_date?: string;
+  due_day: number;
+  last_paid_month?: string;
 }
 
 export interface ImportedTransaction {
