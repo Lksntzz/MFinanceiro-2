@@ -16,10 +16,10 @@ interface InsightsProps {
 
 export default function Insights({ summary }: InsightsProps) {
   return (
-    <div className="flex-1 flex flex-col gap-4 overflow-y-auto animate-fade-in pb-4">
+    <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
       {/* Hero Insight */}
       <div className={`glass-card !p-6 border-l-4 ${summary?.smartAlert?.type === 'danger' ? 'border-l-red-500 bg-red-500/5' : 'border-l-brand-primary bg-brand-primary/5'}`}>
-        <div className="flex flex-col sm:flex-row items-start gap-4">
+        <div className="flex items-start gap-4">
           <div className={`p-3 rounded-2xl ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-brand-primary/20 text-brand-primary'}`}>
             <Zap size={24} />
           </div>
@@ -36,8 +36,8 @@ export default function Insights({ summary }: InsightsProps) {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-visible">
-        <div className="lg:col-span-7 flex flex-col gap-4">
+      <div className="flex-1 grid grid-cols-12 gap-4 overflow-hidden">
+        <div className="col-span-7 flex flex-col gap-4 overflow-y-auto no-scrollbar">
           <section className="space-y-3">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
               <AlertTriangle size={16} /> Riscos e Alertas
@@ -69,7 +69,7 @@ export default function Insights({ summary }: InsightsProps) {
           </section>
         </div>
 
-        <div className="lg:col-span-5 flex flex-col gap-4">
+        <div className="col-span-5 flex flex-col gap-4 overflow-y-auto no-scrollbar">
           <section className="space-y-3">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
               <Lightbulb size={16} /> Comportamento

@@ -3,6 +3,8 @@ import { UserSettings, FixedBill, DailyBill, FinanceSummary } from '../types';
 import { supabase } from '../lib/supabase';
 import { calculatePayrollFromGross } from '../lib/payroll-tax';
 import { CATEGORIES } from '../lib/constants';
+import { format, addMonths } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { 
   ShieldCheck, 
   Wallet, 
@@ -18,7 +20,9 @@ import {
   Plus,
   Activity,
   TrendingDown,
-  X
+  X,
+  Check,
+  Circle
 } from 'lucide-react';
 
 interface BaseFinanceiraProps {
@@ -74,10 +78,7 @@ export default function BaseFinanceira({
   const [formData, setFormData] = useState<UserSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  
-  // Modals state
-  const [showAddFixed, setShowAddFixed] = useState(false);
-  const [showAddDaily, setShowAddDaily] = useState(false);
+  const [activeTab, setActiveTab] = useState<'income' | 'adjustments' | 'bills' | 'operating'>('income');
   const [benefitEntries, setBenefitEntries] = useState<BenefitEntry[]>([]);
   const [paydaySplit, setPaydaySplit] = useState({ payday1Percent: 50, payday2Percent: 50 });
   const [newBenefit, setNewBenefit] = useState({
@@ -95,6 +96,7 @@ export default function BaseFinanceira({
   
   const [newDaily, setNewDaily] = useState({
     name: '',
+    amount: '',
     average_amount: '',
     category: CATEGORIES[1] || 'Alimentação',
     frequency: 'weekly' as 'weekly' | 'monthly'
@@ -250,7 +252,6 @@ export default function BaseFinanceira({
         throw error;
       }
       
-      setShowAddFixed(false);
       setNewFixed({ name: '', amount: '', category: 'Moradia', due_day: '5' });
       onRefresh();
     } catch (err: any) {
@@ -282,7 +283,6 @@ export default function BaseFinanceira({
         throw error;
       }
 
-      setShowAddDaily(false);
       setNewDaily({ name: '', average_amount: '', category: 'Alimentação', frequency: 'weekly' });
       onRefresh();
     } catch (err: any) {
@@ -371,368 +371,452 @@ export default function BaseFinanceira({
   const isBalanceCritical = (formData.current_balance || 0) < totalPendingFixed;
 
   return (
-    <div className="flex-1 flex flex-col gap-4 overflow-y-auto no-scrollbar pb-8 animate-fade-in text-white">
-      {/* 1. Resumo da Base Financeira */}
-      <div className={`glass-card !p-4 border-brand-primary/20 shrink-0 ${isBalanceCritical ? 'bg-red-500/5 border-red-500/20' : 'bg-brand-primary/5'}`}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
-            <ShieldCheck size={18} className={isBalanceCritical ? 'text-red-400' : 'text-brand-primary'} /> Resumo da Base Financeira
-          </h2>
-          {isBalanceCritical ? (
-            <span className="text-[11px] sm:text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold animate-pulse">SALDO INSUFICIENTE PARA CONTAS</span>
-          ) : (
-            <span className="text-[11px] sm:text-[10px] bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded-full font-bold">CONFIGURAÇÃO ATIVA</span>
-          )}
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <div className="flex flex-col">
-            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Saldo Atual</span>
-            <span className={`font-bold text-sm ${isBalanceCritical ? 'text-red-400' : ''}`}>R$ {(formData.current_balance || 0).toLocaleString('pt-BR')}</span>
+    <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-[500px] animate-fade-in text-white overflow-hidden">
+      {/* Sidebar de Navegação Interna */}
+      <div className="w-full md:w-64 shrink-0 flex flex-col gap-2">
+        <button 
+          onClick={() => setActiveTab('income')}
+          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'income' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+        >
+          <Banknote size={18} />
+          <div className="flex-1">
+            <div className="text-sm font-bold">Renda & Ciclo</div>
+            <div className="text-[10px] opacity-60">Salário e Pagamento</div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Contas Pend.</span>
-            <span className="font-bold text-sm text-red-400/80">R$ {totalPendingFixed.toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Líquido Est.</span>
-            <span className="font-bold text-sm">R$ {estimatedNetSalary.toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Ciclo</span>
-            <span className="font-bold text-sm uppercase">{formData.payday_cycle === 'monthly' ? 'Mensal' : 'Quinzenal'}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[11px] sm:text-[10px] text-white/40 uppercase">Próx. Pgto</span>
-            <span className="font-bold text-sm">Dia {formData.payday_1 || 1}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[11px] sm:text-[10px] text-brand-primary uppercase">Base Real</span>
-            <span className="font-bold text-sm text-brand-primary">R$ {(netRealBase || 0).toLocaleString('pt-BR')}</span>
-          </div>
-        </div>
-      </div>
+        </button>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {/* 2. Saldo Atual */}
-        <div className="glass-card !p-5 space-y-4">
-          <h3 className="font-bold text-sm flex items-center gap-2">
-            <Wallet size={16} className="text-white/60" /> Saldo Atual em Conta
-          </h3>
-          <p className="text-sm sm:text-xs text-white/40">Este valor é o ponto de partida do seu ciclo atual.</p>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold">R$</span>
-            <input 
-              type="number" 
-              value={formData.current_balance}
-              onChange={(e) => handleChange('current_balance', parseFloat(e.target.value) || 0)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 outline-none focus:border-brand-primary transition-all font-bold text-lg"
-            />
+        <button 
+          onClick={() => setActiveTab('adjustments')}
+          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'adjustments' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+        >
+          <PlusCircle size={18} />
+          <div className="flex-1">
+            <div className="text-sm font-bold">Ajustes & Benefícios</div>
+            <div className="text-[10px] opacity-60">Descontos e Extras</div>
           </div>
-        </div>
+        </button>
 
-        {/* 3. Estrutura Salarial */}
-        <div className="glass-card !p-5 space-y-4">
-          <h3 className="font-bold text-sm flex items-center gap-2">
-            <Banknote size={16} className="text-white/60" /> Estrutura Salarial
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Salário Bruto</label>
-              <input 
-                type="number" 
-                value={formData.gross_salary}
-                onChange={(e) => handleChange('gross_salary', parseFloat(e.target.value) || 0)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-4 outline-none focus:border-brand-primary transition-all font-bold"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[11px] sm:text-[10px] text-brand-primary uppercase font-bold">Líquido Estimado</label>
-              <input 
-                type="number" 
-                value={estimatedNetSalary}
-                readOnly
-                aria-readonly="true"
-                disabled
-                className="w-full bg-brand-primary/5 border border-brand-primary/20 rounded-xl py-2 px-4 outline-none font-bold text-brand-primary cursor-not-allowed"
-              />
-              <p className="text-[11px] sm:text-[10px] text-white/40">Calculado automaticamente: Salário Bruto - Descontos.</p>
-            </div>
+        <button 
+          onClick={() => setActiveTab('bills')}
+          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'bills' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+        >
+          <Calendar size={18} />
+          <div className="flex-1">
+            <div className="text-sm font-bold">Contas Fixas</div>
+            <div className="text-[10px] opacity-60">Compromissos Mensais</div>
           </div>
-        </div>
+        </button>
 
-        {/* 4. Ciclo de Pagamento */}
-        <div className="glass-card !p-5 space-y-4">
-          <h3 className="font-bold text-sm flex items-center gap-2">
-            <Calendar size={16} className="text-white/60" /> Ciclo de Pagamento
-          </h3>
-          <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
-            <button 
-              onClick={() => handleChange('payday_cycle', 'monthly')}
-              className={`flex-1 py-2 rounded-lg text-sm sm:text-xs font-bold transition-all ${formData.payday_cycle === 'monthly' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
-            >
-              Mensal (1x)
-            </button>
-            <button 
-              onClick={() => handleChange('payday_cycle', 'biweekly')}
-              className={`flex-1 py-2 rounded-lg text-sm sm:text-xs font-bold transition-all ${formData.payday_cycle === 'biweekly' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
-            >
-              Quinzenal (2x)
-            </button>
+        <button 
+          onClick={() => setActiveTab('operating')}
+          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'operating' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+        >
+          <Activity size={18} />
+          <div className="flex-1">
+            <div className="text-sm font-bold">Gastos Estimados</div>
+            <div className="text-[10px] opacity-60">Rasteio Operacional</div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Dia do Pagamento</label>
-              <input 
-                type="number" 
-                min="1" max="31"
-                value={formData.payday_1}
-                onChange={(e) => handleChange('payday_1', parseInt(e.target.value) || 1)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-4 outline-none focus:border-brand-primary transition-all font-bold"
-              />
-              {formData.payday_cycle === 'biweekly' && (
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={paydaySplit.payday1Percent}
-                    onChange={(e) => handlePayday1PercentChange(e.target.value)}
-                    className="w-16 bg-black/20 border border-white/10 rounded-lg py-1.5 px-2 outline-none focus:border-brand-primary transition-all font-bold text-sm"
-                  />
-                  <span className="text-[11px] text-white/50">% do salário</span>
-                </div>
-              )}
-            </div>
-            {formData.payday_cycle === 'biweekly' && (
-              <div className="space-y-2">
-                <label className="text-[11px] sm:text-[10px] text-white/40 uppercase font-bold">Segundo Pagamento</label>
-                <input 
-                  type="number" 
-                  min="1" max="31"
-                  value={formData.payday_2 || 20}
-                  onChange={(e) => handleChange('payday_2', parseInt(e.target.value) || 20)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-4 outline-none focus:border-brand-primary transition-all font-bold"
-                />
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={paydaySplit.payday2Percent}
-                    onChange={(e) => handlePayday2PercentChange(e.target.value)}
-                    className="w-16 bg-black/20 border border-white/10 rounded-lg py-1.5 px-2 outline-none focus:border-brand-primary transition-all font-bold text-sm"
-                  />
-                  <span className="text-[11px] text-white/50">% do salário</span>
-                </div>
-              </div>
-            )}
+        </button>
+
+        <div className="mt-auto pt-4 space-y-3">
+          <div className="glass-card !p-4 bg-brand-primary/5 border-brand-primary/20">
+            <div className="text-[10px] text-brand-primary uppercase font-bold mb-1">Base Real Estimada</div>
+            <div className="text-xl font-bold tracking-tight">R$ {(netRealBase || 0).toLocaleString('pt-BR')}</div>
           </div>
-        </div>
-
-        {/* 5. Descontos em Folha */}
-        <div className="glass-card !p-5 space-y-4">
-          <h3 className="font-bold text-sm flex items-center gap-2">
-            <MinusCircle size={16} className="text-red-400/60" /> Descontos em Folha
-          </h3>
-          <p className="text-sm sm:text-xs text-white/40">Cálculo automático com base no salário bruto e benefícios marcados como desconto em folha.</p>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm">
-              <span className="text-white/60">INSS</span>
-              <span className="font-bold text-red-400">- R$ {payroll.inss.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm">
-              <span className="text-white/60">IRRF</span>
-              <span className="font-bold text-red-400">- R$ {payroll.irrf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm">
-              <span className="text-white/60">Desconto de benefícios</span>
-              <span className="font-bold text-red-400">- R$ {totalBenefitsPayrollDiscount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 text-sm">
-              <span className="text-white/80 font-bold">Total descontos</span>
-              <span className="font-bold text-red-400">- R$ {calculatedDeductions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 6. Benefícios */}
-        <div className="glass-card !p-5 space-y-4">
-          <h3 className="font-bold text-sm flex items-center gap-2">
-            <PlusCircle size={16} className="text-green-400/60" /> Benefícios (VR, VA, Auxílios)
-          </h3>
-          <p className="text-sm sm:text-xs text-white/40">Lance os benefícios da empresa e marque os que são descontados na folha.</p>
-
-          <form onSubmit={handleAddBenefit} className="space-y-2">
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-              <input
-                type="text"
-                value={newBenefit.name}
-                onChange={(e) => setNewBenefit(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Ex: VR, VA"
-                className="sm:col-span-6 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-green-400 text-sm"
-              />
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={newBenefit.amount}
-                onChange={(e) => setNewBenefit(prev => ({ ...prev, amount: e.target.value }))}
-                placeholder="Valor"
-                className="sm:col-span-3 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-green-400 text-sm"
-              />
-              <button
-                type="submit"
-                className="sm:col-span-3 bg-green-500/20 border border-green-500/30 text-green-300 rounded-xl py-2 px-3 font-bold text-sm sm:text-xs hover:bg-green-500/30 transition-all"
-              >
-                Add
-              </button>
-            </div>
-            <label className="flex items-center gap-2 text-sm sm:text-xs text-white/60">
-              <input
-                type="checkbox"
-                checked={newBenefit.payrollDeducted}
-                onChange={(e) => setNewBenefit(prev => ({ ...prev, payrollDeducted: e.target.checked }))}
-                className="h-3.5 w-3.5 accent-red-400"
-              />
-              Descontado na folha
-            </label>
-          </form>
-
-          <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar pr-1">
-            {benefitEntries.map(item => (
-              <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm sm:text-xs flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-bold truncate">{item.name}</div>
-                  <div className={`text-[11px] sm:text-[10px] ${item.payrollDeducted ? 'text-red-300' : 'text-green-300'}`}>
-                    {item.payrollDeducted ? 'Desconta na folha' : 'Não desconta'}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="font-bold">R$ {item.amount.toLocaleString('pt-BR')}</span>
-                  <button type="button" onClick={() => handleDeleteBenefit(item.id)} className="p-1 text-white/20 hover:text-red-400 transition-all"><X size={12} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 7. Previsão Líquida / Base Real */}
-        <div className="glass-card !p-5 bg-brand-secondary/5 border-brand-secondary/20 flex flex-col justify-between">
-          <h3 className="font-bold text-sm flex items-center gap-2 mb-4">
-            <Calculator size={16} className="text-brand-secondary" /> Base Real Estimada
-          </h3>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm sm:text-xs">
-              <span className="text-white/40">Salário Bruto</span>
-              <span className="font-bold">R$ {(formData.gross_salary || 0).toLocaleString('pt-BR')}</span>
-            </div>
-            <div className="flex justify-between text-sm sm:text-xs">
-              <span className="text-red-400/60">(-) Descontos Est.</span>
-              <span className="font-bold text-red-400">- R$ {calculatedDeductions.toLocaleString('pt-BR')}</span>
-            </div>
-            <div className="flex justify-between text-sm sm:text-xs">
-              <span className="text-green-400/60">(+) Benefícios</span>
-              <span className="font-bold text-green-400">+ R$ {totalBenefitsOffered.toLocaleString('pt-BR')}</span>
-            </div>
-            <div className="pt-2 border-t border-white/10 flex justify-between items-center">
-              <span className="text-sm font-bold">Total Base Real</span>
-              <span className="text-xl font-bold text-brand-secondary">R$ {(netRealBase || 0).toLocaleString('pt-BR')}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 8 & 9. Impacto e Ações */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
-        <div className="xl:col-span-8 glass-card !p-4 flex items-center gap-4 bg-white/5">
-          <Info size={20} className="text-white/40 shrink-0" />
-          <p className="text-sm sm:text-xs text-white/60">A Base Financeira impacta seu Limite Diário e todos os Insights. Mantenha os dados atualizados.</p>
-        </div>
-        <div className="xl:col-span-4 flex flex-col gap-2">
+          
           <button 
             onClick={handleSave}
             disabled={isSaving}
-            className="flex-1 bg-brand-primary text-black rounded-2xl font-bold flex items-center justify-center gap-3 hover:opacity-90 transition-all disabled:opacity-50"
+            className="w-full bg-brand-primary text-black py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:brightness-110 transition-all disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]"
           >
-            {isSaving ? "Salvando..." : (showSuccess ? "Salvo!" : "Salvar Configuração")}
+            {isSaving ? <Clock className="animate-spin" size={18} /> : (showSuccess ? <CheckCircle2 size={18} /> : <Save size={18} />)}
+            {isSaving ? "Salvando..." : (showSuccess ? "Configuração Salva" : "Aplicar Mudanças")}
           </button>
         </div>
       </div>
 
-      {/* 10. Gestão de Contas (Fixed & Daily) */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="glass-card flex flex-col gap-4">
-          <div className="flex items-center justify-between"><h3 className="font-bold text-sm flex items-center gap-2"><Calendar size={16} className="text-brand-primary" /> Contas Fixas</h3><button onClick={() => setShowAddFixed(true)} className="p-2 min-h-9 min-w-9 bg-brand-primary/10 text-brand-primary rounded-lg shadow-sm hover:bg-brand-primary/20"><Plus size={16} /></button></div>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
-            {fixedBills.map(bill => (
-              <div key={bill.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group">
-                <div className="flex items-center gap-3">
-                  <button onClick={() => onToggleBillStatus(bill.id)} className={`h-8 w-8 rounded-lg flex items-center justify-center ${bill.status === 'paid' ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40'}`}>
-                    {bill.status === 'paid' ? <CheckCircle2 size={16} /> : <Clock size={16} />}
+      {/* Conteúdo Principal */}
+      <div className="flex-1 overflow-y-auto no-scrollbar pr-1">
+        {activeTab === 'income' && (
+          <div className="space-y-6">
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div>
+                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                  <Banknote className="text-brand-primary" size={20} /> Estrutura Salarial
+                </h3>
+                <p className="text-xs text-white/40">Defina sua renda bruta e veja o cálculo estimado do seu líquido.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] text-white/60 uppercase font-bold">Salário Bruto Mensal</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-white/20">R$</span>
+                    <input 
+                      type="number" 
+                      value={formData.gross_salary}
+                      onChange={(e) => handleChange('gross_salary', parseFloat(e.target.value) || 0)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 outline-none focus:border-brand-primary transition-all font-bold text-lg"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] text-brand-primary uppercase font-bold">Salário Líquido (Estimado)</label>
+                  <div className="w-full bg-brand-primary/5 border border-brand-primary/20 rounded-xl py-3 px-4 font-bold text-lg text-brand-primary">
+                    R$ {estimatedNetSalary.toLocaleString('pt-BR')}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div>
+                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                  <Calendar className="text-brand-primary" size={20} /> Ciclo de Recebimento
+                </h3>
+                <p className="text-xs text-white/40">Como você recebe seu salário ao longo do mês?</p>
+              </div>
+
+              <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 max-w-sm">
+                <button 
+                  onClick={() => handleChange('payday_cycle', 'monthly')}
+                  className={`flex-1 py-3 rounded-lg text-xs font-bold transition-all ${formData.payday_cycle === 'monthly' ? 'bg-brand-primary text-black shadow-lg' : 'text-white/40 hover:text-white'}`}
+                >
+                  Mensal (1x)
+                </button>
+                <button 
+                  onClick={() => handleChange('payday_cycle', 'biweekly')}
+                  className={`flex-1 py-3 rounded-lg text-xs font-bold transition-all ${formData.payday_cycle === 'biweekly' ? 'bg-brand-primary text-black shadow-lg' : 'text-white/40 hover:text-white'}`}
+                >
+                  Quinzenal (2x)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6 p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div className="space-y-3">
+                  <label className="text-[10px] text-white/40 uppercase font-bold block">{formData.payday_cycle === 'biweekly' ? 'Primeiro Pagamento' : 'Dia do Pagamento'}</label>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white/20">DIA</span>
+                      <input 
+                        type="number" 
+                        min="1" max="31"
+                        value={formData.payday_1 || ''}
+                        onChange={(e) => handleChange('payday_1', e.target.value === '' ? '' : parseInt(e.target.value))}
+                        className="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-brand-primary transition-all font-bold"
+                      />
+                    </div>
+                    {formData.payday_cycle === 'biweekly' && (
+                      <div className="relative shrink-0">
+                        <input
+                          type="number"
+                          min="0" max="100"
+                          value={paydaySplit.payday1Percent}
+                          onChange={(e) => handlePayday1PercentChange(e.target.value)}
+                          className="w-20 bg-black/20 border border-white/10 rounded-xl py-3 px-3 outline-none focus:border-brand-primary text-center font-bold"
+                        />
+                        <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] bg-brand-primary text-black px-1 rounded font-bold">%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {formData.payday_cycle === 'biweekly' && (
+                  <div className="space-y-3">
+                    <label className="text-[10px] text-white/40 uppercase font-bold block">Segundo Pagamento</label>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white/20">DIA</span>
+                        <input 
+                          type="number" 
+                          min="1" max="31"
+                          value={formData.payday_2 || ''}
+                          onChange={(e) => handleChange('payday_2', e.target.value === '' ? '' : parseInt(e.target.value))}
+                          className="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-brand-primary transition-all font-bold"
+                        />
+                      </div>
+                      <div className="relative shrink-0">
+                        <input
+                          type="number"
+                          min="0" max="100"
+                          value={paydaySplit.payday2Percent}
+                          onChange={(e) => handlePayday2PercentChange(e.target.value)}
+                          className="w-20 bg-black/20 border border-white/10 rounded-xl py-3 px-3 outline-none focus:border-brand-primary text-center font-bold"
+                        />
+                        <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] bg-brand-primary text-black px-1 rounded font-bold">%</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'adjustments' && (
+          <div className="space-y-6">
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div>
+                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                  <MinusCircle className="text-red-400" size={20} /> Descontos Automáticos
+                </h3>
+                <p className="text-xs text-white/40">Cálculos baseados nas tabelas oficiais de INSS e IRRF 2024.</p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="text-[10px] text-white/40 uppercase font-bold mb-1">INSS</div>
+                  <div className="text-lg font-bold text-red-400">- R$ {payroll.inss.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="text-[10px] text-white/40 uppercase font-bold mb-1">IRRF</div>
+                  <div className="text-lg font-bold text-red-400">- R$ {payroll.irrf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                </div>
+                <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
+                  <div className="text-[10px] text-red-400 uppercase font-bold mb-1">Total Taxas</div>
+                  <div className="text-lg font-bold">- R$ {payroll.totalDeductions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+            </section>
+
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                    <PlusCircle className="text-green-400" size={20} /> Benefícios & Extras
+                  </h3>
+                  <p className="text-xs text-white/40">VR, VA, Combustível ou qualquer entrada fixa extra.</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-green-400 uppercase font-bold tracking-widest">Saldo de Benefícios</div>
+                  <div className="text-xl font-bold">R$ {totalBenefitsOffered.toLocaleString('pt-BR')}</div>
+                </div>
+              </div>
+
+              <form onSubmit={handleAddBenefit} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Nome do Benefício</label>
+                    <input
+                      type="text"
+                      value={newBenefit.name}
+                      onChange={(e) => setNewBenefit(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="Ex: Vale Refeição"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Valor Mensal</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newBenefit.amount}
+                      onChange={(e) => setNewBenefit(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder="0,00"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <div className={`h-5 w-5 rounded-md border flex items-center justify-center transition-all ${newBenefit.payrollDeducted ? 'bg-red-500 border-red-500' : 'bg-white/5 border-white/10 group-hover:border-white/30'}`}>
+                      {newBenefit.payrollDeducted && <Check size={14} className="text-white" />}
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={newBenefit.payrollDeducted}
+                      onChange={(e) => setNewBenefit(prev => ({ ...prev, payrollDeducted: e.target.checked }))}
+                    />
+                    <span className="text-xs text-white/60">Este benefício é descontado do salário?</span>
+                  </label>
+                  <button type="submit" className="bg-brand-primary text-black px-6 py-2 rounded-xl font-bold text-xs hover:brightness-110 shadow-lg">
+                    Adicionar
                   </button>
-                  <div><div className="text-sm font-bold">{bill.name}</div><div className="text-[11px] sm:text-[10px] text-white/40">Dia {bill.due_day}</div></div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold">R$ {bill.amount.toLocaleString('pt-BR')}</span>
-                  <button onClick={() => handleDeleteFixed(bill.id)} className="p-1 text-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><X size={14} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              </form>
 
-        <div className="glass-card flex flex-col gap-4">
-          <div className="flex items-center justify-between"><h3 className="font-bold text-sm flex items-center gap-2"><Activity size={16} className="text-brand-secondary" /> Gastos Operacionais</h3><button onClick={() => setShowAddDaily(true)} className="p-2 min-h-9 min-w-9 bg-brand-secondary/10 text-brand-secondary rounded-lg hover:bg-brand-secondary/20"><Plus size={16} /></button></div>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
-            {dailyBills.map(bill => (
-              <div key={bill.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group">
-                <div className="flex items-center gap-3"><TrendingDown size={16} className="text-brand-secondary" /><div><div className="text-sm font-bold">{bill.name}</div><div className="text-[11px] sm:text-[10px] text-white/40">{bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'}</div></div></div>
-                <div className="flex items-center gap-3"><span className="text-sm font-bold">R$ {bill.average_amount.toLocaleString('pt-BR')}</span><button onClick={() => handleDeleteDaily(bill.id)} className="p-1 text-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><X size={14} /></button></div>
+              <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto no-scrollbar pr-1">
+                {benefitEntries.length === 0 && <div className="text-center py-8 text-white/20 italic text-sm">Nenhum benefício cadastrado.</div>}
+                {benefitEntries.map(item => (
+                  <div key={item.id} className="group p-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${item.payrollDeducted ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
+                        {item.payrollDeducted ? <TrendingDown size={18} /> : <Plus size={18} />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold">{item.name}</div>
+                        <div className={`text-[10px] ${item.payrollDeducted ? 'text-red-400' : 'text-green-400'}`}>
+                          {item.payrollDeducted ? 'Desconto em Folha' : 'Entrada Extra'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm font-bold">R$ {item.amount.toLocaleString('pt-BR')}</div>
+                      <button onClick={() => handleDeleteBenefit(item.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </section>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'bills' && (
+          <div className="space-y-6">
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                    <Calendar className="text-brand-primary" size={20} /> Contas Fixas
+                  </h3>
+                  <p className="text-xs text-white/40">Contas que ocorrem todo mês com dia certo de vencimento.</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Total Mensal</div>
+                  <div className="text-xl font-bold">R$ {totalFixed.toLocaleString('pt-BR')}</div>
+                </div>
+              </div>
+
+              <form onSubmit={handleAddFixed} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Nome da Conta</label>
+                    <input type="text" placeholder="Ex: Aluguel" required value={newFixed.name} onChange={e => setNewFixed({...newFixed, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Valor</label>
+                    <input type="number" placeholder="0,00" required value={newFixed.amount} onChange={e => setNewFixed({...newFixed, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Dia do Vencimento</label>
+                    <input type="number" min="1" max="31" required value={newFixed.due_day} onChange={e => setNewFixed({...newFixed, due_day: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
+                    <select value={newFixed.category} onChange={e => setNewFixed({...newFixed, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm">
+                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-brand-primary text-black py-3 rounded-xl font-bold text-sm tracking-wide hover:brightness-110 shadow-lg mt-2">
+                  Adicionar Conta Fixa
+                </button>
+              </form>
+
+              <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto no-scrollbar pr-1">
+                {fixedBills.length === 0 && <div className="text-center py-10 text-white/20 italic text-sm">Nenhuma conta fixa cadastrada.</div>}
+                {fixedBills.map(bill => {
+                  const today = new Date();
+                  const currentMonth = format(today, 'yyyy-MM');
+                  const isPaid = bill.last_paid_month === currentMonth;
+                  const nextDate = new Date(today.getFullYear(), today.getMonth(), bill.due_day, 12, 0, 0, 0);
+                  const displayDate = isPaid ? addMonths(nextDate, 1) : nextDate;
+
+                  return (
+                    <div key={bill.id} className="group p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div onClick={() => onToggleBillStatus(bill.id)} className={`h-10 w-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${isPaid ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40 hover:bg-brand-primary/20 hover:text-brand-primary'}`}>
+                          {isPaid ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold">{bill.name}</div>
+                          <div className="text-[10px] text-white/40 flex items-center gap-1">
+                            <Clock size={10} /> Vence dia {bill.due_day} • Próximo: {format(displayDate, "dd 'de' MMM", { locale: ptBR })}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm font-bold">R$ {bill.amount.toLocaleString('pt-BR')}</div>
+                        <button onClick={() => handleDeleteFixed(bill.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'operating' && (
+          <div className="space-y-6">
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                    <Activity className="text-brand-secondary" size={20} /> Gastos Estimados
+                  </h3>
+                  <p className="text-xs text-white/40">Despesas variáveis mas recorrentes (Mercado, Lazer, etc).</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-brand-secondary uppercase font-bold tracking-widest">Reserva Diária</div>
+                  <div className="text-xl font-bold">R$ {totalDaily.toLocaleString('pt-BR')}</div>
+                </div>
+              </div>
+
+              <form onSubmit={handleAddDaily} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Título do Gasto</label>
+                    <input type="text" placeholder="Ex: Mercado Mensal" required value={newDaily.name} onChange={e => setNewDaily({...newDaily, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Previsão de Valor</label>
+                    <input type="number" placeholder="0,00" required value={newDaily.average_amount} onChange={e => setNewDaily({...newDaily, average_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Frequência</label>
+                    <select value={newDaily.frequency} onChange={e => setNewDaily({...newDaily, frequency: e.target.value as 'weekly' | 'monthly'})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm">
+                      <option value="weekly">Semanal</option>
+                      <option value="monthly">Mensal</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
+                    <select value={newDaily.category} onChange={e => setNewDaily({...newDaily, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm">
+                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-brand-secondary text-black py-3 rounded-xl font-bold text-sm tracking-wide hover:brightness-110 shadow-lg mt-2">
+                  Adicionar Previsão
+                </button>
+              </form>
+
+              <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto no-scrollbar pr-1">
+                {dailyBills.length === 0 && <div className="text-center py-10 text-white/20 italic text-sm">Nenhum gasto estimado cadastrado.</div>}
+                {dailyBills.map(bill => (
+                  <div key={bill.id} className="group p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-xl bg-brand-secondary/10 flex items-center justify-center text-brand-secondary">
+                        <TrendingDown size={20} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold">{bill.name}</div>
+                        <div className="text-[10px] text-white/40">Frequência: {bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'} • {bill.category}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm font-bold">R$ {bill.average_amount.toLocaleString('pt-BR')}</div>
+                      <button onClick={() => handleDeleteDaily(bill.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
-
-      {showAddFixed && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-md animate-fade-in p-6">
-            <h2 className="text-xl font-bold mb-6">Nova Conta Fixa</h2>
-            <form onSubmit={handleAddFixed} className="space-y-4">
-              <input type="text" placeholder="Nome" required value={newFixed.name} onChange={e => setNewFixed({...newFixed, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="number" placeholder="Valor" required value={newFixed.amount} onChange={e => setNewFixed({...newFixed, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-                <select value={newFixed.category} onChange={e => setNewFixed({...newFixed, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none">
-                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-              <input type="number" placeholder="Dia Vencimento" required value={newFixed.due_day} onChange={e => setNewFixed({...newFixed, due_day: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <div className="flex gap-3"><button type="button" onClick={() => setShowAddFixed(false)} className="flex-1 p-3 rounded-xl bg-white/5">Cancelar</button><button type="submit" className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold">Adicionar</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showAddDaily && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-md animate-fade-in p-6">
-            <h2 className="text-xl font-bold mb-6">Novo Gasto</h2>
-            <form onSubmit={handleAddDaily} className="space-y-4">
-              <input type="text" placeholder="Nome" required value={newDaily.name} onChange={e => setNewDaily({...newDaily, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="number" placeholder="Valor" required value={newDaily.average_amount} onChange={e => setNewDaily({...newDaily, average_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-                <select value={newDaily.category} onChange={e => setNewDaily({...newDaily, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none">
-                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-3"><button type="button" onClick={() => setShowAddDaily(false)} className="flex-1 p-3 rounded-xl bg-white/5">Cancelar</button><button type="submit" className="flex-1 p-3 rounded-xl bg-brand-secondary text-white font-bold">Adicionar</button></div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-

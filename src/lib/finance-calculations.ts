@@ -97,6 +97,14 @@ export function calculateFinanceSummary(
     .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
   const totalSpentInCycle = cycleExpenses.reduce((acc, t) => acc + Math.abs(t.amount), 0);
+  const totalIncomesInCycle = transactions
+    .filter(t => {
+      try {
+        const d = new Date(t.date);
+        return t.type === 'income' && isWithinInterval(d, cycleInterval);
+      } catch { return false; }
+    })
+    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
   
   const daysPassedInCycle = Math.max(1, differenceInCalendarDays(currentDate, lastPayday));
   const averageDailySpent = totalSpentInCycle / daysPassedInCycle;
@@ -125,14 +133,40 @@ export function calculateFinanceSummary(
 
   // 8. Smart Alert
   let smartAlert: FinanceSummary['smartAlert'] = null;
+  
+  // Logic for a "fresh" or "empty" cycle
+  const isBrandNewCycle = totalSpentInCycle === 0 && totalIncomesInCycle === 0;
+
+  // Expected income for the remainder of the cycle
+  const nextPaydayDate = getNextPayday(settings, currentDate);
+  const p1 = Number(settings.payday_1) || 5;
+  const isPayday1 = nextPaydayDate.getDate() === p1;
+  const slotPercentage = isPayday1 ? (settings.payday_1_percentage || 50) : (settings.payday_2_percentage || 50);
+  const expectedImmediateIncome = (settings.net_salary_estimated * slotPercentage) / 100;
+
   if (currentBalance < 0) {
     smartAlert = { message: "Seu saldo está negativo! Priorize cobrir o rombo imediatamente.", type: 'danger' };
+  } else if (isBrandNewCycle && totalCommitments > 0) {
+    smartAlert = { message: "Boas-vindas! Registre seu salário ou saldo inicial para cobrir seus compromissos agendados.", type: 'warning' };
   } else if (totalCommitments > currentBalance) {
-    smartAlert = { message: `Atenção: Suas dívidas e compromissos (R$ ${totalCommitments.toLocaleString('pt-BR')}) superam seu saldo atual. Você terá um rombo de R$ ${(totalCommitments - currentBalance).toLocaleString('pt-BR')} no próximo pagamento.`, type: 'danger' };
+    // Check if expected income covers the gap
+    if (expectedImmediateIncome + currentBalance >= totalCommitments) {
+      smartAlert = { 
+        message: `Saldo atual (R$ ${Math.max(0, currentBalance).toLocaleString('pt-BR')}) não cobre compromissos, mas seu próximo salário resolve isso.`, 
+        type: 'warning' 
+      };
+    } else {
+      smartAlert = { 
+        message: `Aviso: Seus compromissos (R$ ${totalCommitments.toLocaleString('pt-BR')}) superam o saldo + próximo salário. Planeje um corte.`, 
+        type: 'danger' 
+      };
+    }
   } else if (dailyLimit < averageDailySpent * 0.7 && dailyLimit > 0) {
-    smartAlert = { message: "Atenção: Seu ritmo de gastos está 30% acima do limite diário projetado.", type: 'warning' };
+    smartAlert = { message: "Atenção: Seu ritmo de gastos está acima do limite diário projetado.", type: 'warning' };
   } else if (daysRemaining < 3 && currentBalance > 500) {
     smartAlert = { message: "Parabéns! Você chegou ao fim do ciclo com uma boa reserva.", type: 'success' };
+  } else {
+    smartAlert = { message: "Tudo sob controle. Seu saldo e previsões cobrem os compromissos do mês.", type: 'success' };
   }
 
   // 9. Insights
@@ -162,13 +196,15 @@ export function calculateFinanceSummary(
   // 10. Priorities
   const priorities: PriorityItem[] = [];
   
-  // Critical Balance
-  if (currentBalance < 100) {
+  // Critical Balance - only if they've had some income but spent it, or if it's deeply zero
+  if (currentBalance < 100 && !isBrandNewCycle) {
     priorities.push({ id: 'p-balance', title: 'Saldo Crítico', message: 'Evite qualquer gasto não essencial até o próximo pagamento.', type: 'urgent' });
+  } else if (currentBalance === 0 && isBrandNewCycle) {
+    priorities.push({ id: 'p-welcome', title: 'Ciclo Vazio', message: 'Registre seu saldo inicial ou renda para começar o planejamento.', type: 'info' });
   }
   
   // Over-commitment
-  if (totalCommitments > currentBalance) {
+  if (totalCommitments > currentBalance && !isBrandNewCycle) {
     priorities.push({ id: 'p-commit', title: 'Comprometimento Alto', message: 'Seus compromissos financeiros já consomem todo seu saldo disponível.', type: 'urgent' });
   }
   
@@ -209,8 +245,8 @@ export function calculateFinanceSummary(
   }
 
   return {
-    currentBalance: currentBalance,
-    projectedBalance: projectedBalance,
+    currentBalance: Math.max(0, currentBalance),
+    projectedBalance: Math.max(0, projectedBalance),
     dailyLimit,
     daysRemaining,
     todaySpent,

@@ -12,13 +12,12 @@ export default function Auth() {
 
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
     if (!supabase) {
-      setError('Configuração do Supabase ausente.');
-      setLoading(false);
+      setError('Serviço indisponível no momento.');
       return;
     }
+    setLoading(true);
+    setError(null);
     try {
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({ email, password });
@@ -36,7 +35,7 @@ export default function Auth() {
   }
 
   return (
-    <div className="h-dvh flex items-center justify-center overflow-hidden p-6">
+    <div className="min-h-screen flex items-center justify-center p-6">
       <div className="glass-card w-full max-w-md p-8 animate-fade-in">
         <div className="flex flex-col items-center mb-8">
           <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4">
@@ -104,4 +103,3 @@ export default function Auth() {
     </div>
   );
 }
-
