@@ -127,7 +127,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   }
 
   const db = supabase;
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import' | 'investments'>('overview');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
@@ -135,7 +135,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   const [cards, setCards] = useState<CreditCard[]>([]);
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
   const [missingTables, setMissingTables] = useState<string[]>([]);
-  const [showSetupHelper, setShowSetupHelper] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [showAppUpdateNotification, setShowAppUpdateNotification] = useState(false);
   const [latestAppUpdate, setLatestAppUpdate] = useState<AppUpdateInfo | null>(null);
@@ -218,6 +217,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
 
         if (!update?.version) {
           setHasUnreadAppUpdate(false);
+          setShowAppUpdateNotification(false);
           return;
         }
 
@@ -235,8 +235,23 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
 
     loadLatestAppUpdate();
 
+    const channel = db
+      .channel(`app_updates_watch_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mf_app_updates' },
+        () => {
+          loadLatestAppUpdate();
+        }
+      )
+      .subscribe();
+
+    const refreshTimer = window.setInterval(loadLatestAppUpdate, 5000);
+
     return () => {
       active = false;
+      clearInterval(refreshTimer);
+      db.removeChannel(channel);
     };
   }, [db, user.id]);
 
@@ -291,6 +306,30 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     const slotPercent = slot === 'payday_1' ? payday1Percent : payday2Percent;
     return Math.round(((netSalary * slotPercent) / 100) * 100) / 100;
   };
+
+  const parsePaydayDateFromSummary = (value?: string): Date | null => {
+    if (!value) return null;
+    const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const nextNetIncome = useMemo(() => {
+    if (!settings) return 0;
+    const netSalary = Math.max(0, Number(settings.net_salary_estimated) || 0);
+    if (settings.payday_cycle !== 'biweekly') return netSalary;
+
+    const nextPayday = parsePaydayDateFromSummary(summary?.nextPaydayDate);
+    const payday2 = Number(settings.payday_2) || 0;
+    const slot: 'payday_1' | 'payday_2' =
+      payday2 > 0 && nextPayday?.getDate() === payday2 ? 'payday_2' : 'payday_1';
+
+    return getSalaryAmountForSlot(slot, settings);
+  }, [settings, summary?.nextPaydayDate, user.id]);
 
   useEffect(() => {
     if (settings) {
@@ -1187,6 +1226,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     { id: 'insights', label: 'Insights' },
     { id: 'history', label: 'Histórico' },
     { id: 'cards', label: 'Cartões' },
+    { id: 'investments', label: 'Investimentos' },
     { id: 'import', label: 'Importar' },
   ] as const;
 
@@ -1198,7 +1238,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             <Database className="text-yellow-500" size={18} />
             <div className="text-sm font-bold text-yellow-500">Configuração Incompleta</div>
           </div>
-          <button onClick={() => setShowSetupHelper(true)} className="px-4 py-1.5 bg-yellow-500 text-black rounded-lg text-xs font-bold">Configurar</button>
         </div>
       )}
 
@@ -1311,7 +1350,12 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             </div>
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Dias Restantes</span>
-              <div className="text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
+              <div>
+                <div className="text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
+                <div className="text-[10px] text-brand-primary font-bold uppercase tracking-wider mt-1">
+                  Recebimento líquido: R$ {nextNetIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
             </div>
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Gasto Hoje</span>
@@ -1385,6 +1429,32 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
           onPayInstallment={handlePayInstallment}
           onPayCardBill={handlePayCardBill}
         />}
+        {activeTab === 'investments' && (
+          <div className="flex-1 overflow-hidden flex flex-col gap-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-brand-secondary/10 flex items-center justify-center">
+                <TrendingUp className="text-brand-secondary" size={20} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Investimentos</h2>
+                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">
+                  Base da funcionalidade
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 glass-card flex items-center justify-center">
+              <div className="max-w-xl text-center px-6">
+                <p className="text-xl md:text-2xl font-bold mb-3">
+                  Em breve você vai poder lançar seus investimentos na atualização 1.1 beta.
+                </p>
+                <p className="text-sm text-white/60">
+                  Esta aba já está criada como base para as próximas entregas.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === 'import' && <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setActiveTab('overview')} />}
         {activeTab === 'base' && (
           <div className="flex-1 overflow-hidden flex flex-col gap-4">
@@ -1398,12 +1468,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                   <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Ajustes e Configurações do Aplicativo</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowSetupHelper(true)} 
-                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"
-              >
-                <Database size={14} />Configurar
-              </button>
             </div>
             {settings ? (
               <BaseFinanceira 
@@ -1452,27 +1516,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
         </div>
       )}
 
-
-      {showSetupHelper && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl glass-card !p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold">Configuração Manual</h2>
-              <button onClick={() => setShowSetupHelper(false)}><X size={20} /></button>
-            </div>
-            <pre className="p-4 bg-black rounded-xl border border-white/10 text-[10px] text-brand-primary overflow-auto max-h-48">
-              {`-- Scripts para o Supabase SQL Editor:
--- Adiciona colunas para monitoramento de parcelas
-ALTER TABLE public.mf_card_installments ADD COLUMN IF NOT EXISTS due_day INT DEFAULT 1;
-ALTER TABLE public.mf_card_installments ADD COLUMN IF NOT EXISTS last_paid_month TEXT;
-NOTIFY pgrst, 'reload schema';`}
-            </pre>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => { setShowSetupHelper(false); fetchData(); }} className="flex-1 py-3 bg-brand-primary text-black rounded-xl font-bold">Já executei o SQL</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <NotificationCenter 
         isOpen={showNotificationCenter}

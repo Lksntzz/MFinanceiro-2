@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rimraf dist",
     "lint": "tsc --noEmit",
+    "check:encoding": "node -e \"const fs=require('fs');const path=require('path');const bad=/(?:\\u00C3[\\u0080-\\u00BF]|\\u00C2[\\u0080-\\u00BF]|\\uFFFD)/;const roots=['src'];const exts=/\\.(ts|tsx|js|jsx|css|json|md|html)$/i;const badFiles=[];const walk=(dir)=>{for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory()) walk(p); else if(exts.test(e.name)){const txt=fs.readFileSync(p,'utf8');if(bad.test(txt)) badFiles.push(p);}}};for(const r of roots){if(fs.existsSync(r)) walk(r);}if(badFiles.length){console.error('Encoding issues found:\\n'+badFiles.join('\\n'));process.exit(1);}console.log('Encoding check passed.');\"",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
