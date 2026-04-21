@@ -65,10 +65,24 @@ export default function AdminAccessRequests({ user }: { user: User }) {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase
+      let data: any[] | null = null;
+      let error: any = null;
+
+      const byUpdated = await supabase
         .from("mf_access_requests")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("updated_at", { ascending: false });
+
+      if (byUpdated.error) {
+        const byCreated = await supabase
+          .from("mf_access_requests")
+          .select("*")
+          .order("created_at", { ascending: false });
+        data = byCreated.data;
+        error = byCreated.error;
+      } else {
+        data = byUpdated.data;
+      }
 
       if (error) throw error;
 
@@ -98,6 +112,21 @@ export default function AdminAccessRequests({ user }: { user: User }) {
 
   useEffect(() => {
     fetchRequests();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const intervalId = window.setInterval(() => {
+      fetchRequests();
+    }, 10000);
+
+    const onFocus = () => fetchRequests();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [isAdmin]);
 
   useEffect(() => {
@@ -341,4 +370,3 @@ export default function AdminAccessRequests({ user }: { user: User }) {
     </div>
   );
 }
-
