@@ -22,7 +22,8 @@ import {
   TrendingDown,
   X,
   Check,
-  Circle
+  Circle,
+  LayoutGrid
 } from 'lucide-react';
 
 interface BaseFinanceiraProps {
@@ -78,7 +79,9 @@ export default function BaseFinanceira({
   const [formData, setFormData] = useState<UserSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'income' | 'adjustments' | 'bills' | 'operating'>('income');
+  const [activeTab, setActiveTab] = useState<'income' | 'adjustments' | 'bills' | 'operating' | 'budget'>('income');
+  const [budgets, setBudgets] = useState<any[]>([]);
+  const [newBudget, setNewBudget] = useState({ category: CATEGORIES[1], amount: '' });
   const [benefitEntries, setBenefitEntries] = useState<BenefitEntry[]>([]);
   const [paydaySplit, setPaydaySplit] = useState({ payday1Percent: 50, payday2Percent: 50 });
   const [newBenefit, setNewBenefit] = useState({
@@ -176,6 +179,47 @@ export default function BaseFinanceira({
 
   const handleChange = (field: keyof UserSettings, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  useEffect(() => {
+    fetchBudgets();
+  }, [settings.user_id]);
+
+  async function fetchBudgets() {
+    if (!settings.user_id) return;
+    try {
+      const { data, error } = await supabase.from('mf_budgets').select('*').eq('user_id', settings.user_id);
+      if (!error) setBudgets(data || []);
+    } catch (err) {
+      console.error('Error fetching budgets:', err);
+    }
+  }
+
+  const handleAddBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from('mf_budgets').upsert({
+        user_id: settings.user_id,
+        category: newBudget.category,
+        limit_amount: parseFloat(newBudget.amount)
+      }, { onConflict: 'user_id,category' });
+
+      if (error) throw error;
+      setNewBudget({ ...newBudget, amount: '' });
+      fetchBudgets();
+    } catch (err) {
+      console.error('Error adding budget:', err);
+    }
+  };
+
+  const handleDeleteBudget = async (id: string) => {
+    try {
+      await supabase.from('mf_budgets').delete().eq('id', id);
+      fetchBudgets();
+    } catch (err) {
+      console.error('Error deleting budget:', err);
+    }
   };
 
   const payroll = useMemo(
@@ -283,7 +327,7 @@ export default function BaseFinanceira({
         throw error;
       }
 
-      setNewDaily({ name: '', average_amount: '', category: 'Alimentação', frequency: 'weekly' });
+      setNewDaily({ name: '', amount: '', average_amount: '', category: 'Alimentação', frequency: 'weekly' });
       onRefresh();
     } catch (err: any) {
       console.error('Error adding daily bill:', err);
@@ -415,6 +459,17 @@ export default function BaseFinanceira({
           <div className="flex-1">
             <div className="text-sm font-bold">Gastos Estimados</div>
             <div className="text-[10px] opacity-60">Rasteio Operacional</div>
+          </div>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('budget')}
+          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'budget' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+        >
+          <LayoutGrid size={18} />
+          <div className="flex-1">
+            <div className="text-sm font-bold">Orçamentos</div>
+            <div className="text-[10px] opacity-60">Limites por Categoria</div>
           </div>
         </button>
 
@@ -698,7 +753,7 @@ export default function BaseFinanceira({
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
-                    <select value={newFixed.category} onChange={e => setNewFixed({...newFixed, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm">
+                    <select value={newFixed.category} onChange={e => setNewFixed({...newFixed, category: e.target.value})} className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm [&>option]:bg-[#121212] [&>option]:text-white">
                       {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
@@ -774,14 +829,14 @@ export default function BaseFinanceira({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] text-white/40 uppercase font-bold">Frequência</label>
-                    <select value={newDaily.frequency} onChange={e => setNewDaily({...newDaily, frequency: e.target.value as 'weekly' | 'monthly'})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm">
+                    <select value={newDaily.frequency} onChange={e => setNewDaily({...newDaily, frequency: e.target.value as 'weekly' | 'monthly'})} className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm [&>option]:bg-[#121212] [&>option]:text-white">
                       <option value="weekly">Semanal</option>
                       <option value="monthly">Mensal</option>
                     </select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
-                    <select value={newDaily.category} onChange={e => setNewDaily({...newDaily, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm">
+                    <select value={newDaily.category} onChange={e => setNewDaily({...newDaily, category: e.target.value})} className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm [&>option]:bg-[#121212] [&>option]:text-white">
                       {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
@@ -807,6 +862,69 @@ export default function BaseFinanceira({
                     <div className="flex items-center gap-4">
                       <div className="text-sm font-bold">R$ {bill.average_amount.toLocaleString('pt-BR')}</div>
                       <button onClick={() => handleDeleteDaily(bill.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'budget' && (
+          <div className="space-y-6">
+            <section className="glass-card !p-6 space-y-6 border-white/5">
+              <div>
+                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+                  <LayoutGrid className="text-brand-primary" size={20} /> Orçamentos por Categoria
+                </h3>
+                <p className="text-xs text-white/40">Defina limites mensais para cada categoria de gasto.</p>
+              </div>
+
+              <form onSubmit={handleAddBudget} className="bg-black/20 p-4 rounded-2xl border border-white/5 flex flex-col md:flex-row gap-4 items-end">
+                <div className="flex-1 space-y-1 w-full">
+                  <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
+                  <select 
+                    value={newBudget.category} 
+                    onChange={e => setNewBudget({...newBudget, category: e.target.value})} 
+                    className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm [&>option]:bg-[#121212]"
+                  >
+                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1 space-y-1 w-full">
+                  <label className="text-[10px] text-white/40 uppercase font-bold">Limite Mensal (R$)</label>
+                  <input 
+                    type="number" 
+                    placeholder="0,00" 
+                    required 
+                    value={newBudget.amount} 
+                    onChange={e => setNewBudget({...newBudget, amount: e.target.value})} 
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" 
+                  />
+                </div>
+                <button type="submit" className="w-full md:w-auto bg-brand-primary text-black px-6 py-2 rounded-xl font-bold text-xs hover:brightness-110 shadow-lg h-[42px]">
+                  Configurar Limite
+                </button>
+              </form>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto no-scrollbar pr-1">
+                {budgets.length === 0 && <div className="col-span-2 text-center py-10 text-white/20 italic text-sm">Nenhum orçamento configurado.</div>}
+                {budgets.map(b => (
+                  <div key={b.id} className="group p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-brand-primary/10 flex items-center justify-center text-brand-primary">
+                        <Calculator size={16} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold">{b.category}</div>
+                        <div className="text-[10px] text-white/40">Limite de gastos planejado</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm font-bold">R$ {b.limit_amount?.toLocaleString('pt-BR')}</div>
+                      <button onClick={() => handleDeleteBudget(b.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
                         <X size={16} />
                       </button>
                     </div>

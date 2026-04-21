@@ -1,8 +1,6 @@
 import React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { CheckCircle2, Info, Sparkles, Wrench, X } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { X, Sparkles, CheckCircle, Info, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { AppUpdateInfo } from '../lib/app-updates';
 
 interface AppUpdateNotificationProps {
@@ -12,111 +10,112 @@ interface AppUpdateNotificationProps {
   onAcknowledge: () => void;
 }
 
-export default function AppUpdateNotification({
-  isOpen,
-  updateInfo,
-  onClose,
-  onAcknowledge,
+export default function AppUpdateNotification({ 
+  isOpen, 
+  updateInfo, 
+  onClose, 
+  onAcknowledge 
 }: AppUpdateNotificationProps) {
   if (!updateInfo) return null;
-
-  const publishedLabel = updateInfo.publishedAt
-    ? format(new Date(updateInfo.publishedAt), 'dd/MM/yyyy', { locale: ptBR })
-    : null;
-
-  const showNewsSection = updateInfo.hasNewFeatures && updateInfo.newFeatures.length > 0;
-  const fixes = updateInfo.fixes.length > 0
-    ? updateInfo.fixes
-    : ['Correções internas e melhorias de estabilidade.'];
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
-          <motion.div
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[90]"
+            className="absolute inset-0 bg-black/80 backdrop-blur-md"
           />
+          
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.98 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="glass-card w-full max-w-lg relative overflow-hidden flex flex-col max-h-[90vh]"
           >
-            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0b0b0b] shadow-2xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-white/10 bg-white/5 flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-brand-primary/15 text-brand-primary flex items-center justify-center shrink-0">
-                    <Info size={18} />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold">Atualizacao do aplicativo</h2>
-                    <p className="text-xs text-white/50">
-                      {updateInfo.title} • v{updateInfo.version}
-                      {publishedLabel ? ` • ${publishedLabel}` : ''}
-                    </p>
+            {/* Header com gradiente */}
+            <div className="relative p-6 bg-gradient-to-br from-brand-primary/20 to-transparent border-b border-white/5">
+              <button 
+                onClick={onClose}
+                className="absolute top-4 right-4 p-2 text-white/40 hover:text-white transition-colors"
+                aria-label="Fecar"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="flex items-center gap-4 mb-2">
+                <div className="h-12 w-12 rounded-2xl bg-brand-primary/20 flex items-center justify-center">
+                  <Sparkles className="text-brand-primary" size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">{updateInfo.title || 'Novidades Chegaram!'}</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="px-2 py-0.5 rounded-full bg-brand-primary/10 text-brand-primary text-[10px] font-bold uppercase tracking-wider">
+                      v{updateInfo.version}
+                    </span>
+                    {updateInfo.is_major && (
+                      <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-[10px] font-bold uppercase tracking-wider">
+                        Grande Update
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button
-                  onClick={onClose}
-                  className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                >
-                  <X size={18} />
-                </button>
               </div>
+            </div>
 
-              <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto no-scrollbar">
-                {updateInfo.summary && (
-                  <p className="text-sm text-white/80 leading-relaxed">{updateInfo.summary}</p>
-                )}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
+              {/* Features - Novidades */}
+              {updateInfo.features && updateInfo.features.length > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-4 text-brand-primary">
+                    <Sparkles size={16} />
+                    <h3 className="text-xs font-bold uppercase tracking-widest">O que há de novo</h3>
+                  </div>
+                  <div className="grid gap-3">
+                    {updateInfo.features.map((feature, idx) => (
+                      <div key={idx} className="flex gap-3 p-3 rounded-xl bg-white/5 border border-white/5 group hover:bg-white/10 transition-colors">
+                        <div className="h-5 w-5 rounded-full bg-brand-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <ChevronRight className="text-brand-primary" size={12} />
+                        </div>
+                        <p className="text-sm text-white/80 leading-relaxed font-medium">{feature}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
-                {showNewsSection && (
-                  <section className="space-y-2">
-                    <h3 className="text-[11px] uppercase tracking-widest font-bold text-brand-primary flex items-center gap-2">
-                      <Sparkles size={12} />
-                      Novidades
-                    </h3>
-                    <ul className="space-y-2">
-                      {updateInfo.newFeatures.map((item, idx) => (
-                        <li key={`news-${idx}`} className="text-sm text-white/80 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-
-                <section className="space-y-2">
-                  <h3 className="text-[11px] uppercase tracking-widest font-bold text-white/70 flex items-center gap-2">
-                    <Wrench size={12} />
-                    {showNewsSection ? 'Correções e melhorias' : 'Melhorias desta atualizacao'}
-                  </h3>
-                  <ul className="space-y-2">
-                    {fixes.map((item, idx) => (
-                      <li key={`fix-${idx}`} className="text-sm text-white/80 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-                        {item}
+              {/* Fixes - Correções */}
+              {updateInfo.fixes && updateInfo.fixes.length > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-4 text-white/40">
+                    <CheckCircle size={16} />
+                    <h3 className="text-xs font-bold uppercase tracking-widest">Correções e Melhorias</h3>
+                  </div>
+                  <ul className="space-y-3">
+                    {updateInfo.fixes.map((fix, idx) => (
+                      <li key={idx} className="flex gap-3 text-sm text-white/50 leading-relaxed">
+                        <span className="text-brand-primary mt-1.5 h-1.5 w-1.5 rounded-full shrink-0" />
+                        {fix}
                       </li>
                     ))}
                   </ul>
                 </section>
-              </div>
+              )}
+            </div>
 
-              <div className="px-5 py-4 border-t border-white/10 bg-white/5 flex items-center justify-end">
-                <button
-                  onClick={onAcknowledge}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-primary text-black text-xs font-bold uppercase tracking-wider hover:opacity-90 transition-opacity"
-                >
-                  <CheckCircle2 size={14} />
-                  Entendi
-                </button>
-              </div>
+            <div className="p-6 border-t border-white/5 bg-white/5">
+              <button
+                onClick={onAcknowledge}
+                className="w-full py-4 rounded-2xl bg-brand-primary text-black font-bold text-sm tracking-wide hover:brightness-110 transition-all shadow-[0_4px_20px_rgba(0,242,255,0.2)] active:scale-[0.98]"
+              >
+                Entendi, vamos lá!
+              </button>
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );

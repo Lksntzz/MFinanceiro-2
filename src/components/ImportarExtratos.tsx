@@ -731,7 +731,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                   <select
                     value={bank}
                     onChange={(e) => setBank(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-primary transition-all"
+                    className="w-full bg-[#121212] border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-primary transition-all [&>option]:bg-[#121212] [&>option]:text-white"
                   >
                     <option value="auto">Deteccao Automatica</option>
                     <option value="nubank">Nubank</option>

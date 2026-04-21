@@ -1,37 +1,72 @@
 
-import React from 'react';
-import { FinanceSummary } from '../types';
+import React, { useState, useEffect } from 'react';
+import { FinanceSummary, Transaction, FixedBill } from '../types';
 import { 
   Lightbulb, 
   AlertTriangle, 
   TrendingDown, 
   Zap, 
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  BrainCircuit
 } from 'lucide-react';
+import { getPredictiveAnalysis } from '../services/investmentIntelligence';
+import ReactMarkdown from 'react-markdown';
 
 interface InsightsProps {
   summary: FinanceSummary | null;
+  transactions: Transaction[];
+  fixedBills: FixedBill[];
 }
 
-export default function Insights({ summary }: InsightsProps) {
+export default function Insights({ summary, transactions, fixedBills }: InsightsProps) {
+  const [prediction, setPrediction] = useState<string>('');
+  const [loadingPrediction, setLoadingPrediction] = useState(false);
+
+  useEffect(() => {
+    async function fetchPrediction() {
+      if (!summary || transactions.length === 0) return;
+      setLoadingPrediction(true);
+      try {
+        const text = await getPredictiveAnalysis(transactions, summary.currentBalance, fixedBills);
+        setPrediction(text);
+      } catch (err) {
+        console.error('Error fetching prediction:', err);
+      } finally {
+        setLoadingPrediction(false);
+      }
+    }
+    fetchPrediction();
+  }, [summary, transactions.length, fixedBills.length]);
+
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
-      {/* Hero Insight */}
-      <div className={`glass-card !p-6 border-l-4 ${summary?.smartAlert?.type === 'danger' ? 'border-l-red-500 bg-red-500/5' : 'border-l-brand-primary bg-brand-primary/5'}`}>
-        <div className="flex items-start gap-4">
-          <div className={`p-3 rounded-2xl ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/20 text-red-400' : 'bg-brand-primary/20 text-brand-primary'}`}>
-            <Zap size={24} />
+      {/* Predictive AI Banner */}
+      <div className="glass-card !p-6 border-brand-primary/20 bg-brand-primary/5 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+          <BrainCircuit size={80} />
+        </div>
+        <div className="flex items-start gap-4 relative z-10">
+          <div className="p-3 rounded-2xl bg-brand-primary/20 text-brand-primary">
+            <BrainCircuit size={24} />
           </div>
           <div className="flex-1">
-            <h2 className="text-xl font-bold mb-2">Insight Prioritário</h2>
-            <p className="text-white/70 text-lg leading-relaxed">
-              {summary?.smartAlert?.message || "Seu comportamento financeiro está exemplar neste ciclo. Continue assim!"}
-            </p>
-            <button className="mt-4 flex items-center gap-2 text-brand-primary font-bold hover:underline">
-              <span>Tomar ação agora</span>
-              <ArrowRight size={18} />
-            </button>
+            <h2 className="text-xl font-black mb-2 flex items-center gap-2">
+              Previsão Inteligente 
+              <span className="text-[8px] bg-brand-primary text-black px-1.5 py-0.5 rounded uppercase font-black">AI Powered</span>
+            </h2>
+            <div className="text-white/80 prose prose-invert prose-sm max-w-none">
+              {loadingPrediction ? (
+                <div className="flex items-center gap-2 text-white/40">
+                  <div className="h-4 w-4 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                  <span>Analisando padrões e calculando fluxos futuros...</span>
+                </div>
+              ) : (
+                <div className="text-sm leading-relaxed">
+                  <ReactMarkdown>{prediction || "Processando seus dados financeiros para gerar insights preditivos..."}</ReactMarkdown>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

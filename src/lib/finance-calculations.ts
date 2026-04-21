@@ -32,24 +32,50 @@ export function calculateFinanceSummary(
   installments: CardInstallment[] = [],
   currentDate: Date = new Date()
 ): FinanceSummary {
-  // 1. Determine next payday
+  // 1. Determine cycle boundaries
   const nextPayday = getNextPayday(settings, currentDate);
+  const lastPayday = getLastPayday(settings, currentDate);
   const daysRemaining = Math.max(1, differenceInCalendarDays(nextPayday, currentDate));
 
-  // 2. Balances & Commitments
+  // 2. Balances & Commitments (INTELLIGENT CYCLE FILTERING)
   const currentBalance = settings.current_balance;
   
-  // Calculate pending fixed commitments until next payday
+  // Define sub-cycle logic: only consider bills that fall BETWEEN lastPayday and nextPayday
+  // For monthly, it's the standard month. For biweekly, it's the specific 15-day window.
+  const isInCycle = (dueDay: number) => {
+    const p1 = Number(settings.payday_1) || 5;
+    const p2 = Number(settings.payday_2) || 20;
+    
+    // We create a virtual date for the bill in the "current" month of the cycle
+    // A bit tricky: if lastPayday was the 20th and next is the 5th, 
+    // a bill on the 2nd IS in cycle, but a bill on the 10th is NOT.
+    const billDateLocal = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay, 12, 0, 0);
+    
+    // If the due day is "behind" the lastPayday in the same month, it might belong to the previous cycle
+    // or the end of the current one if it's a wrap-around.
+    // Accurate check: is within [lastPayday, nextPayday]
+    return isWithinInterval(billDateLocal, { start: startOfDay(lastPayday), end: endOfDay(nextPayday) }) ||
+           isWithinInterval(addMonths(billDateLocal, 1), { start: startOfDay(lastPayday), end: endOfDay(nextPayday) }) ||
+           isWithinInterval(subDays(billDateLocal, 30), { start: startOfDay(lastPayday), end: endOfDay(nextPayday) });
+  };
+
+  // Calculate pending fixed commitments that fall WITHIN THIS SPECIFIC SUB-CYCLE
   const pendingBillsTotal = fixedBills
-    .filter(bill => bill.status === 'pending')
+    .filter(bill => bill.status === 'pending' && isInCycle(bill.due_day))
     .reduce((sum, bill) => sum + bill.amount, 0);
     
-  // Calculate card usage (current balance on cards)
-  const cardsTotal = cards.reduce((sum, card) => sum + (card.used || 0), 0);
+  // Calculate card usage - only if the due date is within this sub-cycle
+  const cardsTotal = cards
+    .filter(card => isInCycle(card.due_day))
+    .reduce((sum, card) => sum + (card.used || 0), 0);
 
-  // Calculate upcoming installments for the current cycle
-  // (Assuming installments are monthly and due in the current cycle)
-  const installmentsTotal = installments.reduce((sum, inst) => sum + inst.monthly_amount, 0);
+  // Calculate upcoming installments for THIS SPECIFIC SUB-CYCLE
+  const installmentsTotal = installments
+    .filter(inst => {
+      const isFinished = inst.current_installment > inst.total_installments;
+      return !isFinished && isInCycle(inst.due_day);
+    })
+    .reduce((sum, inst) => sum + inst.monthly_amount, 0);
   
   // Calculate expected daily bills until payday
   const dailyBillsCommitment = dailyBills.reduce((sum, bill) => {
@@ -57,19 +83,19 @@ export function calculateFinanceSummary(
       const weeksRemaining = Math.ceil(daysRemaining / 7);
       return sum + (bill.average_amount * weeksRemaining);
     } else {
-      // Monthly - assume it happens once in the cycle if not already spent
-      return sum + bill.average_amount;
+      // Monthly - only if it falls in this sub-cycle
+      return isInCycle(28) ? sum + bill.average_amount : sum; // Assume day 28 for general daily bills if no day specified
     }
   }, 0);
   
-  // The "Real" available balance is what's left after all commitments
+  // The "Real" available balance is what's left after commitments in THIS CYCLE
   const totalCommitments = pendingBillsTotal + cardsTotal + installmentsTotal + dailyBillsCommitment;
   const availableForDaily = Math.max(0, currentBalance - totalCommitments);
   const projectedBalance = currentBalance - pendingBillsTotal - installmentsTotal;
 
-  // 3. Cycle dates (from last payday to next payday)
-  const lastPayday = subDays(nextPayday, settings.payday_cycle === 'biweekly' ? 15 : 30);
+  // 3. Cycle interval for transaction filtering
   const cycleInterval = { start: startOfDay(lastPayday), end: endOfDay(nextPayday) };
+  const cyclePeriodLabel = `${format(lastPayday, 'dd')} a ${format(nextPayday, 'dd')}`;
 
   // 4. Spending stats
   const todayStart = startOfDay(currentDate);
@@ -193,10 +219,10 @@ export function calculateFinanceSummary(
     insights.push("Você está gastando mais do que o ideal. Tente reduzir R$ " + (averageDailySpent - dailyLimit).toFixed(2) + " por dia.");
   }
 
-  // 10. Priorities
+  // 20. Priorities (INTELLIGENT FILTERING)
   const priorities: PriorityItem[] = [];
   
-  // Critical Balance - only if they've had some income but spent it, or if it's deeply zero
+  // Critical Balance 
   if (currentBalance < 100 && !isBrandNewCycle) {
     priorities.push({ id: 'p-balance', title: 'Saldo Crítico', message: 'Evite qualquer gasto não essencial até o próximo pagamento.', type: 'urgent' });
   } else if (currentBalance === 0 && isBrandNewCycle) {
@@ -205,35 +231,48 @@ export function calculateFinanceSummary(
   
   // Over-commitment
   if (totalCommitments > currentBalance && !isBrandNewCycle) {
-    priorities.push({ id: 'p-commit', title: 'Comprometimento Alto', message: 'Seus compromissos financeiros já consomem todo seu saldo disponível.', type: 'urgent' });
+    priorities.push({ id: 'p-commit', title: 'Comprometimento Alto', message: 'Seus compromissos no período atual já superam seu saldo.', type: 'urgent' });
   }
   
-  // Pending Bills
-  fixedBills.filter(bill => bill.status === 'pending').forEach(bill => {
+  // Pending Bills (Only in current sub-cycle)
+  fixedBills.filter(bill => bill.status === 'pending' && isInCycle(bill.due_day)).forEach(bill => {
     const today = currentDate.getDate();
     const isDueSoon = bill.due_day === today || bill.due_day === today + 1;
     
     priorities.push({
       id: `bill-${bill.id}`,
-      title: isDueSoon ? 'Pagar Hoje/Amanhã' : 'Conta Pendente',
+      title: isDueSoon ? 'Pagar Hoje/Amanhã' : 'Conta do Ciclo',
       message: `${bill.name}: R$ ${bill.amount.toLocaleString('pt-BR')} (Vence dia ${bill.due_day})`,
       type: isDueSoon ? 'urgent' : 'warning'
     });
   });
 
-  // Credit Card Bills
-  cards.forEach(card => {
+  // Credit Card Bills (Only in current sub-cycle)
+  cards.filter(card => isInCycle(card.due_day)).forEach(card => {
     const today = currentDate.getDate();
     const isDueSoon = card.due_day === today || card.due_day === today + 1;
     
     if (card.used > 0) {
       priorities.push({
         id: `card-${card.id}`,
-        title: isDueSoon ? 'Vencimento Cartão' : 'Fatura Cartão',
+        title: isDueSoon ? 'Vencimento Cartão' : 'Fatura no Ciclo',
         message: `${card.name}: R$ ${card.used.toLocaleString('pt-BR')} (Vence dia ${card.due_day})`,
         type: isDueSoon ? 'urgent' : 'info'
       });
     }
+  });
+
+  // Installments in Cycle
+  installments.filter(inst => {
+    const isFinished = inst.current_installment > inst.total_installments;
+    return !isFinished && isInCycle(inst.due_day);
+  }).forEach(inst => {
+    priorities.push({
+      id: `inst-prio-${inst.id}`,
+      title: 'Parcela Pendente',
+      message: `${inst.description}: R$ ${inst.monthly_amount.toLocaleString('pt-BR')} (Dia ${inst.due_day})`,
+      type: 'info'
+    });
   });
 
   if (daysRemaining > 10 && availableForDaily < 500) {
@@ -254,6 +293,8 @@ export function calculateFinanceSummary(
     averageDailySpent,
     nextPaydayDate: format(nextPayday, 'dd/MM/yyyy'),
     nextPaydayLabel: format(nextPayday, 'dd/MM'),
+    cyclePeriodLabel,
+    cycleInterval,
     dominantCategory,
     spendingTrend: averageDailySpent > dailyLimit ? 'up' : 'down',
     insights,
@@ -391,37 +432,54 @@ function calculateRhythm(
 
 function getNextPayday(settings: UserSettings, now: Date): Date {
   const today = startOfDay(now);
-  
-  // Default to payday_1
   const p1 = Number(settings.payday_1) || 5;
-  let paydayDate = startOfDay(setDate(now, p1));
-  
-  // If today is payday or after payday, move to next month
-  if (isAfter(today, paydayDate) || isSameDay(today, paydayDate)) {
-    paydayDate = addMonths(paydayDate, 1);
-  }
+  const p2 = Number(settings.payday_2) || 20;
 
-  // For biweekly, we have two potential dates each month
+  const candidates: Date[] = [
+    startOfDay(setDate(now, p1)),
+    startOfDay(setDate(addMonths(now, 1), p1)),
+    startOfDay(setDate(subDays(now, 30), p1))
+  ];
+
   if (settings.payday_cycle === 'biweekly') {
-    const p2 = Number(settings.payday_2) || 20;
-
-    const candidates: Date[] = [
-      startOfDay(setDate(now, p1)),
-      startOfDay(setDate(addMonths(now, 1), p1)),
+    candidates.push(
       startOfDay(setDate(now, p2)),
-      startOfDay(setDate(addMonths(now, 1), p2))
-    ];
-
-    const futureCandidates = candidates
-      .filter(d => isAfter(d, today))
-      .sort((a, b) => a.getTime() - b.getTime());
-
-    if (futureCandidates.length > 0) {
-      return futureCandidates[0];
-    }
+      startOfDay(setDate(addMonths(now, 1), p2)),
+      startOfDay(setDate(subDays(now, 30), p2))
+    );
   }
 
-  return paydayDate;
+  const futureCandidates = candidates
+    .filter(d => isAfter(d, today))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  return futureCandidates[0] || addMonths(today, 1);
+}
+
+function getLastPayday(settings: UserSettings, now: Date): Date {
+  const today = startOfDay(now);
+  const p1 = Number(settings.payday_1) || 5;
+  const p2 = Number(settings.payday_2) || 20;
+
+  const candidates: Date[] = [
+    startOfDay(setDate(now, p1)),
+    startOfDay(setDate(addMonths(now, 1), p1)),
+    startOfDay(setDate(subDays(now, 30), p1))
+  ];
+
+  if (settings.payday_cycle === 'biweekly') {
+    candidates.push(
+      startOfDay(setDate(now, p2)),
+      startOfDay(setDate(addMonths(now, 1), p2)),
+      startOfDay(setDate(subDays(now, 30), p2))
+    );
+  }
+
+  const pastCandidates = candidates
+    .filter(d => !isAfter(d, today))
+    .sort((a, b) => b.getTime() - a.getTime());
+
+  return pastCandidates[0] || subDays(today, 15);
 }
 
 export function calculateBrazilianTaxes(grossSalary: number): { inss: number; irrf: number; totalDeductions: number } {

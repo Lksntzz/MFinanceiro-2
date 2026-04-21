@@ -12,6 +12,7 @@ import {
   Calendar as CalendarIcon,
   Tag,
   CreditCard,
+  FileDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -20,6 +21,7 @@ import {
   LayoutGrid,
   List
 } from 'lucide-react';
+import { ReportService } from '../services/reportService';
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -182,7 +184,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           <select 
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as any)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary"
+            className="bg-[#121212] border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary [&>option]:bg-[#121212] [&>option]:text-white"
           >
             <option value="all">Tipos</option>
             <option value="income">Entradas</option>
@@ -192,7 +194,7 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           <select 
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary max-w-[120px]"
+            className="bg-[#121212] border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary max-w-[120px] [&>option]:bg-[#121212] [&>option]:text-white"
           >
             <option value="all">Categorias</option>
             {categories.filter(c => c !== 'all').map(cat => (
@@ -209,6 +211,14 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
               Apagar Tudo
             </button>
           )}
+
+          <button 
+            onClick={() => ReportService.exportTransactionsToExcel(filteredTransactions)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary rounded-lg text-xs font-bold border border-brand-primary/20 transition-all"
+          >
+            <FileDown size={14} />
+            Exportar Excel
+          </button>
         </div>
       </div>
 

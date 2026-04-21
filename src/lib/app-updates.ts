@@ -1,75 +1,53 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export interface AppUpdateInfo {
-  id: string;
   version: string;
   title: string;
-  summary: string;
-  hasNewFeatures: boolean;
-  newFeatures: string[];
+  features: string[];
   fixes: string[];
-  publishedAt: string | null;
+  released_at: string;
+  is_major?: boolean;
 }
 
-const MISSING_TABLE_CODES = new Set(['PGRST205', '42P01']);
-const MISSING_COLUMN_CODE = 'PGRST204';
+export async function fetchLatestAppUpdate(supabase: SupabaseClient): Promise<AppUpdateInfo | null> {
+  try {
+    // Tenta buscar ordenando por released_at (preferencial)
+    let { data, error } = await supabase
+      .from('mf_app_updates')
+      .select('*')
+      .order('released_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-function isMissingSchemaError(error: any): boolean {
-  if (!error) return false;
-  const code = String(error.code || '');
-  if (MISSING_TABLE_CODES.has(code)) return true;
-  if (code === MISSING_COLUMN_CODE) return true;
-  const message = String(error.message || '').toLowerCase();
-  return message.includes('does not exist') || message.includes('schema cache');
-}
+    // Se falhar por coluna inexistente, tenta buscar sem ordenação específica ou por created_at
+    if (error && error.code === '42703') {
+      const { data: altData, error: altError } = await supabase
+        .from('mf_app_updates')
+        .select('*')
+        .limit(5); // Pega os últimos 5 e ordena no JS
+      
+      if (altError) throw altError;
+      if (!altData || altData.length === 0) return null;
+      
+      // Ordena decrescente por versão ou id (heurística simples)
+      const sorted = altData.sort((a, b) => b.version?.localeCompare(a.version));
+      data = sorted[0];
+    } else if (error) {
+      throw error;
+    }
+    
+    if (!data) return null;
 
-function toStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item || '').trim())
-      .filter(Boolean);
+    return {
+      version: data.version,
+      title: data.title,
+      features: Array.isArray(data.features) ? data.features : [],
+      fixes: Array.isArray(data.fixes) ? data.fixes : [],
+      released_at: data.released_at || data.created_at || new Date().toISOString(),
+      is_major: data.is_major
+    };
+  } catch (err) {
+    // Silent fail para não poluir o console do usuário se a tabela não existir
+    return null;
   }
-  if (typeof value === 'string') {
-    return value
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-export async function fetchLatestAppUpdate(
-  db: SupabaseClient
-): Promise<AppUpdateInfo | null> {
-  const { data, error } = await db
-    .from('mf_app_updates')
-    .select(
-      'id, version, title, summary, has_new_features, new_features, fixes, published_at'
-    )
-    .eq('is_active', true)
-    .order('published_at', { ascending: false })
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    if (isMissingSchemaError(error)) return null;
-    throw error;
-  }
-
-  if (!data) return null;
-
-  return {
-    id: String((data as any).id ?? ''),
-    version: String((data as any).version ?? ''),
-    title: String((data as any).title ?? 'Atualizacao do aplicativo'),
-    summary: String((data as any).summary ?? ''),
-    hasNewFeatures: Boolean((data as any).has_new_features),
-    newFeatures: toStringArray((data as any).new_features),
-    fixes: toStringArray((data as any).fixes),
-    publishedAt:
-      typeof (data as any).published_at === 'string'
-        ? (data as any).published_at
-        : null,
-  };
 }

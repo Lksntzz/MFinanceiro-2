@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Wallet, LogIn, UserPlus } from 'lucide-react';
+import { Wallet, LogIn, UserPlus, Github, Mail } from 'lucide-react';
 
 export default function Auth() {
   const [email, setEmail] = useState('');
@@ -34,15 +34,58 @@ export default function Auth() {
     }
   }
 
+  async function handleSocialLogin(provider: 'google' | 'github') {
+    if (!supabase) return;
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="glass-card w-full max-w-md p-8 animate-fade-in">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#050505]">
+      <div className="glass-card w-full max-w-md p-8 animate-fade-in relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary animate-pulse" />
+        
         <div className="flex flex-col items-center mb-8">
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4">
+          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(0,242,255,0.3)]">
             <Wallet className="text-white" size={32} />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">MFinanceiro</h1>
-          <p className="text-white/60 mt-2">Seu controle financeiro inteligente</p>
+          <h1 className="text-3xl font-black tracking-tighter">MFinanceiro</h1>
+          <p className="text-white/40 mt-2 text-xs uppercase font-bold tracking-widest">Controle Financeiro Inteligente</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <button 
+            onClick={() => handleSocialLogin('google')}
+            disabled={loading}
+            className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
+          >
+            <Mail size={18} className="text-red-400" />
+            <span className="text-xs font-bold">Google</span>
+          </button>
+          <button 
+            onClick={() => handleSocialLogin('github')}
+            disabled={loading}
+            className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
+          >
+            <Github size={18} />
+            <span className="text-xs font-bold">GitHub</span>
+          </button>
+        </div>
+
+        <div className="relative mb-8">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
+          <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest"><span className="bg-[#0c0c0c] px-4 text-white/20">Ou com e-mail</span></div>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">

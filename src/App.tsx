@@ -1,23 +1,17 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
-import { Session } from '@supabase/supabase-js';
+import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import ConfigRequired from './components/ConfigRequired';
 import MaintenanceScreen from './components/MaintenanceScreen';
-import {
-  fetchMaintenanceConfig,
-  isMaintenanceAdmin,
-  MaintenanceConfig,
-} from './lib/maintenance';
-
-const MAINTENANCE_POLL_MS = 5000;
+import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
+import { Session } from '@supabase/supabase-js';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [maintenance, setMaintenance] = useState<MaintenanceConfig | null>(null);
-  const maintenanceModeRef = useRef(false);
+  const [forceAdminAuth, setForceAdminAuth] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -25,131 +19,33 @@ export default function App() {
       return;
     }
 
-    let active = true;
-
-    const initialize = async () => {
-      try {
-        const [maintenanceResult, sessionResult] = await Promise.all([
-          fetchMaintenanceConfig(supabase),
-          supabase.auth.getSession(),
-        ]);
-
-        if (!active) return;
-
-        setMaintenance(maintenanceResult);
-        maintenanceModeRef.current = Boolean(maintenanceResult.maintenance_mode);
-
-        const {
-          data: { session: currentSession },
-          error,
-        } = sessionResult;
-
-        if (error) {
-          console.error('Error getting session:', error);
-          await supabase.auth.signOut();
-          setSession(null);
-          return;
-        }
-
-        if (
-          maintenanceResult.maintenance_mode &&
-          currentSession &&
-          !isMaintenanceAdmin(currentSession)
-        ) {
-          await supabase.auth.signOut();
-          setSession(null);
-          return;
-        }
-
-        setSession(currentSession);
-      } catch (e) {
-        console.error('Initialization error:', e);
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    initialize();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      if (
-        maintenanceModeRef.current &&
-        nextSession &&
-        !isMaintenanceAdmin(nextSession)
-      ) {
-        await supabase.auth.signOut();
-        setSession(null);
-        return;
-      }
-
-      setSession(nextSession);
+    // Check for maintenance mode
+    fetchMaintenanceConfig(supabase).then(config => {
+      setMaintenance(config);
+    }).catch(err => {
+      console.warn('Falha na verificação de manutenção:', err);
     });
 
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-
-    let active = true;
-
-    const refreshMaintenance = async () => {
-      try {
-        const config = await fetchMaintenanceConfig(supabase);
-        if (!active) return;
-
-        setMaintenance(config);
-        maintenanceModeRef.current = Boolean(config.maintenance_mode);
-
-        if (config.maintenance_mode) {
-          const {
-            data: { session: currentSession },
-          } = await supabase.auth.getSession();
-
-          if (
-            active &&
-            currentSession &&
-            !isMaintenanceAdmin(currentSession)
-          ) {
-            await supabase.auth.signOut();
-            setSession(null);
-          }
-        }
-      } catch (e) {
-        console.warn('Maintenance refresh failed:', e);
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Error getting session:', error);
+        supabase.auth.signOut();
+        setSession(null);
+      } else {
+        setSession(session);
       }
-    };
+      setLoading(false);
+    }).catch(err => {
+      console.error('Crítico: Falha ao buscar sessão (Erro de Rede):', err);
+      // Em caso de erro de rede total, não travamos o usuário no loader eterno
+      setLoading(false);
+    });
 
-    const channel = supabase
-      .channel('maintenance-live-watch')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mf_global_settings' },
-        () => {
-          refreshMaintenance();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mf_app_config' },
-        () => {
-          refreshMaintenance();
-        }
-      )
-      .subscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
 
-    const pollTimer = window.setInterval(refreshMaintenance, MAINTENANCE_POLL_MS);
-
-    return () => {
-      active = false;
-      clearInterval(pollTimer);
-      supabase.removeChannel(channel);
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   if (loading) {
@@ -165,20 +61,22 @@ export default function App() {
   }
 
   const isAdmin = isMaintenanceAdmin(session);
-  const isMaintenanceActive = Boolean(maintenance?.maintenance_mode) && !isAdmin;
+  const isMaintenanceActive = maintenance?.maintenance_mode && !isAdmin;
 
-  if (isMaintenanceActive) {
-    return <MaintenanceScreen message={maintenance?.maintenance_message} />;
+  // Se estiver em manutenção e NÃO for admin, mostra tela de manutenção
+  // Caso o usuário clique em "Entrar como adm", liberamos o Auth mesmo em manutenção
+  if (isMaintenanceActive && !forceAdminAuth) {
+    return (
+      <MaintenanceScreen 
+        message={maintenance?.maintenance_message} 
+        onAdminLogin={() => setForceAdminAuth(true)}
+      />
+    );
   }
 
   if (!session) {
     return <Auth />;
   }
 
-  return (
-    <Dashboard
-      user={session.user}
-      isMaintenanceBypass={isAdmin && Boolean(maintenance?.maintenance_mode)}
-    />
-  );
+  return <Dashboard user={session.user} isMaintenanceBypass={isAdmin && (maintenance?.maintenance_mode || false)} />;
 }

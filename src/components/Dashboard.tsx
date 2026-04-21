@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Transaction, UserSettings, FinanceSummary, FixedBill, DailyBill, CreditCard, CardInstallment, ImportedTransaction } from '../types';
+import { Transaction, UserSettings, FinanceSummary, FixedBill, DailyBill, CreditCard, CardInstallment, ImportedTransaction, Investment } from '../types';
 import { calculateFinanceSummary } from '../lib/finance-calculations';
 import { DEFAULT_USER_SETTINGS, CATEGORIES } from '../lib/constants';
 import { User } from '@supabase/supabase-js';
@@ -25,8 +25,26 @@ import {
   CheckCircle2,
   Circle,
   Bell,
-  Pencil
+  Pencil,
+  Eye,
+  EyeOff,
+  Sun,
+  Moon,
+  Crown,
+  FileDown,
+  PlayCircle,
+  Heart,
+  Calendar as CalendarIcon,
+  Activity,
+  Briefcase,
+  Target,
+  Brain,
+  Layout,
+  List
 } from 'lucide-react';
+import { ReportService } from '../services/reportService';
+import { useApp } from '../context/AppContext';
+import { formatCurrency, formatPercent, formatCompact } from '../lib/formatters';
 import {
   Chart as ChartJS,
   registerables
@@ -39,7 +57,6 @@ import NotificationCenter from './NotificationCenter';
 import AppUpdateNotification from './AppUpdateNotification';
 import { AppUpdateInfo, fetchLatestAppUpdate } from '../lib/app-updates';
 import { fetchMaintenanceConfig } from '../lib/maintenance';
-import MaintenanceScreen from './MaintenanceScreen';
 
 ChartJS.register(...registerables);
 
@@ -49,72 +66,18 @@ import Insights from './Insights';
 import BaseFinanceira from './BaseFinanceira';
 import Cartoes from './Cartoes';
 import ImportarExtratos from './ImportarExtratos';
+import Investments from './Investments';
+import FinancialGoals from './FinancialGoals';
+import SubscriptionManager from './SubscriptionManager';
+import FinancialHealth from './FinancialHealth';
+import FinancialCalendar from './FinancialCalendar';
 
 export default function Dashboard({ user, isMaintenanceBypass }: { user: User, isMaintenanceBypass?: boolean }) {
-  const [hardMaintenanceLock, setHardMaintenanceLock] = useState<{
-    active: boolean;
-    message?: string;
-  }>({ active: false });
-
+  const { isPrivate, setIsPrivate, theme, setTheme } = useApp();
+  
   useEffect(() => {
     clearLegacyCache();
   }, []);
-
-  useEffect(() => {
-    if (isMaintenanceBypass) return;
-    if (!supabase) return;
-    let active = true;
-
-    const enforceMaintenanceLock = async () => {
-      try {
-        const config = await fetchMaintenanceConfig(supabase);
-        if (!active) return;
-        if (config.maintenance_mode) {
-          setHardMaintenanceLock({
-            active: true,
-            message: config.maintenance_message,
-          });
-          await supabase.auth.signOut();
-        }
-      } catch (err) {
-        console.warn('Falha ao validar manutenção no Dashboard:', err);
-      }
-    };
-
-    const channel = supabase
-      .channel(`maintenance_lock_${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mf_global_settings' },
-        () => {
-          enforceMaintenanceLock();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mf_app_config' },
-        () => {
-          enforceMaintenanceLock();
-        }
-      )
-      .subscribe();
-
-    const timer = window.setInterval(enforceMaintenanceLock, 5000);
-
-    return () => {
-      active = false;
-      clearInterval(timer);
-      supabase.removeChannel(channel);
-    };
-  }, [user.id, isMaintenanceBypass]);
-
-  if (hardMaintenanceLock.active && !isMaintenanceBypass) {
-    return (
-      <MaintenanceScreen
-        message={hardMaintenanceLock.message}
-      />
-    );
-  }
 
   if (!supabase) {
     return (
@@ -127,18 +90,17 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   }
 
   const db = supabase;
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import' | 'investments'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import' | 'investments' | 'goals' | 'health' | 'subscriptions' | 'calendar'>('overview');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
   const [dailyBills, setDailyBills] = useState<DailyBill[]>([]);
   const [cards, setCards] = useState<CreditCard[]>([]);
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
+  const [investments, setInvestments] = useState<Investment[]>([]);
   const [missingTables, setMissingTables] = useState<string[]>([]);
+  const [showSetupHelper, setShowSetupHelper] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
-  const [showAppUpdateNotification, setShowAppUpdateNotification] = useState(false);
-  const [latestAppUpdate, setLatestAppUpdate] = useState<AppUpdateInfo | null>(null);
-  const [hasUnreadAppUpdate, setHasUnreadAppUpdate] = useState(false);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +135,8 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   });
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [editingInstallment, setEditingInstallment] = useState<CardInstallment | null>(null);
+  const [latestUpdate, setLatestUpdate] = useState<AppUpdateInfo | null>(null);
+  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
     message: string;
@@ -191,69 +155,50 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   const fetchVersionRef = useRef(0);
 
   useEffect(() => {
-    currentUserIdRef.current = user.id;
-  }, [user.id]);
-
-  const getAppUpdateReadKey = (userId: string, version: string) =>
-    `mfinanceiro:app-update:read:${userId}:${version}`;
-
-  const markAppUpdateAsRead = () => {
-    if (latestAppUpdate?.version) {
-      localStorage.setItem(getAppUpdateReadKey(user.id, latestAppUpdate.version), '1');
-      setHasUnreadAppUpdate(false);
-    }
-    setShowAppUpdateNotification(false);
-  };
-
-  useEffect(() => {
     let active = true;
 
     const loadLatestAppUpdate = async () => {
       try {
         const update = await fetchLatestAppUpdate(db);
-        if (!active) return;
-
-        setLatestAppUpdate(update);
-
-        if (!update?.version) {
-          setHasUnreadAppUpdate(false);
-          setShowAppUpdateNotification(false);
-          return;
-        }
-
-        const isRead =
-          localStorage.getItem(getAppUpdateReadKey(user.id, update.version)) === '1';
-        setHasUnreadAppUpdate(!isRead);
-
-        if (!isRead) {
-          setShowAppUpdateNotification(true);
+        if (active && update) {
+          const lastDismissed = localStorage.getItem(`mfinanceiro-update-dismissed:${user.id}`);
+          if (lastDismissed !== update.version) {
+            setLatestUpdate(update);
+            setIsUpdateOpen(true);
+          }
         }
       } catch (err) {
-        console.warn('Falha ao carregar atualizacao do app:', err);
+        console.warn('Silent update check failure:', err);
+      }
+    };
+
+    const enforceMaintenanceLock = async () => {
+      if (isMaintenanceBypass) return;
+      try {
+        const config = await fetchMaintenanceConfig(db);
+        if (active && config?.maintenance_mode) {
+          // If maintenance starts while user is inside, reload to trigger App.tsx maintenance check
+          window.location.reload();
+        }
+      } catch (err) {
+        console.warn('Maintenance check failure on interval:', err);
       }
     };
 
     loadLatestAppUpdate();
-
-    const channel = db
-      .channel(`app_updates_watch_${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mf_app_updates' },
-        () => {
-          loadLatestAppUpdate();
-        }
-      )
-      .subscribe();
-
-    const refreshTimer = window.setInterval(loadLatestAppUpdate, 5000);
+    const updateTimer = window.setInterval(loadLatestAppUpdate, 60000); // 1 minute
+    const maintenanceTimer = window.setInterval(enforceMaintenanceLock, 30000); // 30 seconds
 
     return () => {
       active = false;
-      clearInterval(refreshTimer);
-      db.removeChannel(channel);
+      window.clearInterval(updateTimer);
+      window.clearInterval(maintenanceTimer);
     };
-  }, [db, user.id]);
+  }, [user.id, isMaintenanceBypass]);
+
+  useEffect(() => {
+    currentUserIdRef.current = user.id;
+  }, [user.id]);
 
   const parseTransactionDate = (raw: string): Date | null => {
     if (!raw) return null;
@@ -306,30 +251,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     const slotPercent = slot === 'payday_1' ? payday1Percent : payday2Percent;
     return Math.round(((netSalary * slotPercent) / 100) * 100) / 100;
   };
-
-  const parsePaydayDateFromSummary = (value?: string): Date | null => {
-    if (!value) return null;
-    const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!match) return null;
-    const day = Number(match[1]);
-    const month = Number(match[2]);
-    const year = Number(match[3]);
-    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
-
-  const nextNetIncome = useMemo(() => {
-    if (!settings) return 0;
-    const netSalary = Math.max(0, Number(settings.net_salary_estimated) || 0);
-    if (settings.payday_cycle !== 'biweekly') return netSalary;
-
-    const nextPayday = parsePaydayDateFromSummary(summary?.nextPaydayDate);
-    const payday2 = Number(settings.payday_2) || 0;
-    const slot: 'payday_1' | 'payday_2' =
-      payday2 > 0 && nextPayday?.getDate() === payday2 ? 'payday_2' : 'payday_1';
-
-    return getSalaryAmountForSlot(slot, settings);
-  }, [settings, summary?.nextPaydayDate, user.id]);
 
   useEffect(() => {
     if (settings) {
@@ -543,8 +464,18 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
       }
 
       if (!isStale()) setSettings(currentSettings);
+      setLoading(false); // Liberar UI o quanto antes
 
-      // 2. Fetch transactions
+      // 2. Health check for tables (Parallel)
+      const tablesToCheck = ['mf_finance_ledger_entries', 'mf_credit_cards', 'mf_card_installments', 'mf_daily_bills', 'mf_fixed_bills', 'mf_investments'];
+      const healthResults = await Promise.all(tablesToCheck.map(t => db.from(t).select('id').limit(1)));
+      healthResults.forEach((res, idx) => {
+        if (res.error && (res.error.code === 'PGRST205' || res.error.code === 'PGRST204')) {
+          detectedMissing.push(tablesToCheck[idx]);
+        }
+      });
+
+      // 3. Fetch data
       const { data: transData, error: transError } = await db.from('mf_finance_ledger_entries').select('*').eq('user_id', user.id).order('date', { ascending: false });
       if (transError && transError.code !== 'PGRST204' && transError.code !== 'PGRST205') throw transError;
       
@@ -586,9 +517,24 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
 
       const { data: fixedData } = await db.from('mf_fixed_bills').select('*').eq('user_id', user.id);
       if (!isStale()) setFixedBills(fixedData || []);
+
+      const { data: invData } = await db.from('mf_investments').select('*').eq('user_id', user.id);
+      if (!isStale()) {
+        const normalizedInv = (invData || []).map((inv: any) => ({
+          ...inv,
+          amount: Number(inv.amount || inv.valor || 0)
+        }));
+        setInvestments(normalizedInv);
+      }
+      
+      if (!isStale()) setError(null);
     } catch (e: any) {
       console.error('Fetch error:', e);
-      if (e.code === 'PGRST205' || e.code === 'PGRST204') detectedMissing.push('database structure');
+      if (e.message?.includes('fetch') || e.name === 'TypeError') {
+        if (!isStale()) setError('Erro de conexão com o banco de dados. Verifique seu sinal de internet.');
+      } else if (e.code === 'PGRST205' || e.code === 'PGRST204') {
+        detectedMissing.push('database structure');
+      }
     }
     if (!isStale()) {
       setMissingTables(detectedMissing);
@@ -1102,7 +1048,39 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
 
   const urgentNotifications = useMemo(() => notifications.filter(n => n.status === 'due_today' || n.status === 'overdue'), [notifications]);
 
-  const latestOverviewTransactions = [...transactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
+  const overviewTopCategories = useMemo(() => {
+    const last30Days = subDays(new Date(), 30);
+    let expenses = transactions.filter(t => t.type === 'expense' && new Date(t.date) >= last30Days);
+    
+    // Se não houver despesas nos últimos 30 dias, mostra as do mês atual
+    if (expenses.length === 0) {
+      expenses = transactions.filter(t => t.type === 'expense');
+    }
+    
+    const totals: Record<string, number> = {};
+    let totalSpent = 0;
+    
+    expenses.forEach(t => {
+      const amt = Math.abs(t.amount || 0);
+      totals[t.category] = (totals[t.category] || 0) + amt;
+      totalSpent += amt;
+    });
+
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, amount]) => ({
+        name,
+        amount,
+        percentage: totalSpent > 0 ? (amount / totalSpent) * 100 : 0
+      }));
+  }, [transactions]);
+
+  const latestOverviewTransactions = useMemo(() => 
+    [...transactions]
+      .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5),
+  [transactions]);
   const overviewCardsUsed = cards.reduce((s, c) => s + Number(c.used), 0);
   const overviewCardsLimit = cards.reduce((s, c) => s + Number(c.limit), 0);
   const overviewCardsAvailable = overviewCardsLimit - overviewCardsUsed;
@@ -1220,15 +1198,49 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     }
   };
 
-  const tabs = [
-    { id: 'overview', label: 'Visão Geral' },
-    { id: 'details', label: 'Detalhes' },
-    { id: 'insights', label: 'Insights' },
-    { id: 'history', label: 'Histórico' },
-    { id: 'cards', label: 'Cartões' },
-    { id: 'investments', label: 'Investimentos' },
-    { id: 'import', label: 'Importar' },
-  ] as const;
+  const toolGroups = [
+    {
+      id: 'monitor',
+      label: 'Análise',
+      icon: Activity,
+      tabs: [
+        { id: 'overview', label: 'Dashboard' },
+        { id: 'details', label: 'Estatísticas' },
+        { id: 'insights', label: 'Insights AI' },
+        { id: 'health', label: 'Saúde' },
+      ]
+    },
+    {
+      id: 'ops',
+      label: 'Operações',
+      icon: List,
+      tabs: [
+        { id: 'history', label: 'Lançamentos' },
+        { id: 'cards', label: 'Cartões' },
+        { id: 'import', label: 'Importar' },
+      ]
+    },
+    {
+      id: 'plan',
+      label: 'Escopo',
+      icon: Calendar,
+      tabs: [
+        { id: 'calendar', label: 'Calendário' },
+        { id: 'subscriptions', label: 'Assinaturas' },
+        { id: 'goals', label: 'Metas' },
+      ]
+    },
+    {
+      id: 'wealth',
+      label: 'Capital',
+      icon: Briefcase,
+      tabs: [
+        { id: 'investments', label: 'Investimentos' },
+      ]
+    }
+  ];
+
+  const allTabs = toolGroups.flatMap(g => g.tabs);
 
   return (
     <div className="h-screen w-full p-4 flex flex-col gap-4 overflow-hidden bg-[#050505] text-white no-scrollbar">
@@ -1238,6 +1250,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             <Database className="text-yellow-500" size={18} />
             <div className="text-sm font-bold text-yellow-500">Configuração Incompleta</div>
           </div>
+          <button onClick={() => setShowSetupHelper(true)} className="px-4 py-1.5 bg-yellow-500 text-black rounded-lg text-xs font-bold">Configurar</button>
         </div>
       )}
 
@@ -1254,36 +1267,56 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
       )}
 
       <header className="flex items-center justify-between shrink-0 mb-2">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center"><Wallet className="text-white" size={18} /></div>
-          <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
-          {isMaintenanceBypass && (
-            <div className="ml-2 flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-full animate-pulse">
-              <ShieldAlert size={12} className="text-yellow-500" />
-              <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider">Manutenção ativa</span>
-            </div>
-          )}
+        <div className="flex items-center gap-4">
+          <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
+            <button 
+              onClick={() => setIsPrivate(!isPrivate)} 
+              className="p-1.5 rounded-lg text-white/40 hover:text-white transition-all"
+              title={isPrivate ? "Mostrar Valores" : "Ocultar Valores"}
+            >
+              {isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+            <div className="w-[1px] h-4 bg-white/10 mx-1 my-auto" />
+            <button 
+              onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'gold' : 'dark')} 
+              className="p-1.5 rounded-lg text-white/40 hover:text-white transition-all"
+              title="Trocar Tema"
+            >
+              {theme === 'dark' ? <Moon size={16} /> : theme === 'light' ? <Sun size={16} /> : <Crown size={16} className="text-yellow-500" />}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center"><Wallet className="text-white" size={18} /></div>
+            <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
+            {isMaintenanceBypass && (
+              <div className="ml-2 flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-full animate-pulse">
+                <ShieldAlert size={12} className="text-yellow-500" />
+                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider">Manutenção ativa</span>
+              </div>
+            )}
+          </div>
         </div>
-        <nav className="flex bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto no-scrollbar max-w-[700px] mx-4">
-          {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{tab.label}</button>
+        <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-4xl mx-4">
+          {toolGroups.map(group => (
+            <div key={group.id} className="flex bg-white/5 p-1 rounded-xl border border-white/5 items-center gap-1">
+              <div className="px-2 text-white/30 hidden lg:block">
+                <group.icon size={14} />
+              </div>
+              <div className="flex gap-1">
+                {group.tabs.map(tab => (
+                  <button 
+                    key={tab.id} 
+                    onClick={() => setActiveTab(tab.id as any)} 
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="flex items-center gap-3">
-          {latestAppUpdate && (
-            <button
-              onClick={() => setShowAppUpdateNotification(true)}
-              className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"
-              title="Novidades do aplicativo"
-            >
-              <Info size={18} />
-              {hasUnreadAppUpdate && (
-                <span className="absolute -top-1 -right-1 px-1.5 h-4 min-w-4 bg-brand-primary text-[9px] text-black font-bold rounded-full flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(0,242,255,0.4)]">
-                  Novo
-                </span>
-              )}
-            </button>
-          )}
           <button 
             onClick={() => setShowNotificationCenter(true)}
             className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"
@@ -1342,24 +1375,22 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                   <Pencil size={12} />
                 </button>
               </div>
-              <div className="text-2xl font-bold">R$ {Math.max(0, summary?.currentBalance ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+              <div className="text-2xl font-bold">{formatCurrency(Math.max(0, summary?.currentBalance ?? 0), isPrivate)}</div>
             </div>
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between border-brand-primary/30">
               <span className="text-brand-primary text-xs font-medium uppercase tracking-wider">Limite Diário</span>
-              <div className="text-2xl font-bold text-brand-primary">R$ {(summary?.dailyLimit ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="text-2xl font-bold text-brand-primary">{formatCurrency(summary?.dailyLimit ?? 0, isPrivate)}</div>
             </div>
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
-              <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Dias Restantes</span>
-              <div>
-                <div className="text-2xl font-bold">{summary?.daysRemaining ?? 0} dias</div>
-                <div className="text-[10px] text-brand-primary font-bold uppercase tracking-wider mt-1">
-                  Recebimento líquido: R$ {nextNetIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
+              <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Ciclo Atual</span>
+              <div className="text-2xl font-bold flex items-center gap-2">
+                {summary?.cyclePeriodLabel || '-- a --'}
+                <span className="text-[10px] text-white/20 font-normal">({summary?.daysRemaining ?? 0}d)</span>
               </div>
             </div>
             <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Gasto Hoje</span>
-              <div className={`text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>R$ {Math.max(0, summary?.todaySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+              <div className={`text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>{formatCurrency(Math.max(0, summary?.todaySpent ?? 0), isPrivate)}</div>
             </div>
 
             <div className={`col-span-6 glass-card !p-3 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
@@ -1395,13 +1426,45 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
               <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }} /></div>
             </div>
 
-            <div className="col-span-4 glass-card !p-3 flex flex-col">
+            <div className="col-span-4 glass-card !p-3 flex flex-col min-h-[160px]">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Top Categorias</span><PieChartIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-hidden">{summary?.topCategories?.map(cat => (<div key={cat.name} className="flex flex-col gap-1"><div className="flex justify-between text-[10px]"><span className="text-white/70 truncate">{cat.name}</span><span className="font-bold">R$ {cat.amount.toFixed(0)}</span></div><div className="h-1 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div></div></div>))}</div>
+              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">
+                {overviewTopCategories.length > 0 ? (
+                  overviewTopCategories.map(cat => (
+                    <div key={cat.name} className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-white/70 truncate">{cat.name}</span>
+                        <span className="font-bold">R$ {cat.amount.toFixed(0)}</span>
+                      </div>
+                      <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex items-center justify-center text-[10px] text-white/20 italic uppercase tracking-widest text-center px-4">Sem despesas nos últimos 30 dias</div>
+                )}
+              </div>
             </div>
-            <div className="col-span-4 glass-card !p-3 flex flex-col">
+            <div className="col-span-4 glass-card !p-3 flex flex-col min-h-[160px]">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Lançamentos</span><HistoryIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-hidden">{latestOverviewTransactions.map(t => (<div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5"><div className="truncate mr-2"><div className="font-bold truncate">{t.description || t.category}</div><div className="text-white/40">{format(new Date(t.date), 'dd/MM')}</div></div><div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>{t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toFixed(0)}</div></div>))}</div>
+              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">
+                {latestOverviewTransactions.length > 0 ? (
+                  latestOverviewTransactions.map(t => (
+                    <div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5">
+                      <div className="truncate mr-2">
+                        <div className="font-bold truncate">{t.description || t.category}</div>
+                        <div className="text-white/40 font-mono">{t.date ? format(new Date(t.date), 'dd/MM') : '--/--'}</div>
+                      </div>
+                      <div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>
+                        {t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex items-center justify-center text-[10px] text-white/20 italic uppercase tracking-widest">Nenhum lançamento</div>
+                )}
+              </div>
             </div>
             <div className="col-span-4 glass-card !p-3 flex flex-col">
               <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Cartões</span><CreditCardIcon size={14} className="text-white/40" /></h3>
@@ -1415,7 +1478,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
         )}
 
         {activeTab === 'details' && <Details transactions={transactions} summary={summary} />}
-        {activeTab === 'insights' && <Insights summary={summary} />}
+        {activeTab === 'insights' && <Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />}
         {activeTab === 'history' && <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />}
         {activeTab === 'cards' && <Cartoes 
           cards={cards} 
@@ -1429,32 +1492,11 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
           onPayInstallment={handlePayInstallment}
           onPayCardBill={handlePayCardBill}
         />}
-        {activeTab === 'investments' && (
-          <div className="flex-1 overflow-hidden flex flex-col gap-4 animate-fade-in">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-brand-secondary/10 flex items-center justify-center">
-                <TrendingUp className="text-brand-secondary" size={20} />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold">Investimentos</h2>
-                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">
-                  Base da funcionalidade
-                </p>
-              </div>
-            </div>
-
-            <div className="flex-1 glass-card flex items-center justify-center">
-              <div className="max-w-xl text-center px-6">
-                <p className="text-xl md:text-2xl font-bold mb-3">
-                  Em breve você vai poder lançar seus investimentos na atualização 1.1 beta.
-                </p>
-                <p className="text-sm text-white/60">
-                  Esta aba já está criada como base para as próximas entregas.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+        {activeTab === 'investments' && <Investments user={user} settings={settings} onRefresh={fetchData} />}
+        {activeTab === 'goals' && <FinancialGoals />}
+        {activeTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, i) => sum + i.amount, 0), categoryCount: new Set(transactions.map(t => t.category)).size }} />}
+        {activeTab === 'subscriptions' && <SubscriptionManager />}
+        {activeTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
         {activeTab === 'import' && <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setActiveTab('overview')} />}
         {activeTab === 'base' && (
           <div className="flex-1 overflow-hidden flex flex-col gap-4">
@@ -1468,6 +1510,12 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                   <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Ajustes e Configurações do Aplicativo</p>
                 </div>
               </div>
+              <button 
+                onClick={() => setShowSetupHelper(true)} 
+                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"
+              >
+                <Database size={14} />Configurar
+              </button>
             </div>
             {settings ? (
               <BaseFinanceira 
@@ -1493,7 +1541,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             <form onSubmit={handleAddTransaction} className="space-y-4">
               <div><label className="block text-sm text-white/60 mb-1">Valor</label><input type="number" step="0.01" required value={newTransaction.amount} onChange={e => setNewTransaction({...newTransaction, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none text-2xl font-bold" /></div>
               <div className="flex gap-2"><button type="button" onClick={() => setNewTransaction({...newTransaction, type: 'expense'})} className={`flex-1 p-3 rounded-xl border ${newTransaction.type === 'expense' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Saída</button><button type="button" onClick={() => setNewTransaction({...newTransaction, type: 'income'})} className={`flex-1 p-3 rounded-xl border ${newTransaction.type === 'income' ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Entrada</button></div>
-              <div><label className="block text-sm text-white/60 mb-1">Categoria</label><select value={newTransaction.category} onChange={e => setNewTransaction({...newTransaction, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none">
+              <div><label className="block text-sm text-white/60 mb-1">Categoria</label><select value={newTransaction.category} onChange={e => setNewTransaction({...newTransaction, category: e.target.value})} className="w-full bg-[#121212] border border-white/10 rounded-xl p-3 outline-none [&>option]:bg-[#121212] [&>option]:text-white">
                 {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select></div>
               <div><label className="block text-sm text-white/60 mb-1">Descrição</label><input type="text" value={newTransaction.description} onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Ex: Almoço..." /></div>
@@ -1517,18 +1565,84 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
       )}
 
 
+      {showSetupHelper && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl glass-card !p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold">Configuração Manual</h2>
+              <button onClick={() => setShowSetupHelper(false)}><X size={20} /></button>
+            </div>
+            <pre className="p-4 bg-black rounded-xl border border-white/10 text-[10px] text-brand-primary overflow-auto max-h-64 select-all">
+              {`-- 1. CRIAR TABELA DE INVESTIMENTOS
+CREATE TABLE IF NOT EXISTS public.mf_investments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    institution TEXT,
+    amount NUMERIC DEFAULT 0,
+    initial_amount NUMERIC DEFAULT 0,
+    quantity NUMERIC DEFAULT 1,
+    average_price NUMERIC DEFAULT 0,
+    current_price NUMERIC DEFAULT 0,
+    dividends_received NUMERIC DEFAULT 0,
+    target_percentage NUMERIC DEFAULT 0,
+    category TEXT DEFAULT 'Investimento',
+    purchase_date TIMESTAMPTZ DEFAULT NOW(),
+    pl NUMERIC,
+    roe NUMERIC,
+    ebitda NUMERIC,
+    liquid_debt NUMERIC,
+    dividend_yield NUMERIC,
+    score NUMERIC,
+    note TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Adicionar colunas se já existir
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS quantity NUMERIC DEFAULT 1;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS average_price NUMERIC DEFAULT 0;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS current_price NUMERIC DEFAULT 0;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS dividends_received NUMERIC DEFAULT 0;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS target_percentage NUMERIC DEFAULT 0;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS pl NUMERIC;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS roe NUMERIC;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS ebitda NUMERIC;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS liquid_debt NUMERIC;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS dividend_yield NUMERIC;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS score NUMERIC;
+ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS note TEXT;
+
+ALTER TABLE public.mf_investments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users manage own investments" ON public.mf_investments FOR ALL USING (auth.uid() = user_id);
+
+-- 2. AJUSTAR TABELA DE ATUALIZAÇÕES
+CREATE TABLE IF NOT EXISTS public.mf_app_updates (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    version TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    features TEXT[] DEFAULT '{}',
+    fixes TEXT[] DEFAULT '{}',
+    released_at TIMESTAMPTZ DEFAULT NOW(),
+    is_major BOOLEAN DEFAULT false
+);
+ALTER TABLE public.mf_app_updates ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ DEFAULT NOW();
+
+-- 3. RECARREGAR SCHEMA
+NOTIFY pgrst, 'reload schema';`}
+            </pre>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowSetupHelper(false); fetchData(); }} className="flex-1 py-3 bg-brand-primary text-black rounded-xl font-bold">Já executei o SQL</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <NotificationCenter 
         isOpen={showNotificationCenter}
         onClose={() => setShowNotificationCenter(false)}
         notifications={notifications}
         onPay={handleNotificationPay}
-      />
-
-      <AppUpdateNotification
-        isOpen={showAppUpdateNotification}
-        updateInfo={latestAppUpdate}
-        onClose={() => setShowAppUpdateNotification(false)}
-        onAcknowledge={markAppUpdateAsRead}
       />
 
       {showCardModal && (
@@ -1555,7 +1669,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                   required 
                   value={installmentForm.card_id || 'boleto'} 
                   onChange={e => setInstallmentForm({ ...installmentForm, card_id: e.target.value })} 
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3"
+                  className="w-full bg-[#121212] border border-white/10 rounded-xl p-3 [&>option]:bg-[#121212] [&>option]:text-white"
                 >
                   <option value="boleto">Boleto / Outros</option>
                   {cards.map(card => (<option key={card.id} value={card.id}>{card.name}</option>))}
@@ -1660,6 +1774,18 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             </div>
           </div>
         )}
+
+        <AppUpdateNotification 
+          isOpen={isUpdateOpen}
+          updateInfo={latestUpdate}
+          onClose={() => setIsUpdateOpen(false)}
+          onAcknowledge={() => {
+            setIsUpdateOpen(false);
+            if (latestUpdate) {
+              localStorage.setItem(`mfinanceiro-update-dismissed:${user.id}`, latestUpdate.version);
+            }
+          }}
+        />
     </div>
   );
 }
