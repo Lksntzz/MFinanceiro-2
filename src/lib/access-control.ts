@@ -53,7 +53,14 @@ export async function requestAccess(name: string, email: string): Promise<Access
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(String(payload?.message || "Falha ao registrar solicitacao."));
+    const serverMessage = String(payload?.message || "").trim();
+    if (serverMessage) {
+      throw new Error(serverMessage);
+    }
+    if (response.status === 404 || response.status === 405) {
+      throw new Error("Endpoint /api/access-request indisponivel na versao publicada. Atualize o deploy de producao.");
+    }
+    throw new Error(`Falha ao registrar solicitacao (HTTP ${response.status}).`);
   }
 
   const status = String(payload?.status || "pending") as AccessRequestStatus;
