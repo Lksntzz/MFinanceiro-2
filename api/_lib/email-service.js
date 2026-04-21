@@ -28,27 +28,45 @@ export async function sendAdminAccessRequestEmail({ name, email }) {
   const date = new Date().toISOString();
   const template = buildAccessRequestEmail({ name, email, date });
 
-  const response = await fetch(BREVO_URL, {
-    method: "POST",
-    headers: {
-      "api-key": brevoApiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: {
-        name: senderName,
-        email: senderEmail,
+  try {
+    const response = await fetch(BREVO_URL, {
+      method: "POST",
+      headers: {
+        "api-key": brevoApiKey,
+        "Content-Type": "application/json",
       },
-      to: [{ email: adminEmail }],
-      subject: template.subject,
-      textContent: template.text,
-    }),
-  });
+      body: JSON.stringify({
+        sender: {
+          name: senderName,
+          email: senderEmail,
+        },
+        to: [{ email: adminEmail }],
+        subject: template.subject,
+        textContent: template.text,
+      }),
+    });
 
-  if (!response.ok) {
     const body = await response.text().catch(() => "");
-    return { sent: false, reason: `email_send_failed:${response.status}:${body}` };
-  }
 
-  return { sent: true };
+    if (!response.ok) {
+      return {
+        sent: false,
+        reason: "email_send_failed",
+        httpStatus: response.status,
+        body,
+      };
+    }
+
+    return {
+      sent: true,
+      httpStatus: response.status,
+      body,
+    };
+  } catch (error) {
+    return {
+      sent: false,
+      reason: "email_transport_error",
+      error: String(error?.message || error || "unknown_error"),
+    };
+  }
 }
