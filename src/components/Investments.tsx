@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Investment, UserSettings, Transaction } from "../types";
 import { supabase } from "../lib/supabase";
 import {
@@ -124,6 +124,7 @@ export default function Investments({
   );
   const [advice, setAdvice] = useState<InvestmentAdvice | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const lastAiLoadAtRef = useRef<number>(0);
 
   const [newInvestment, setNewInvestment] = useState({
     name: "",
@@ -203,8 +204,24 @@ export default function Investments({
     }
   };
 
-  const loadAIIntelligence = async () => {
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("IA timeout")), ms);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
+
+  const loadAIIntelligence = async (force = false) => {
     if (loadingAI) return;
+    if (!force && marketInsight && advice) return;
+    if (!force && Date.now() - lastAiLoadAtRef.current < 60_000) return;
+
     setLoadingAI(true);
     try {
       const invested = investments.reduce(
@@ -216,24 +233,37 @@ export default function Investments({
       // Simular cálculo de contas fixas pendentes
       const fixedOutflow = 0; // Idealmente pegar do DB
 
-      const [goalsRes, budgetsRes] = await Promise.all([
-        supabase.from('mf_financial_goals').select('*').eq('user_id', user.id),
-        supabase.from('mf_budgets').select('*').eq('user_id', user.id)
+      const marketPromise = withTimeout(getMarketIntelligence(), 6000);
+      const goalsAndBudgetsPromise = Promise.all([
+        supabase.from("mf_financial_goals").select("*").eq("user_id", user.id),
+        supabase.from("mf_budgets").select("*").eq("user_id", user.id),
+      ]);
+      const advicePromise = goalsAndBudgetsPromise.then(
+        async ([goalsRes, budgetsRes]) =>
+          withTimeout(
+            getInvestmentAdvice(
+              balance,
+              fixedOutflow,
+              invested,
+              goalsRes.data || [],
+              budgetsRes.data || [],
+            ),
+            8000,
+          ),
+      );
+
+      const [marketResult, adviceResult] = await Promise.allSettled([
+        marketPromise,
+        advicePromise,
       ]);
 
-      const [insight, adv] = await Promise.all([
-        getMarketIntelligence(),
-        getInvestmentAdvice(
-          balance, 
-          fixedOutflow, 
-          invested, 
-          goalsRes.data || [], 
-          budgetsRes.data || []
-        ),
-      ]);
-
-      setMarketInsight(insight);
-      setAdvice(adv);
+      if (marketResult.status === "fulfilled") {
+        setMarketInsight(marketResult.value);
+      }
+      if (adviceResult.status === "fulfilled") {
+        setAdvice(adviceResult.value);
+      }
+      lastAiLoadAtRef.current = Date.now();
     } catch (err) {
       console.error("IA Error:", err);
     } finally {
@@ -250,6 +280,14 @@ export default function Investments({
       loadAIIntelligence();
     }
   }, [showAdvice]);
+
+  useEffect(() => {
+    if (loading || investments.length === 0 || marketInsight || advice) return;
+    const timer = setTimeout(() => {
+      loadAIIntelligence();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [loading, investments.length, marketInsight, advice]);
 
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -1354,7 +1392,7 @@ export default function Investments({
                       Nenhum conselho disponível no momento.
                     </p>
                     <button
-                      onClick={loadAIIntelligence}
+                      onClick={() => loadAIIntelligence(true)}
                       className="text-brand-primary font-bold text-sm"
                     >
                       Tentar novamente

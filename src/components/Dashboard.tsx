@@ -1514,12 +1514,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                   <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Ajustes e Configurações do Aplicativo</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowSetupHelper(true)} 
-                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"
-              >
-                <Database size={14} />Configurar
-              </button>
             </div>
             {settings ? (
               <BaseFinanceira 
