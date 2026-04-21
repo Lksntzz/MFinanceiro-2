@@ -1266,8 +1266,8 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
         </div>
       )}
 
-      <header className="flex items-center justify-between shrink-0 mb-2">
-        <div className="flex items-center gap-4">
+      <header className="flex items-center justify-between gap-3 shrink-0 mb-2">
+        <div className="flex items-center gap-4 shrink-0">
           <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
             <button 
               onClick={() => setIsPrivate(!isPrivate)} 
@@ -1296,27 +1296,31 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             )}
           </div>
         </div>
-        <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-4xl mx-4">
-          {toolGroups.map(group => (
-            <div key={group.id} className="flex bg-white/5 p-1 rounded-xl border border-white/5 items-center gap-1">
-              <div className="px-2 text-white/30 hidden lg:block">
-                <group.icon size={14} />
-              </div>
-              <div className="flex gap-1">
-                {group.tabs.map(tab => (
-                  <button 
-                    key={tab.id} 
-                    onClick={() => setActiveTab(tab.id as any)} 
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+        <div className="flex-1 min-w-0 mx-2">
+          <nav className="w-full overflow-x-auto no-scrollbar">
+            <div className="w-max min-w-full flex items-center gap-2 px-1">
+              {toolGroups.map(group => (
+                <div key={group.id} className="shrink-0 flex bg-white/5 p-1 rounded-xl border border-white/5 items-center gap-1">
+                  <div className="px-2 text-white/30 hidden lg:block">
+                    <group.icon size={14} />
+                  </div>
+                  <div className="flex gap-1">
+                    {group.tabs.map(tab => (
+                      <button 
+                        key={tab.id} 
+                        onClick={() => setActiveTab(tab.id as any)} 
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </nav>
-        <div className="flex items-center gap-3">
+          </nav>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
           <button 
             onClick={() => setShowNotificationCenter(true)}
             className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"

@@ -1,7 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL_NAME = "gemini-3-flash-preview";
+
+function getGeminiApiKey(): string | undefined {
+  const fromProcessEnv = typeof process !== "undefined" ? process.env?.GEMINI_API_KEY : undefined;
+  const apiKey = fromProcessEnv;
+  return apiKey && apiKey.trim().length > 0 ? apiKey : undefined;
+}
+
+function getAiClient(): GoogleGenAI | null {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return null;
+  }
+
+  try {
+    return new GoogleGenAI({ apiKey });
+  } catch (error) {
+    console.error("Falha ao inicializar cliente Gemini:", error);
+    return null;
+  }
+}
 
 export interface MarketInsight {
   summary: string;
@@ -18,6 +37,11 @@ export interface InvestmentAdvice {
 
 export async function getMarketIntelligence(): Promise<MarketInsight> {
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      throw new Error("GEMINI_API_KEY ausente.");
+    }
+
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: "Analise o cenário atual do mercado financeiro brasileiro (Selic, Inflação, Bolsa) e forneça um resumo para investidores pessoa física. Forneça o resultado estritamente em JSON.",
@@ -45,6 +69,11 @@ export async function getPredictiveAnalysis(
   fixedBills: any[]
 ): Promise<string> {
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      throw new Error("GEMINI_API_KEY ausente.");
+    }
+
     const prompt = `
       Histórico de Transações (JSON): ${JSON.stringify(transactions.slice(0, 30))}
       Saldo Atual: R$ ${currentBalance}
@@ -75,6 +104,11 @@ export async function getInvestmentAdvice(
   budgets: any[]
 ): Promise<InvestmentAdvice> {
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      throw new Error("GEMINI_API_KEY ausente.");
+    }
+
     const prompt = `
       Situação Financeira do Usuário:
       - Saldo Atual: R$ ${balance}
@@ -125,6 +159,11 @@ export async function getFundamentalistAnalysis(
   metrics: { pl?: number; roe?: number; ebitda?: number; liquid_debt?: number; dy?: number }
 ): Promise<FundamentalistAnalysis> {
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      throw new Error("GEMINI_API_KEY ausente.");
+    }
+
     const prompt = `
       Ativo: ${name}
       Indicadores:
