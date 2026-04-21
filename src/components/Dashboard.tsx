@@ -71,6 +71,7 @@ import FinancialGoals from './FinancialGoals';
 import SubscriptionManager from './SubscriptionManager';
 import FinancialHealth from './FinancialHealth';
 import FinancialCalendar from './FinancialCalendar';
+import AdminAccessRequests from './AdminAccessRequests';
 
 export default function Dashboard({ user, isMaintenanceBypass }: { user: User, isMaintenanceBypass?: boolean }) {
   const { isPrivate, setIsPrivate, theme, setTheme } = useApp();
@@ -90,7 +91,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   }
 
   const db = supabase;
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import' | 'investments' | 'goals' | 'health' | 'subscriptions' | 'calendar'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import' | 'investments' | 'goals' | 'health' | 'subscriptions' | 'calendar' | 'access_requests'>('overview');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
@@ -153,6 +154,11 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   });
   const currentUserIdRef = useRef(user.id);
   const fetchVersionRef = useRef(0);
+  const isAdminUser = useMemo(() => {
+    const role = String(user.app_metadata?.role || '').toLowerCase();
+    if (role === 'admin' || role === 'owner') return true;
+    return user.user_metadata?.is_admin === true;
+  }, [user]);
 
   useEffect(() => {
     let active = true;
@@ -199,6 +205,12 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   useEffect(() => {
     currentUserIdRef.current = user.id;
   }, [user.id]);
+
+  useEffect(() => {
+    if (!isAdminUser && activeTab === 'access_requests') {
+      setActiveTab('overview');
+    }
+  }, [activeTab, isAdminUser]);
 
   const parseTransactionDate = (raw: string): Date | null => {
     if (!raw) return null;
@@ -1198,7 +1210,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     }
   };
 
-  const toolGroups = [
+  const baseToolGroups = [
     {
       id: 'monitor',
       label: 'Análise',
@@ -1239,6 +1251,18 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
       ]
     }
   ];
+
+  const toolGroups = isAdminUser
+    ? [
+        ...baseToolGroups,
+        {
+          id: 'admin',
+          label: 'Admin',
+          icon: ShieldAlert,
+          tabs: [{ id: 'access_requests', label: 'Solicitações de acesso' }],
+        },
+      ]
+    : baseToolGroups;
 
   const allTabs = toolGroups.flatMap(g => g.tabs);
 
@@ -1501,6 +1525,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
         {activeTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, i) => sum + i.amount, 0), categoryCount: new Set(transactions.map(t => t.category)).size }} />}
         {activeTab === 'subscriptions' && <SubscriptionManager />}
         {activeTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
+        {activeTab === 'access_requests' && isAdminUser && <AdminAccessRequests user={user} />}
         {activeTab === 'import' && <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setActiveTab('overview')} />}
         {activeTab === 'base' && (
           <div className="flex-1 overflow-hidden flex flex-col gap-4">
