@@ -72,6 +72,7 @@ export default async function handler(req, res) {
     emailSent = emailResult.sent === true;
     if (!emailSent) {
       emailWarning = emailResult.reason || "email_not_sent";
+      console.error("Falha ao enviar e-mail de notificação ao administrador:", emailWarning);
     }
   }
 
@@ -82,4 +83,3 @@ export default async function handler(req, res) {
     warning: emailWarning,
   });
 }
-

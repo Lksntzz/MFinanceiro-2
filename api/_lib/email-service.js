@@ -1,51 +1,47 @@
-const RESEND_URL = "https://api.resend.com/emails";
-
-function normalizeAdminEmails(raw) {
-  if (!raw) return [];
-  return String(raw)
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-}
+const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
 
 export function buildAccessRequestEmail({ name, email, date }) {
   return {
-    subject: "Nova solicitacao de acesso - MFinanceiro",
+    subject: "Nova solicitação de acesso - MFinanceiro",
     text: [
-      "Voce recebeu uma nova solicitacao de acesso ao MFinanceiro.",
+      "Você recebeu uma nova solicitação de acesso ao MFinanceiro.",
       "",
       `Nome: ${name}`,
       `E-mail: ${email}`,
       `Data: ${date}`,
       "",
-      "Acesse o painel administrativo ou o Supabase para aprovar ou negar a solicitacao.",
+      "Acesse o painel administrativo ou o Supabase para aprovar ou negar a solicitação.",
     ].join("\n"),
   };
 }
 
 export async function sendAdminAccessRequestEmail({ name, email }) {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const from = process.env.ACCESS_REQUEST_EMAIL_FROM || process.env.EMAIL_FROM;
-  const to = normalizeAdminEmails(process.env.ACCESS_REQUEST_ADMIN_EMAILS || process.env.ADMIN_EMAILS);
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  const adminEmail = String(process.env.ADMIN_NOTIFICATION_EMAIL || "").trim().toLowerCase();
+  const senderEmail = String(process.env.ACCESS_REQUEST_SENDER_EMAIL || adminEmail).trim().toLowerCase();
+  const senderName = String(process.env.ACCESS_REQUEST_SENDER_NAME || "MFinanceiro").trim();
 
-  if (!resendApiKey || !from || to.length === 0) {
+  if (!brevoApiKey || !adminEmail || !senderEmail) {
     return { sent: false, reason: "email_env_not_configured" };
   }
 
   const date = new Date().toISOString();
   const template = buildAccessRequestEmail({ name, email, date });
 
-  const response = await fetch(RESEND_URL, {
+  const response = await fetch(BREVO_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${resendApiKey}`,
+      "api-key": brevoApiKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from,
-      to,
+      sender: {
+        name: senderName,
+        email: senderEmail,
+      },
+      to: [{ email: adminEmail }],
       subject: template.subject,
-      text: template.text,
+      textContent: template.text,
     }),
   });
 
@@ -56,4 +52,3 @@ export async function sendAdminAccessRequestEmail({ name, email }) {
 
   return { sent: true };
 }
-
