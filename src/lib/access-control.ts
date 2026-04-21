@@ -39,28 +39,21 @@ export async function fetchAccessStatus(email: string): Promise<AccessRequestSta
 export async function requestAccess(name: string, email: string): Promise<AccessRequestResponse> {
   const normalized = normalizeEmail(email);
   const trimmedName = name.trim();
-
-  const response = await fetch("/api/access-request", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: trimmedName,
-      email: normalized,
-    }),
+  const { error } = await supabase.rpc("submit_access_request", {
+    p_nome: trimmedName,
+    p_email: normalized,
   });
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(String(payload?.message || "Falha ao enviar solicitacao de acesso."));
+  if (error) {
+    console.error("Erro ao registrar solicitacao de acesso:", error);
+    throw error;
   }
 
-  const status = String(payload?.status || "pending") as AccessRequestStatus;
+  const status: AccessRequestStatus = "pending";
   return {
     status,
-    message: String(payload?.message || getAccessStatusMessage(status)),
-    emailSent: payload?.emailSent === true,
+    message: "Solicitacao enviada com sucesso. Aguarde aprovacao do administrador.",
+    emailSent: false,
   };
 }
 
@@ -84,4 +77,3 @@ export function mapSignupErrorMessage(rawMessage: string): string {
   }
   return rawMessage;
 }
-

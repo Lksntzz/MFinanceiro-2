@@ -12,20 +12,21 @@ import {
 type AuthMode = "login" | "request" | "signup";
 
 export default function Auth() {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>("request");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [signupStatus, setSignupStatus] = useState<AccessRequestStatus | null>(null);
+  const [signupUnlocked, setSignupUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
   const isSignUp = mode === "signup";
   const isRequest = mode === "request";
   const isLogin = mode === "login";
-  const canFinishSignup = signupStatus === "approved";
+  const canFinishSignup = signupUnlocked && signupStatus === "approved";
 
   async function checkSignupAccessStatus() {
     if (!email.trim()) {
@@ -40,6 +41,9 @@ export default function Auth() {
       const status = await fetchAccessStatus(email);
       setSignupStatus(status);
       setInfo(getAccessStatusMessage(status));
+      if (status === "approved") {
+        setSignupUnlocked(true);
+      }
     } catch (err: any) {
       setError(String(err?.message || "Falha ao consultar status de acesso."));
     } finally {
@@ -70,9 +74,11 @@ export default function Auth() {
         setSignupStatus(status);
 
         if (status !== "approved") {
+          setSignupUnlocked(false);
           setError(getAccessStatusMessage(status));
           return;
         }
+        setSignupUnlocked(true);
 
         const { error: signUpError } = await supabase.auth.signUp({
           email: normalizedEmail,
@@ -122,6 +128,9 @@ export default function Auth() {
     try {
       const result = await requestAccess(name, email);
       setInfo(result.message || getAccessStatusMessage(result.status));
+      if (result.status === "approved") {
+        setSignupUnlocked(true);
+      }
     } catch (err: any) {
       setError(String(err?.message || "Falha ao enviar solicitacao de acesso."));
     } finally {
@@ -164,36 +173,40 @@ export default function Auth() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          <button
-            onClick={() => handleSocialLogin("google")}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
-          >
-            <Mail size={18} className="text-red-400" />
-            <span className="text-xs font-bold">Google</span>
-          </button>
-          <button
-            onClick={() => handleSocialLogin("github")}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
-          >
-            <Github size={18} />
-            <span className="text-xs font-bold">GitHub</span>
-          </button>
-        </div>
+        {isLogin && (
+          <>
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              <button
+                onClick={() => handleSocialLogin("google")}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
+              >
+                <Mail size={18} className="text-red-400" />
+                <span className="text-xs font-bold">Google</span>
+              </button>
+              <button
+                onClick={() => handleSocialLogin("github")}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
+              >
+                <Github size={18} />
+                <span className="text-xs font-bold">GitHub</span>
+              </button>
+            </div>
 
-        <div className="relative mb-8">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-white/5"></div>
-          </div>
-          <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
-            <span className="bg-[#0c0c0c] px-4 text-white/20">Ou com e-mail</span>
-          </div>
-        </div>
+            <div className="relative mb-8">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/5"></div>
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
+                <span className="bg-[#0c0c0c] px-4 text-white/20">Ou com e-mail</span>
+              </div>
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleAuth} className="space-y-4">
-          {(isSignUp || isRequest) && (
+          {isRequest && (
             <div>
               <label className="block text-sm text-white/60 mb-1">Nome</label>
               <input
@@ -223,17 +236,6 @@ export default function Auth() {
               placeholder="seu@email.com"
             />
           </div>
-
-          {isSignUp && (
-            <button
-              type="button"
-              onClick={checkSignupAccessStatus}
-              disabled={checkingStatus || loading}
-              className="w-full bg-white/5 border border-white/10 text-white font-bold py-2.5 rounded-xl hover:bg-white/10 transition-colors disabled:opacity-50"
-            >
-              {checkingStatus ? "Verificando..." : "Verificar aprovacao do e-mail"}
-            </button>
-          )}
 
           {(isLogin || (isSignUp && canFinishSignup)) && (
             <div>
@@ -281,6 +283,19 @@ export default function Auth() {
           </button>
         </form>
 
+        {isRequest && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={checkSignupAccessStatus}
+              disabled={checkingStatus || loading}
+              className="w-full bg-white/5 border border-white/10 text-white font-bold py-2.5 rounded-xl hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              {checkingStatus ? "Verificando..." : "Ja fui aprovado"}
+            </button>
+          </div>
+        )}
+
         <div className="mt-6 grid grid-cols-1 gap-2 text-center">
           <button
             onClick={() => {
@@ -302,20 +317,20 @@ export default function Auth() {
           >
             Solicitar acesso
           </button>
-          <button
-            onClick={() => {
-              setMode("signup");
-              setError(null);
-              setInfo(null);
-              setSignupStatus(null);
-            }}
-            className={`text-sm transition-colors ${mode === "signup" ? "text-brand-primary" : "text-white/40 hover:text-brand-primary"}`}
-          >
-            Finalizar cadastro (aprovados)
-          </button>
+          {signupUnlocked && (
+            <button
+              onClick={() => {
+                setMode("signup");
+                setError(null);
+                setInfo(null);
+              }}
+              className={`text-sm transition-colors ${mode === "signup" ? "text-brand-primary" : "text-white/40 hover:text-brand-primary"}`}
+            >
+              Finalizar cadastro (aprovados)
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
