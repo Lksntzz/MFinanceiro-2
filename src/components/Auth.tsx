@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Wallet, LogIn, UserPlus, Github, Mail } from "lucide-react";
 import {
@@ -22,6 +22,8 @@ export default function Auth() {
   const [signupUnlocked, setSignupUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const requestInFlightRef = useRef(false);
+  const lastRequestAtRef = useRef(0);
 
   const isSignUp = mode === "signup";
   const isRequest = mode === "request";
@@ -109,6 +111,17 @@ export default function Auth() {
   }
 
   async function handleRequestAccess() {
+    if (requestInFlightRef.current) {
+      setInfo("Solicitacao em andamento. Aguarde alguns segundos.");
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastRequestAtRef.current < 5000) {
+      setInfo("Aguarde alguns segundos antes de enviar novamente.");
+      return;
+    }
+
     if (!supabase) {
       setError("Servico indisponivel no momento.");
       return;
@@ -123,6 +136,7 @@ export default function Auth() {
     }
 
     setLoading(true);
+    requestInFlightRef.current = true;
     setError(null);
     setInfo(null);
     try {
@@ -134,6 +148,8 @@ export default function Auth() {
     } catch (err: any) {
       setError(String(err?.message || "Falha ao enviar solicitacao de acesso."));
     } finally {
+      lastRequestAtRef.current = Date.now();
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   }

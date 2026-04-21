@@ -28,8 +28,8 @@ function statusMessage(status) {
 
 function getSupabaseAdminClient() {
   const url =
-    process.env.SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -62,7 +62,7 @@ async function persistUsingSchemaVariant(supabase, variant, name, email) {
 
   const selectResult = await supabase
     .from(table)
-    .select("id,status,email")
+    .select("id,status,email,updated_at,created_at")
     .ilike("email", email)
     .limit(1);
 
@@ -76,6 +76,13 @@ async function persistUsingSchemaVariant(supabase, variant, name, email) {
     existingStatus === "approved" || existingStatus === "denied"
       ? existingStatus
       : "pending";
+  const nowMs = Date.now();
+  const existingUpdatedAtMs = existing?.updated_at ? new Date(existing.updated_at).getTime() : 0;
+  const repeatedPendingWithinCooldown =
+    existingStatus === "pending" &&
+    Number.isFinite(existingUpdatedAtMs) &&
+    existingUpdatedAtMs > 0 &&
+    nowMs - existingUpdatedAtMs < 2 * 60 * 1000;
 
   const mappedStatus =
     variant.kind === "pt"
@@ -118,6 +125,10 @@ async function persistUsingSchemaVariant(supabase, variant, name, email) {
       status: normalizeStatus(row?.status || mappedStatus),
       operation: "update",
       schemaVariant: variant.kind,
+      notifyEmail: statusToStore === "pending" && !repeatedPendingWithinCooldown,
+      notificationSuppressedReason: repeatedPendingWithinCooldown
+        ? "duplicate_pending_within_cooldown"
+        : null,
     };
   }
 
@@ -155,6 +166,8 @@ async function persistUsingSchemaVariant(supabase, variant, name, email) {
     status: normalizeStatus(row?.status || mappedStatus),
     operation: "insert",
     schemaVariant: variant.kind,
+    notifyEmail: statusToStore === "pending",
+    notificationSuppressedReason: null,
   };
 }
 
@@ -253,7 +266,7 @@ export default async function handler(req, res) {
     let emailSent = false;
     let emailWarning = null;
 
-    if (status === "pending") {
+    if (status === "pending" && saveResult.notifyEmail !== false) {
       const emailResult = await sendAdminAccessRequestEmail({ name, email });
       emailSent = emailResult.sent === true;
 
@@ -273,6 +286,11 @@ export default async function handler(req, res) {
           error: emailResult.error || null,
         });
       }
+    } else if (status === "pending" && saveResult.notifyEmail === false) {
+      emailWarning = saveResult.notificationSuppressedReason || "email_suppressed";
+      console.info("Notificacao de e-mail suprimida para evitar duplicidade:", {
+        reason: emailWarning,
+      });
     }
 
     return res.status(200).json({
@@ -292,4 +310,3 @@ export default async function handler(req, res) {
     });
   }
 }
-

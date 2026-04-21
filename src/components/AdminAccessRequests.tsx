@@ -65,18 +65,29 @@ export default function AdminAccessRequests({ user }: { user: User }) {
     setLoading(true);
     setError(null);
     try {
+      // Garante JWT atualizado (claims de admin) para RLS.
+      await supabase.auth.refreshSession();
+
+      const { data: adminCheck, error: adminCheckError } = await supabase.rpc("mf_is_admin_user");
+      if (adminCheckError) {
+        throw adminCheckError;
+      }
+      if (!adminCheck) {
+        throw new Error("Permissao negada para listar solicitacoes. Seu token nao esta com perfil admin.");
+      }
+
       let data: any[] | null = null;
       let error: any = null;
 
       const byUpdated = await supabase
         .from("mf_access_requests")
-        .select("*")
+        .select("id,nome,email,status,created_at,observacao,updated_at")
         .order("updated_at", { ascending: false });
 
       if (byUpdated.error) {
         const byCreated = await supabase
           .from("mf_access_requests")
-          .select("*")
+          .select("id,name,email,status,created_at,note,updated_at")
           .order("created_at", { ascending: false });
         data = byCreated.data;
         error = byCreated.error;
@@ -84,7 +95,14 @@ export default function AdminAccessRequests({ user }: { user: User }) {
         data = byUpdated.data;
       }
 
-      if (error) throw error;
+      if (error) {
+        const raw = String(error?.message || "");
+        const code = String(error?.code || "");
+        if (code === "42501" || raw.toLowerCase().includes("permission denied")) {
+          throw new Error("Permissao negada para listar solicitacoes. Faça logout/login para atualizar o perfil admin.");
+        }
+        throw error;
+      }
 
       const rows = Array.isArray(data) ? data : [];
       const detectedVariant = rows.some((row: any) => "nome" in row || "observacao" in row)
@@ -128,6 +146,25 @@ export default function AdminAccessRequests({ user }: { user: User }) {
       window.removeEventListener("focus", onFocus);
     };
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin || !supabase) return;
+
+    const channel = supabase
+      .channel(`admin_access_requests_${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "mf_access_requests" },
+        () => {
+          fetchRequests();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, user.id]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -294,7 +331,7 @@ export default function AdminAccessRequests({ user }: { user: User }) {
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="h-full flex items-center justify-center text-white/30 uppercase text-xs font-bold tracking-widest">
-            Nenhuma solicitação encontrada
+            Nenhuma solicitacao encontrada. Se acabou de criar uma solicitacao, clique em Atualizar.
           </div>
         ) : (
           <div className="h-full overflow-auto no-scrollbar">
