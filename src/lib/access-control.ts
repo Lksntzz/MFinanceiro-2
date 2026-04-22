@@ -1,93 +1,93 @@
 import { supabase } from "./supabase";
 
-export type AccessRequestStatus = "pending" | "approved" | "denied" | "not_found";
-
-interface AccessStatusRow {
-  status: AccessRequestStatus;
-  name: string | null;
-  email: string | null;
-  approved_at: string | null;
-  note: string | null;
-}
-
-export interface AccessRequestResponse {
-  status: AccessRequestStatus;
-  message: string;
-  emailSent?: boolean;
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+export type AccessRequestStatus = 'pending' | 'approved' | 'denied' | 'none';
 
 export async function fetchAccessStatus(email: string): Promise<AccessRequestStatus> {
-  const normalized = normalizeEmail(email);
-  if (!normalized) return "not_found";
+  if (!supabase) return 'none';
+  
+  try {
+    const { data, error } = await supabase
+      .from('mf_access_requests')
+      .select('status')
+      .ilike('email', email.trim())
+      .limit(1);
 
-  const { data, error } = await supabase.rpc("mf_get_access_status", {
-    p_email: normalized,
-  });
+    if (error) throw error;
+    if (!data || data.length === 0) return 'none';
 
-  if (error) {
-    throw error;
+    const status = String(data[0].status).toLowerCase();
+    if (status === 'approved' || status === 'aprovado') return 'approved';
+    if (status === 'denied' || status === 'negado' || status === 'rejected') return 'denied';
+    return 'pending';
+  } catch (err) {
+    console.error('Error fetching access status:', err);
+    return 'none';
   }
-
-  const row = Array.isArray(data) ? (data[0] as AccessStatusRow | undefined) : undefined;
-  return row?.status ?? "not_found";
-}
-
-export async function requestAccess(name: string, email: string): Promise<AccessRequestResponse> {
-  const normalized = normalizeEmail(email);
-  const trimmedName = name.trim();
-  const response = await fetch("/api/access-request", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: trimmedName,
-      email: normalized,
-    }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const serverMessage = String(payload?.message || "").trim();
-    if (serverMessage) {
-      throw new Error(serverMessage);
-    }
-    if (response.status === 404 || response.status === 405) {
-      throw new Error("Endpoint /api/access-request indisponivel na versao publicada. Atualize o deploy de producao.");
-    }
-    throw new Error(`Falha ao registrar solicitacao (HTTP ${response.status}).`);
-  }
-
-  const status = String(payload?.status || "pending") as AccessRequestStatus;
-  return {
-    status,
-    message: String(payload?.message || "Solicitacao enviada com sucesso."),
-    emailSent: payload?.emailSent === true,
-  };
 }
 
 export function getAccessStatusMessage(status: AccessRequestStatus): string {
-  if (status === "approved") {
-    return "Seu e-mail esta aprovado. Agora voce pode concluir o cadastro.";
+  switch (status) {
+    case 'approved':
+      return 'Seu acesso foi aprovado! Agora você pode finalizar seu cadastro.';
+    case 'pending':
+      return 'Sua solicitação está em análise. Você receberá um e-mail quando for aprovada.';
+    case 'denied':
+      return 'Infelizmente sua solicitação de acesso foi negada. Entre em contato com o suporte.';
+    default:
+      return 'Você ainda não possui uma solicitação de acesso vinculada a este e-mail.';
   }
-  if (status === "pending") {
-    return "Sua solicitacao esta pendente de aprovacao do administrador.";
-  }
-  if (status === "denied") {
-    return "Seu acesso foi negado. Entre em contato com o administrador para revisao.";
-  }
-  return "Seu e-mail ainda nao possui solicitacao. Envie um pedido de acesso.";
 }
 
-export function mapSignupErrorMessage(rawMessage: string): string {
-  const msg = rawMessage || "";
-  if (msg.includes("MF_ACCESS_DENIED")) {
-    return "Cadastro bloqueado: este e-mail ainda nao foi aprovado.";
+export async function requestAccess(name: string, email: string, password?: string) {
+  if (!supabase) throw new Error('Supabase not configured');
+  
+  try {
+    // Tenta salvar no Supabase diretamente
+    const { data, error } = await supabase
+      .from('mf_access_requests')
+      .insert([
+        { 
+          nome: name.trim(), 
+          email: email.trim().toLowerCase(), 
+          senha: password, // Salvando senha temporariamente para finalização automática
+          status: 'pendente' 
+        }
+      ])
+      .select('status')
+      .single();
+
+    if (error) {
+      if (error.code === '23505') throw new Error('Já existe uma solicitação para este e-mail.');
+      
+      // Fallback para nomes em ingles caso as colunas em portugues falhem
+      const { data: dataEn, error: errorEn } = await supabase
+        .from('mf_access_requests')
+        .insert([
+          { 
+            name: name.trim(), 
+            email: email.trim().toLowerCase(), 
+            password: password, 
+            status: 'pending' 
+          }
+        ])
+        .select('status')
+        .single();
+        
+      if (errorEn) throw errorEn;
+      return dataEn;
+    }
+
+    return data;
+  } catch (err: any) {
+    console.error('Request access error:', err);
+    throw err;
   }
-  return rawMessage;
+}
+
+export function mapSignupErrorMessage(message: string): string {
+  const msg = message.toLowerCase();
+  if (msg.includes('user already registered')) return 'Este e-mail já está cadastrado.';
+  if (msg.includes('email not confirmed')) return 'E-mail ainda não confirmado. Verifique sua caixa de entrada.';
+  if (msg.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
+  return message;
 }

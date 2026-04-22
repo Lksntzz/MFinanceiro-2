@@ -140,8 +140,8 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
       {/* Filters & Search */}
-      <div className="glass-card !p-4 flex flex-wrap items-center gap-4 shrink-0">
-        <div className="flex-1 min-w-[200px] relative">
+      <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between shrink-0">
+        <div className="flex-1 min-w-[200px] relative w-full lg:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
           <input 
             type="text" 
@@ -152,110 +152,114 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
           />
         </div>
         
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-lg border border-white/10 mr-2">
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-lg border border-white/10 overflow-x-auto no-scrollbar">
             <button 
               onClick={() => { setGroupBy('day'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'day' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap ${groupBy === 'day' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Dia
             </button>
             <button 
               onClick={() => { setGroupBy('week'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'week' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap ${groupBy === 'week' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Semana
             </button>
             <button 
               onClick={() => { setGroupBy('month'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'month' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap ${groupBy === 'month' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Mês
             </button>
             <button 
               onClick={() => { setGroupBy('none'); setCurrentPage(1); }}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${groupBy === 'none' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap ${groupBy === 'none' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
             >
               Total
             </button>
           </div>
 
-          <Filter size={16} className="text-white/40" />
-          <select 
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value as any)}
-            className="bg-[#121212] border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary [&>option]:bg-[#121212] [&>option]:text-white"
-          >
-            <option value="all">Tipos</option>
-            <option value="income">Entradas</option>
-            <option value="expense">Saídas</option>
-          </select>
-
-          <select 
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="bg-[#121212] border border-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-primary max-w-[120px] [&>option]:bg-[#121212] [&>option]:text-white"
-          >
-            <option value="all">Categorias</option>
-            {categories.filter(c => c !== 'all').map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
-
-          {onDeleteAll && transactions.length > 0 && (
-            <button 
-              onClick={() => onDeleteAll()}
-              className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-bold border border-red-500/20 transition-all ml-2"
+          <div className="flex items-center gap-2 ml-auto lg:ml-0">
+            <Filter size={16} className="text-white/40 hidden sm:block" />
+            <select 
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value as any)}
+              className="bg-[#121212] border border-white/10 rounded-lg px-2 sm:px-3 py-1.5 text-[10px] sm:text-xs outline-none focus:border-brand-primary [&>option]:bg-[#121212] [&>option]:text-white"
             >
-              <Trash2 size={14} />
-              Apagar Tudo
-            </button>
-          )}
+              <option value="all">Tipos</option>
+              <option value="income">Entradas</option>
+              <option value="expense">Saídas</option>
+            </select>
 
-          <button 
-            onClick={() => ReportService.exportTransactionsToExcel(filteredTransactions)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary rounded-lg text-xs font-bold border border-brand-primary/20 transition-all"
-          >
-            <FileDown size={14} />
-            Exportar Excel
-          </button>
+            <select 
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="bg-[#121212] border border-white/10 rounded-lg px-2 sm:px-3 py-1.5 text-[10px] sm:text-xs outline-none focus:border-brand-primary max-w-[100px] sm:max-w-[120px] [&>option]:bg-[#121212] [&>option]:text-white"
+            >
+              <option value="all">Categorias</option>
+              {categories.filter(c => c !== 'all').map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+            {onDeleteAll && transactions.length > 0 && (
+              <button 
+                onClick={() => onDeleteAll()}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] sm:text-xs font-bold border border-red-500/20 transition-all"
+              >
+                <Trash2 size={14} />
+                <span className="hidden xs:inline">Limpar</span>
+              </button>
+            )}
+
+            <button 
+              onClick={() => ReportService.exportTransactionsToExcel(filteredTransactions)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-1.5 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary rounded-lg text-[10px] sm:text-xs font-bold border border-brand-primary/20 transition-all"
+            >
+              <FileDown size={14} />
+              <span className="hidden xs:inline">Excel</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 shrink-0">
-        <div className="glass-card !p-3 flex flex-col justify-between border-green-500/20">
-          <span className="text-[10px] text-white/40 uppercase font-bold">Entradas</span>
-          <div className="text-lg font-bold text-green-400">R$ {summary.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 shrink-0">
+        <div className="glass-card !p-3 flex flex-col justify-between border-green-500/20 shadow-lg">
+          <span className="text-[9px] sm:text-[10px] text-white/40 uppercase font-bold">Entradas</span>
+          <div className="text-sm sm:text-lg font-bold text-green-400">R$ {summary.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
         </div>
-        <div className="glass-card !p-3 flex flex-col justify-between border-red-500/20">
-          <span className="text-[10px] text-white/40 uppercase font-bold">Saídas</span>
-          <div className="text-lg font-bold text-white">R$ {summary.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+        <div className="glass-card !p-3 flex flex-col justify-between border-red-500/20 shadow-lg">
+          <span className="text-[9px] sm:text-[10px] text-white/40 uppercase font-bold">Saídas</span>
+          <div className="text-sm sm:text-lg font-bold text-white">R$ {summary.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
         </div>
-        <div className="glass-card !p-3 flex flex-col justify-between">
-          <span className="text-[10px] text-white/40 uppercase font-bold">Saldo do Período</span>
-          <div className={`text-lg font-bold ${summary.balance >= 0 ? 'text-brand-primary' : 'text-red-400'}`}>
+        <div className="glass-card !p-3 flex flex-col justify-between shadow-lg">
+          <span className="text-[9px] sm:text-[10px] text-white/40 uppercase font-bold">Saldo Período</span>
+          <div className={`text-sm sm:text-lg font-bold ${summary.balance >= 0 ? 'text-brand-primary' : 'text-red-400'}`}>
             R$ {summary.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
         </div>
-        <div className="glass-card !p-3 flex flex-col justify-between">
-          <span className="text-[10px] text-white/40 uppercase font-bold">Lançamentos</span>
-          <div className="text-lg font-bold">{summary.count} itens</div>
+        <div className="glass-card !p-3 flex flex-col justify-between shadow-lg">
+          <span className="text-[9px] sm:text-[10px] text-white/40 uppercase font-bold">Itens</span>
+          <div className="text-sm sm:text-lg font-bold">{summary.count} lançamentos</div>
         </div>
       </div>
 
       {/* Table */}
-      <div className="flex-1 glass-card !p-0 overflow-hidden flex flex-col">
+      <div className="flex-1 glass-card !p-0 overflow-hidden flex flex-col shadow-xl">
         <div className="overflow-x-auto overflow-y-auto no-scrollbar flex-1">
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 bg-[#1a1a1a] z-10">
+          <table className="w-full text-left border-collapse min-w-[650px]">
+            <thead className="sticky top-0 bg-[#1a1a1a] z-10 shadow-sm">
               <tr className="border-b border-white/5">
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold">Lançamento</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold">Categoria</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold">Origem</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold text-right">Valor</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold text-center">Status</th>
-                <th className="p-4 text-[10px] uppercase text-white/40 font-bold text-center">Ações</th>
+                <th className="p-3 sm:p-4 text-[9px] sm:text-[10px] uppercase text-white/40 font-bold tracking-widest bg-[#1a1a1a]">Lançamento</th>
+                <th className="p-3 sm:p-4 text-[9px] sm:text-[10px] uppercase text-white/40 font-bold tracking-widest bg-[#1a1a1a]">Categoria</th>
+                <th className="p-3 sm:p-4 text-[9px] sm:text-[10px] uppercase text-white/40 font-bold tracking-widest bg-[#1a1a1a]">Origem</th>
+                <th className="p-3 sm:p-4 text-[9px] sm:text-[10px] uppercase text-white/40 font-bold text-right tracking-widest bg-[#1a1a1a]">Valor</th>
+                <th className="p-3 sm:p-4 text-[9px] sm:text-[10px] uppercase text-white/40 font-bold text-center tracking-widest bg-[#1a1a1a]">Status</th>
+                <th className="p-3 sm:p-4 text-[9px] sm:text-[10px] uppercase text-white/40 font-bold text-center tracking-widest bg-[#1a1a1a]">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -263,17 +267,17 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
                 <React.Fragment key={group.title}>
                   {groupBy !== 'none' && (
                     <tr className="bg-white/[0.02]">
-                      <td colSpan={6} className="p-2 px-4 text-[10px] font-bold text-white/40 uppercase tracking-wider border-y border-white/5 bg-[#121212]">
+                      <td colSpan={6} className="p-2 px-4 text-[9px] sm:text-[10px] font-bold text-white/40 uppercase tracking-wider border-y border-white/5 bg-[#121212]">
                         {group.title}
                       </td>
                     </tr>
                   )}
                   {group.items.map((t) => (
                     <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                      <td className="p-4">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium">{t.description || t.category}</span>
-                          <span className="text-[10px] text-white/40">
+                      <td className="p-3 sm:p-4">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs sm:text-sm font-medium truncate max-w-[150px] sm:max-w-none">{t.description || t.category}</span>
+                          <span className="text-[9px] sm:text-[10px] text-white/40">
                             {(() => {
                               try {
                                 const dateStr = t.date.includes('T') ? t.date.split('T')[0] : t.date;
@@ -285,37 +289,44 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
                           </span>
                         </div>
                       </td>
-                      <td className="p-4">
-                        <span className="text-[10px] px-2 py-1 bg-white/5 rounded-full border border-white/10 text-white/60">
+                      <td className="p-3 sm:p-4">
+                        <span className="text-[9px] sm:text-[10px] px-2 py-0.5 bg-white/5 rounded-full border border-white/10 text-white/60 whitespace-nowrap">
                           {t.category}
                         </span>
                       </td>
-                      <td className="p-4 text-sm text-white/40 flex items-center gap-2 h-full py-6">
-                        <CreditCard size={14} />
-                        <span className="truncate max-w-[80px]">{t.source || 'Principal'}</span>
+                      <td className="p-3 sm:p-4 text-xs sm:text-sm text-white/40 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <CreditCard size={12} className="shrink-0" />
+                          <span className="truncate max-w-[80px]">{t.source || 'Principal'}</span>
+                        </div>
                       </td>
-                      <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>
+                      <td className={`p-3 sm:p-4 text-xs sm:text-sm font-bold text-right whitespace-nowrap ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>
                         {t.type === 'income' ? '+' : '-'} R$ {Math.abs(t.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="p-3 sm:p-4 text-center">
                         <button 
                           onClick={() => onToggleStatus?.(t.id, t.status === 'paid' ? 'pending' : 'paid')}
-                          className={`p-1 transition-colors ${t.status === 'paid' ? 'text-green-500' : 'text-white/20 hover:text-white'}`}
+                          className={`p-1 transition-colors ${t.status === 'paid' ? 'text-brand-primary' : 'text-white/20 hover:text-white'}`}
                         >
-                          {t.status === 'paid' ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                          {t.status === 'paid' ? <CheckCircle2 size={16} /> : <Circle size={16} />}
                         </button>
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="p-3 sm:p-4 text-center">
                         <div className="flex items-center justify-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                          {onEdit && (
+                            <button 
+                              onClick={() => onEdit(t)} 
+                              className="p-1.5 text-white/20 hover:text-brand-primary hover:bg-brand-primary/10 rounded-lg transition-all"
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                          )}
                           <button 
                             onClick={() => onDelete?.(t.id)}
-                            className="p-1.5 text-white/20 hover:text-red-400 transition-colors"
+                            className="p-1.5 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                             title="Excluir lançamento"
                           >
                             <Trash2 size={16} />
-                          </button>
-                          <button className="p-1.5 text-white/20 hover:text-white transition-colors">
-                            <MoreVertical size={16} />
                           </button>
                         </div>
                       </td>
@@ -325,8 +336,8 @@ export default function History({ transactions, onEdit, onDelete, onDeleteAll, o
               ))}
               {paginatedGroups.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-white/40">
-                    Nenhum lançamento encontrado com os filtros atuais.
+                  <td colSpan={6} className="p-12 text-center text-white/40 text-xs italic">
+                    Nenhum lançamento encontrado.
                   </td>
                 </tr>
               )}

@@ -34,6 +34,7 @@ interface BaseFinanceiraProps {
   summary: FinanceSummary | null;
   onToggleBillStatus: (id: string) => void;
   onRefresh: () => void;
+  initialTab?: 'income' | 'adjustments' | 'bills' | 'operating' | 'budget';
 }
 
 type BenefitEntry = {
@@ -74,12 +75,19 @@ export default function BaseFinanceira({
   dailyBills, 
   summary, 
   onToggleBillStatus,
-  onRefresh
+  onRefresh,
+  initialTab
 }: BaseFinanceiraProps) {
   const [formData, setFormData] = useState<UserSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'income' | 'adjustments' | 'bills' | 'operating' | 'budget'>('income');
+  const [activeTab, setActiveTab] = useState<'income' | 'adjustments' | 'bills' | 'operating' | 'budget'>(initialTab || 'income');
+  
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [budgets, setBudgets] = useState<any[]>([]);
   const [newBudget, setNewBudget] = useState({ category: CATEGORIES[1], amount: '' });
   const [benefitEntries, setBenefitEntries] = useState<BenefitEntry[]>([]);
@@ -94,7 +102,8 @@ export default function BaseFinanceira({
     name: '',
     amount: '',
     category: CATEGORIES[6] || 'Contas Fixas',
-    due_day: '5'
+    due_day: '5',
+    keywords: ''
   });
   
   const [newDaily, setNewDaily] = useState({
@@ -279,13 +288,19 @@ export default function BaseFinanceira({
       return;
     }
     try {
+      const keywordsArray = newFixed.keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k !== '');
+
       const { error } = await supabase.from('mf_fixed_bills').insert({
         user_id: settings.user_id,
         name: newFixed.name,
         amount: parseFloat(newFixed.amount),
         category: newFixed.category,
         due_day: parseInt(newFixed.due_day),
-        status: 'pending'
+        status: 'pending',
+        keywords: keywordsArray
       });
 
       if (error) {
@@ -296,7 +311,7 @@ export default function BaseFinanceira({
         throw error;
       }
       
-      setNewFixed({ name: '', amount: '', category: 'Moradia', due_day: '5' });
+      setNewFixed({ name: '', amount: '', category: 'Moradia', due_day: '5', keywords: '' });
       onRefresh();
     } catch (err: any) {
       console.error('Error adding fixed bill:', err);
@@ -418,60 +433,68 @@ export default function BaseFinanceira({
     <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-[500px] animate-fade-in text-white overflow-hidden">
       {/* Sidebar de Navegação Interna */}
       <div className="w-full md:w-64 shrink-0 flex flex-col gap-2">
-        <button 
-          onClick={() => setActiveTab('income')}
-          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'income' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-        >
-          <Banknote size={18} />
-          <div className="flex-1">
-            <div className="text-sm font-bold">Renda & Ciclo</div>
-            <div className="text-[10px] opacity-60">Salário e Pagamento</div>
-          </div>
-        </button>
+        {(initialTab === 'bills' || !initialTab) && (
+          <>
+            <button 
+              onClick={() => setActiveTab('bills')}
+              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'bills' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+            >
+              <Calendar size={18} />
+              <div className="flex-1">
+                <div className="text-sm font-bold">Contas Fixas</div>
+                <div className="text-[10px] opacity-60">Compromissos Mensais</div>
+              </div>
+            </button>
 
-        <button 
-          onClick={() => setActiveTab('adjustments')}
-          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'adjustments' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-        >
-          <PlusCircle size={18} />
-          <div className="flex-1">
-            <div className="text-sm font-bold">Ajustes & Benefícios</div>
-            <div className="text-[10px] opacity-60">Descontos e Extras</div>
-          </div>
-        </button>
+            <button 
+              onClick={() => setActiveTab('operating')}
+              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'operating' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+            >
+              <Activity size={18} />
+              <div className="flex-1">
+                <div className="text-sm font-bold">Gastos Estimados</div>
+                <div className="text-[10px] opacity-60">Rateio Operacional</div>
+              </div>
+            </button>
 
-        <button 
-          onClick={() => setActiveTab('bills')}
-          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'bills' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-        >
-          <Calendar size={18} />
-          <div className="flex-1">
-            <div className="text-sm font-bold">Contas Fixas</div>
-            <div className="text-[10px] opacity-60">Compromissos Mensais</div>
-          </div>
-        </button>
+            <button 
+              onClick={() => setActiveTab('budget')}
+              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'budget' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+            >
+              <LayoutGrid size={18} />
+              <div className="flex-1">
+                <div className="text-sm font-bold">Orçamentos</div>
+                <div className="text-[10px] opacity-60">Limites por Categoria</div>
+              </div>
+            </button>
+          </>
+        )}
 
-        <button 
-          onClick={() => setActiveTab('operating')}
-          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'operating' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-        >
-          <Activity size={18} />
-          <div className="flex-1">
-            <div className="text-sm font-bold">Gastos Estimados</div>
-            <div className="text-[10px] opacity-60">Rasteio Operacional</div>
-          </div>
-        </button>
+        {(initialTab === 'income' || !initialTab) && (
+          <>
+            <button 
+              onClick={() => setActiveTab('income')}
+              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'income' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+            >
+              <Banknote size={18} />
+              <div className="flex-1">
+                <div className="text-sm font-bold">Renda & Ciclo</div>
+                <div className="text-[10px] opacity-60">Salário e Pagamento</div>
+              </div>
+            </button>
 
-        <button 
-          onClick={() => setActiveTab('budget')}
-          className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'budget' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-        >
-          <LayoutGrid size={18} />
-          <div className="flex-1">
-            <div className="text-sm font-bold">Orçamentos</div>
-            <div className="text-[10px] opacity-60">Limites por Categoria</div>
-          </div>
-        </button>
+            <button 
+              onClick={() => setActiveTab('adjustments')}
+              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'adjustments' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
+            >
+              <PlusCircle size={18} />
+              <div className="flex-1">
+                <div className="text-sm font-bold">Ajustes & Benefícios</div>
+                <div className="text-[10px] opacity-60">Descontos e Extras</div>
+              </div>
+            </button>
+          </>
+        )}
 
         <div className="mt-auto pt-4 space-y-3">
           <div className="glass-card !p-4 bg-brand-primary/5 border-brand-primary/20">
@@ -758,6 +781,11 @@ export default function BaseFinanceira({
                     </select>
                   </div>
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-white/40 uppercase font-bold">Palavras-chave (Aliases) separadas por vírgula</label>
+                  <input type="text" placeholder="Ex: internet, claro, net fibra" value={newFixed.keywords} onChange={e => setNewFixed({...newFixed, keywords: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
+                  <p className="text-[10px] text-white/20">Isso ajuda a identificar o pagamento no seu extrato carregado.</p>
+                </div>
                 <button type="submit" className="w-full bg-brand-primary text-black py-3 rounded-xl font-bold text-sm tracking-wide hover:brightness-110 shadow-lg mt-2">
                   Adicionar Conta Fixa
                 </button>
@@ -766,23 +794,37 @@ export default function BaseFinanceira({
               <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto no-scrollbar pr-1">
                 {fixedBills.length === 0 && <div className="text-center py-10 text-white/20 italic text-sm">Nenhuma conta fixa cadastrada.</div>}
                 {fixedBills.map(bill => {
+                  const processed = summary?.processedFixedBills?.find(p => p.id === bill.id);
+                  const status = processed?.reconciledStatus || 'pending';
+                  
                   const today = new Date();
                   const currentMonth = format(today, 'yyyy-MM');
-                  const isPaid = bill.last_paid_month === currentMonth;
+                  const isPaidManual = bill.last_paid_month === currentMonth;
+                  const isPaidAuto = status === 'paid_identified';
+                  const isPaid = isPaidManual || isPaidAuto;
+                  const isOverdue = status === 'overdue';
+
                   const nextDate = new Date(today.getFullYear(), today.getMonth(), bill.due_day, 12, 0, 0, 0);
-                  const displayDate = isPaid ? addMonths(nextDate, 1) : nextDate;
+                  const displayDate = isPaidManual ? addMonths(nextDate, 1) : nextDate;
 
                   return (
-                    <div key={bill.id} className="group p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
+                    <div key={bill.id} className={`group p-4 rounded-xl border flex items-center justify-between transition-all ${isPaidAuto ? 'bg-brand-primary/5 border-brand-primary/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
                       <div className="flex items-center gap-4">
-                        <div onClick={() => onToggleBillStatus(bill.id)} className={`h-10 w-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${isPaid ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40 hover:bg-brand-primary/20 hover:text-brand-primary'}`}>
-                          {isPaid ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                        <div onClick={() => onToggleBillStatus(bill.id)} className={`h-10 w-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${isPaid ? 'bg-green-500/20 text-green-400' : (isOverdue ? 'bg-red-500/20 text-red-400' : 'bg-white/10 text-white/40 hover:bg-brand-primary/20 hover:text-brand-primary')}`}>
+                          {isPaid ? <CheckCircle2 size={20} /> : (isOverdue ? <Clock size={20} /> : <Circle size={20} />)}
                         </div>
                         <div>
-                          <div className="text-sm font-bold">{bill.name}</div>
-                          <div className="text-[10px] text-white/40 flex items-center gap-1">
-                            <Clock size={10} /> Vence dia {bill.due_day} • Próximo: {format(displayDate, "dd 'de' MMM", { locale: ptBR })}
+                          <div className="text-sm font-bold flex items-center gap-2">
+                            {bill.name}
+                            {isPaidAuto && <span className="text-[8px] bg-brand-primary text-black px-1 rounded font-bold uppercase">Extrato</span>}
+                            {isOverdue && <span className="text-[8px] bg-red-500 text-white px-1 rounded font-bold uppercase">Vencida</span>}
                           </div>
+                          <div className="text-[10px] text-white/40 flex items-center gap-1">
+                            <Clock size={10} /> Vence dia {bill.due_day} • {isPaidManual ? 'Próximo: ' : ''} {format(displayDate, "dd 'de' MMM", { locale: ptBR })}
+                          </div>
+                          {bill.keywords && bill.keywords.length > 0 && (
+                            <div className="text-[9px] text-white/20 mt-1">Tags: {bill.keywords.join(', ')}</div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">

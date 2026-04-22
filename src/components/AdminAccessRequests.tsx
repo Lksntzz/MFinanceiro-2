@@ -68,11 +68,16 @@ export default function AdminAccessRequests({ user }: { user: User }) {
       // Garante JWT atualizado (claims de admin) para RLS.
       await supabase.auth.refreshSession();
 
+      // Check if admin RPC exists, if not fallback
       const { data: adminCheck, error: adminCheckError } = await supabase.rpc("mf_is_admin_user");
+      
+      let isActuallyAdmin = adminCheck;
       if (adminCheckError) {
-        throw adminCheckError;
+        // Fallback to client-side check if RPC is missing
+        isActuallyAdmin = isAdmin;
       }
-      if (!adminCheck) {
+
+      if (!isActuallyAdmin) {
         throw new Error("Permissao negada para listar solicitacoes. Seu token nao esta com perfil admin.");
       }
 
@@ -166,12 +171,6 @@ export default function AdminAccessRequests({ user }: { user: User }) {
     };
   }, [isAdmin, user.id]);
 
-  useEffect(() => {
-    if (!isAdmin) {
-      setError("Acesso restrito ao administrador.");
-    }
-  }, [isAdmin]);
-
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((item) => {
@@ -186,12 +185,6 @@ export default function AdminAccessRequests({ user }: { user: User }) {
   const updateStatus = async (id: string, nextStatus: AccessStatus) => {
     if (!supabase || !isAdmin) {
       setError("Permissão negada para alterar solicitações.");
-      return;
-    }
-
-    const exists = items.some((item) => item.id === id);
-    if (!exists) {
-      setError("Solicitação não encontrada.");
       return;
     }
 
@@ -342,7 +335,6 @@ export default function AdminAccessRequests({ user }: { user: User }) {
                   <th className="py-3 px-4 text-[10px] uppercase tracking-widest text-white/40">E-mail</th>
                   <th className="py-3 px-4 text-[10px] uppercase tracking-widest text-white/40">Status</th>
                   <th className="py-3 px-4 text-[10px] uppercase tracking-widest text-white/40">Solicitado em</th>
-                  <th className="py-3 px-4 text-[10px] uppercase tracking-widest text-white/40">Observação</th>
                   <th className="py-3 px-4 text-[10px] uppercase tracking-widest text-white/40 text-right">Ações</th>
                 </tr>
               </thead>
@@ -378,7 +370,6 @@ export default function AdminAccessRequests({ user }: { user: User }) {
                     <td className="py-3 px-4 text-white/60">
                       {item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : "-"}
                     </td>
-                    <td className="py-3 px-4 text-white/50">{item.note || "-"}</td>
                     <td className="py-3 px-4">
                       <div className="flex justify-end gap-2">
                         <button

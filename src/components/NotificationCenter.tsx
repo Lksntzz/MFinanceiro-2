@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, X, CheckCircle2, AlertCircle, Clock, Calendar, Wallet } from 'lucide-react';
+import { Bell, X, CheckCircle2, AlertCircle, Clock, Calendar, Wallet, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -17,11 +17,12 @@ interface NotificationItem {
 interface NotificationCenterProps {
   notifications: NotificationItem[];
   onPay: (item: NotificationItem) => void;
+  onDismiss: (id: string) => void;
   onClose: () => void;
   isOpen: boolean;
 }
 
-export default function NotificationCenter({ notifications, onPay, onClose, isOpen }: NotificationCenterProps) {
+export default function NotificationCenter({ notifications, onPay, onDismiss, onClose, isOpen }: NotificationCenterProps) {
   const dueToday = notifications.filter(n => n.status === 'due_today');
   const overdue = notifications.filter(n => n.status === 'overdue');
 
@@ -68,7 +69,7 @@ export default function NotificationCenter({ notifications, onPay, onClose, isOp
                         <AlertCircle size={12} /> Vencidos
                       </h3>
                       {overdue.map(item => (
-                        <NotificationCard key={item.id} item={item} onPay={onPay} />
+                        <NotificationCard key={item.id} item={item} onPay={onPay} onDismiss={onDismiss} />
                       ))}
                     </div>
                   )}
@@ -79,7 +80,7 @@ export default function NotificationCenter({ notifications, onPay, onClose, isOp
                         <Clock size={12} /> Para Hoje
                       </h3>
                       {dueToday.map(item => (
-                        <NotificationCard key={item.id} item={item} onPay={onPay} />
+                        <NotificationCard key={item.id} item={item} onPay={onPay} onDismiss={onDismiss} />
                       ))}
                     </div>
                   )}
@@ -87,7 +88,22 @@ export default function NotificationCenter({ notifications, onPay, onClose, isOp
               )}
             </div>
 
-            <div className="p-4 border-t border-white/10 bg-white/5">
+            <div className="p-4 border-t border-white/10 bg-white/5 space-y-4">
+              <div className="p-3 rounded-xl bg-brand-primary/10 border border-brand-primary/20">
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-brand-primary mb-1">Dica 💡</h4>
+                <p className="text-[10px] text-white/60 leading-relaxed">
+                  Importe seu extrato para identificar pagamentos automaticamente. Nossa inteligência local reconhece aliases e descrições de diversas empresas.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between opacity-50">
+                <div className="flex items-center gap-3">
+                  <Database size={14} className="text-white/40" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Integração DDA / Banco</span>
+                </div>
+                <span className="text-[8px] bg-white/10 px-1.5 py-0.5 rounded text-white/60">EM BREVE</span>
+              </div>
+
               <p className="text-[9px] text-center text-white/30 uppercase font-bold tracking-tighter">
                 Fique atento aos prazos para evitar juros e multas.
               </p>
@@ -102,10 +118,11 @@ export default function NotificationCenter({ notifications, onPay, onClose, isOp
 interface NotificationCardProps {
   item: NotificationItem;
   onPay: (item: NotificationItem) => void;
+  onDismiss: (id: string) => void;
   key?: string | number;
 }
 
-function NotificationCard({ item, onPay }: NotificationCardProps) {
+function NotificationCard({ item, onPay, onDismiss }: NotificationCardProps) {
   const isOverdue = item.status === 'overdue';
 
   return (
@@ -145,14 +162,23 @@ function NotificationCard({ item, onPay }: NotificationCardProps) {
         </div>
       </div>
 
-      <button
-        onClick={() => onPay(item)}
-        className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-          isOverdue ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-brand-primary text-black hover:bg-brand-primary/90'
-        }`}
-      >
-        <CheckCircle2 size={14} /> Baixar Pagamento
-      </button>
+      <div className="flex flex-col gap-2">
+        <button
+          onClick={() => onPay(item)}
+          className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+            isOverdue ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-brand-primary text-black hover:bg-brand-primary/90'
+          }`}
+        >
+          <CheckCircle2 size={14} /> Baixar Pagamento
+        </button>
+
+        <button
+          onClick={() => onDismiss(item.id)}
+          className="w-full py-1 text-[9px] font-bold uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+        >
+          Entendi (ocultar)
+        </button>
+      </div>
     </div>
   );
 }

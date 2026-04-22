@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { ImportedTransaction } from '../types';
 import { parsePdfStatement } from '../lib/import-parsers/pdf/parse-pdf-statement';
+import { identifyCompany } from '../lib/company-aliases';
 import {
   Upload,
   FileText,
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 
 interface ImportarExtratosProps {
-  onImport: (transactions: ImportedTransaction[]) => void;
+  onImport: (transactions: ImportedTransaction[], newBalance?: number) => void;
   onCancel: () => void;
 }
 
@@ -266,6 +267,26 @@ function inferColumnByRatio(rows: string[][], predicate: (value: string | undefi
 }
 
 function inferCategory(description: string, type: 'income' | 'expense'): string {
+  // Tenta usar a engine de identificação avançada primeiro
+  const identified = identifyCompany(description);
+  
+  if (identified) {
+    // Mapeia categorias do alias para as categorias do app
+    const categoryMap: { [key: string]: string } = {
+      'internet_telefonia': 'Contas Fixas',
+      'agua_saneamento': 'Contas Fixas',
+      'energia_eletrica': 'Contas Fixas',
+      'bancos_financeiras': 'Geral',
+      'emprestimos_acordos': 'Geral',
+      'alimentacao': 'Alimentação',
+      'transporte': 'Transporte',
+      'saude': 'Saúde',
+      'lazer': 'Lazer',
+      'educacao': 'Educação'
+    };
+    return categoryMap[identified.category] || 'Geral';
+  }
+
   const text = normalizeHeader(description);
   
   // Entradas Específicas
@@ -472,6 +493,10 @@ function parseCsvTransactions(content: string, bank: string): ImportedTransactio
 
 function parseOfxTransactions(content: string, bank: string): ImportedTransaction[] {
   const blocks = content.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi) || [];
+  
+  // Extrai o saldo final do extrato (Ledger Balance)
+  const ledgerBalMatch = content.match(/<LEDGERBAL>[\s\S]*?<BALAMT>([\d.,-]+)/i);
+  const finalLedgerBalance = ledgerBalMatch ? parseAmount(ledgerBalMatch[1]) : undefined;
 
   return blocks.map((block, index) => {
     const fitid = (block.match(/<FITID>(.*)/i)?.[1] || '').trim();
@@ -483,7 +508,7 @@ function parseOfxTransactions(content: string, bank: string): ImportedTransactio
     const description = memo || name || 'Sem descricao';
     const rawDate = dtPosted ? `${dtPosted.slice(6, 8)}/${dtPosted.slice(4, 6)}/${dtPosted.slice(0, 4)}` : '';
     const type: 'income' | 'expense' = /(credit|dep|income)/.test(trnType) || trnAmt > 0 ? 'income' : 'expense';
-    const status: ImportedTransaction['status'] = trnAmt !== 0 ? 'ready' : 'error';
+    const status: 'ready' | 'error' = trnAmt !== 0 ? 'ready' : 'error';
 
     return {
       id: fitid || generateId('ofx', index),
@@ -495,7 +520,9 @@ function parseOfxTransactions(content: string, bank: string): ImportedTransactio
       status,
       confidence: trnAmt !== 0 ? 0.96 : 0.45,
       original_description: description,
-      bank_source: bank === 'auto' ? 'Importado OFX' : bank
+      bank_source: bank === 'auto' ? 'Importado OFX' : bank,
+      // No OFX, atribuímos o saldo final apenas ao último lançamento para o validador de saldo usá-lo
+      running_balance: (index === blocks.length - 1) ? finalLedgerBalance : undefined
     };
   });
 }
@@ -510,6 +537,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
   const [bank, setBank] = useState<string>('auto');
   const [importedData, setImportedData] = useState<ImportedTransaction[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [shouldCalibrateBalance, setShouldCalibrateBalance] = useState(false);
 
   const signedAmountFromImported = (item: ImportedTransaction): number =>
     item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount);
@@ -632,7 +660,10 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
       item.amount > 0 &&
       item.description !== 'Sem descricao'
     );
-    onImport(readyItems);
+    
+    const calibrationBalance = shouldCalibrateBalance && balanceValidation ? balanceValidation.statementFinal : undefined;
+    
+    onImport(readyItems, calibrationBalance);
     setStep('success');
   };
 
@@ -770,25 +801,47 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
       {step === 'review' && (
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           {balanceValidation && (
-            <div className={`glass-card !p-3 shrink-0 border ${balanceValidation.isClose ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}>
+            <div className={`glass-card !p-3 shrink-0 border transition-all ${balanceValidation.isClose ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}>
               <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">Validação de Saldo (pré-importação)</div>
-                  <div className="text-xs text-white/80 mt-1">
-                    Saldo final esperado x saldo do extrato
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">Validação de Saldo</div>
+                    {balanceValidation.isClose && (
+                      <span className="text-[8px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full font-bold uppercase">Sincronizado</span>
+                    )}
                   </div>
+                  <div className="text-xs text-white/80 mt-1">
+                    Saldo final extraído do comprovante.
+                  </div>
+                  
+                  <button 
+                    onClick={() => setShouldCalibrateBalance(!shouldCalibrateBalance)}
+                    className={`mt-2 flex items-center gap-2 px-2 py-1 rounded-lg border transition-all ${
+                      shouldCalibrateBalance 
+                        ? 'bg-brand-primary/20 border-brand-primary/40 text-brand-primary' 
+                        : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                    }`}
+                  >
+                    <div className={`h-3 w-3 rounded-full border flex items-center justify-center ${shouldCalibrateBalance ? 'border-brand-primary bg-brand-primary' : 'border-white/20'}`}>
+                      {shouldCalibrateBalance && <Check size={8} className="text-black" />}
+                    </div>
+                    <span className="text-[10px] font-bold">Calibrar saldo do MFinanceiro</span>
+                  </button>
                 </div>
-                <div className="text-right text-[11px] leading-5">
-                  <div>Esperado: <span className="font-bold">R$ {balanceValidation.expectedFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                  <div>Extrato: <span className="font-bold">R$ {balanceValidation.statementFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                <div className="text-right text-[11px] leading-5 shrink-0">
+                  <div className="text-white/40">Esperado: <span className="text-white font-medium">R$ {balanceValidation.expectedFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div>Final no Extrato: <span className="font-bold text-white text-sm">R$ {balanceValidation.statementFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                   <div className={balanceValidation.isClose ? 'text-green-300' : 'text-yellow-300'}>
                     Diferença: {balanceValidation.diff >= 0 ? '+' : '-'} R$ {Math.abs(balanceValidation.diff).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
               </div>
-              {!balanceValidation.isClose && (
-                <div className="text-[10px] text-yellow-200/90 mt-2">
-                  A diferença indica que algum lançamento pode estar pendente, desmarcado ou com valor/categoria incorreto.
+              {shouldCalibrateBalance && (
+                <div className="mt-2 py-2 px-3 bg-brand-primary/10 rounded-lg border border-brand-primary/20 flex items-center gap-3">
+                  <Info size={14} className="text-brand-primary shrink-0" />
+                  <p className="text-[10px] text-brand-primary/80 leading-relaxed font-medium">
+                    Ao confirmar, seu saldo atual no sistema será ajustado para <span className="font-bold">R$ {balanceValidation.statementFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> após a importação.
+                  </p>
                 </div>
               )}
             </div>

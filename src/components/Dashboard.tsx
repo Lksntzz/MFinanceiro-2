@@ -32,6 +32,7 @@ import {
   Moon,
   Crown,
   FileDown,
+  FileText,
   PlayCircle,
   Heart,
   Calendar as CalendarIcon,
@@ -40,7 +41,10 @@ import {
   Target,
   Brain,
   Layout,
-  List
+  List,
+  LayoutDashboard,
+  BarChart2,
+  Lightbulb,
 } from 'lucide-react';
 import { ReportService } from '../services/reportService';
 import { useApp } from '../context/AppContext';
@@ -91,7 +95,10 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   }
 
   const db = supabase;
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'insights' | 'history' | 'base' | 'cards' | 'import' | 'investments' | 'goals' | 'health' | 'subscriptions' | 'calendar' | 'access_requests'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests'>('overview');
+  const [historySubTab, setHistorySubTab] = useState<'list' | 'import'>('list');
+  const [analysisSubTab, setAnalysisSubTab] = useState<'stats' | 'insights' | 'health' | 'goals'>('stats');
+  const [accountsSubTab, setAccountsSubTab] = useState<'bills' | 'calendar' | 'subscriptions' | 'investments'>('bills');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
@@ -138,6 +145,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   const [editingInstallment, setEditingInstallment] = useState<CardInstallment | null>(null);
   const [latestUpdate, setLatestUpdate] = useState<AppUpdateInfo | null>(null);
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
     message: string;
@@ -154,11 +162,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   });
   const currentUserIdRef = useRef(user.id);
   const fetchVersionRef = useRef(0);
-  const isAdminUser = useMemo(() => {
-    const role = String(user.app_metadata?.role || '').toLowerCase();
-    if (role === 'admin' || role === 'owner') return true;
-    return user.user_metadata?.is_admin === true;
-  }, [user]);
 
   useEffect(() => {
     let active = true;
@@ -205,12 +208,6 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   useEffect(() => {
     currentUserIdRef.current = user.id;
   }, [user.id]);
-
-  useEffect(() => {
-    if (!isAdminUser && activeTab === 'access_requests') {
-      setActiveTab('overview');
-    }
-  }, [activeTab, isAdminUser]);
 
   const parseTransactionDate = (raw: string): Date | null => {
     if (!raw) return null;
@@ -352,7 +349,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     }
   }
 
-  async function handleImportTransactions(imported: ImportedTransaction[]) {
+  async function handleImportTransactions(imported: ImportedTransaction[], newBalance?: number) {
     try {
       const validImported = imported.filter(item => item.amount > 0 && item.description && item.description !== 'Sem descricao');
       const seenSourceIds = new Set<string>();
@@ -373,20 +370,32 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
         source: item.bank_source || 'Importado'
       }));
 
-      if (newEntries.length === 0) return;
+      if (newEntries.length === 0 && newBalance === undefined) return;
 
-      const result = await resilientLedgerInsert(newEntries);
-      if (!result.success) throw new Error(result.error);
+      if (newEntries.length > 0) {
+        const result = await resilientLedgerInsert(newEntries);
+        if (!result.success) throw new Error(result.error);
+      }
 
-      const latestRunningBalanceItem = [...uniqueImported]
-        .reverse()
-        .find(item => typeof item.running_balance === 'number' && Number.isFinite(item.running_balance));
-      const netImported = newEntries.reduce((sum, entry) => sum + entry.amount, 0);
-      const nextBalance = latestRunningBalanceItem?.running_balance ?? (settings ? settings.current_balance + netImported : null);
+      // Sincronização Inteligente de Saldo
+      let nextBalance = settings?.current_balance || 0;
+      
+      if (newBalance !== undefined) {
+        // Calibragem explícita solicitada pelo usuário
+        nextBalance = newBalance;
+      } else {
+        // Tenta inferir pelo running_balance do extrato ou soma incremental
+        const latestRunningBalanceItem = [...uniqueImported]
+          .reverse()
+          .find(item => typeof item.running_balance === 'number' && Number.isFinite(item.running_balance));
+        
+        const netImported = newEntries.reduce((sum, entry) => sum + entry.amount, 0);
+        nextBalance = latestRunningBalanceItem?.running_balance ?? (settings ? settings.current_balance + netImported : nextBalance);
+      }
 
-      if (nextBalance !== null) {
+      if (settings) {
         await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-        if (settings) setSettings({ ...settings, current_balance: nextBalance });
+        setSettings({ ...settings, current_balance: nextBalance });
       }
 
       fetchData();
@@ -504,7 +513,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
 
       // Redirect if first login and no transactions
       if (isFirstLogin && ledgerEntries.length === 0 && !isStale()) {
-        setActiveTab('base');
+        setActiveTab('settings');
       }
 
       const { data: cardsData } = await db.from('mf_credit_cards').select('*').eq('user_id', user.id);
@@ -980,13 +989,13 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
       }
     });
 
-    return alerts.sort((a, b) => {
+    return alerts.filter(a => !dismissedAlerts.includes(a.id)).sort((a, b) => {
         // Ordena por urgência primário
         const priority = { overdue: 0, due_today: 1, pending: 2 };
         if (priority[a.status] !== priority[b.status]) return priority[a.status] - priority[b.status];
         return a.dueDate - b.dueDate;
     });
-  }, [fixedBills, installments, cards]);
+  }, [fixedBills, installments, cards, dismissedAlerts]);
 
   const handlePayCardBill = async (card: CreditCard) => {
     if (!settings || !user) return;
@@ -1049,12 +1058,19 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   };
 
   const handleNotificationPay = async (item: any) => {
-    if (item.type === 'installment') {
-      await handlePayInstallment(item.originalData);
-    } else if (item.type === 'fixed') {
-      await handleToggleBillStatus(item.originalData.id);
-    } else if (item.type === 'card') {
-      await handlePayCardBill(item.originalData);
+    try {
+      if (item.type === 'installment') {
+        await handlePayInstallment(item.originalData);
+      } else if (item.type === 'fixed') {
+        await handleToggleBillStatus(item.originalData.id);
+      } else if (item.type === 'card') {
+        await handlePayCardBill(item.originalData);
+      }
+      
+      // Remove imediatamente da visão ignorando o fetch (reatividade instantânea)
+      setDismissedAlerts(prev => [...prev, item.id]);
+    } catch (err) {
+      console.error('Erro ao processar pagamento via notificação:', err);
     }
   };
 
@@ -1210,71 +1226,66 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     }
   };
 
-  const baseToolGroups = [
-    {
-      id: 'monitor',
-      label: 'Análise',
-      icon: Activity,
-      tabs: [
-        { id: 'overview', label: 'Dashboard' },
-        { id: 'details', label: 'Estatísticas' },
-        { id: 'insights', label: 'Insights AI' },
-        { id: 'health', label: 'Saúde' },
-      ]
-    },
-    {
-      id: 'ops',
-      label: 'Operações',
-      icon: List,
-      tabs: [
-        { id: 'history', label: 'Lançamentos' },
-        { id: 'cards', label: 'Cartões' },
-        { id: 'import', label: 'Importar' },
-      ]
-    },
-    {
-      id: 'plan',
-      label: 'Escopo',
-      icon: Calendar,
-      tabs: [
-        { id: 'calendar', label: 'Calendário' },
-        { id: 'subscriptions', label: 'Assinaturas' },
-        { id: 'goals', label: 'Metas' },
-      ]
-    },
-    {
-      id: 'wealth',
-      label: 'Capital',
-      icon: Briefcase,
-      tabs: [
-        { id: 'investments', label: 'Investimentos' },
-      ]
+  const isAdmin = useMemo(() => {
+    if (!user) return false;
+    const role = String(user.app_metadata?.role || "").toLowerCase();
+    return role === "admin" || role === "owner" || user.user_metadata?.is_admin === true;
+  }, [user]);
+
+  const toolGroups = useMemo(() => {
+    const groups = [
+      {
+        id: 'main',
+        label: 'Principal',
+        icon: LayoutDashboard,
+        tabs: [
+          { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+          { id: 'history', label: 'Histórico', icon: HistoryIcon },
+          { id: 'cards', label: 'Cartões', icon: CreditCardIcon },
+        ]
+      },
+      {
+        id: 'intel',
+        label: 'Inteligência',
+        icon: Activity,
+        tabs: [
+          { id: 'analysis', label: 'Análises', icon: BarChart2 },
+          { id: 'accounts', label: 'Contas', icon: Wallet },
+        ]
+      },
+      {
+        id: 'sys',
+        label: 'Sistema',
+        icon: Settings,
+        tabs: [
+          { id: 'settings', label: 'Preferências', icon: Settings },
+        ]
+      }
+    ];
+
+    if (isAdmin) {
+      groups.push({
+        id: 'admin',
+        label: 'Admin',
+        icon: ShieldAlert,
+        tabs: [
+          { id: 'admin_requests', label: 'Admin', icon: ShieldAlert }
+        ]
+      });
     }
-  ];
 
-  const toolGroups = isAdminUser
-    ? [
-        ...baseToolGroups,
-        {
-          id: 'admin',
-          label: 'Admin',
-          icon: ShieldAlert,
-          tabs: [{ id: 'access_requests', label: 'Solicitações de acesso' }],
-        },
-      ]
-    : baseToolGroups;
-
-  const allTabs = toolGroups.flatMap(g => g.tabs);
+    return groups;
+  }, [isAdmin]);
 
   return (
-    <div className="h-screen w-full p-4 flex flex-col gap-4 overflow-hidden bg-[#050505] text-white no-scrollbar">
+    <div className="h-screen w-full p-2 sm:p-4 flex flex-col gap-2 sm:gap-3 overflow-hidden bg-[#050505] text-white no-scrollbar selection:bg-brand-primary/30">
       {missingTables.length > 0 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Database className="text-yellow-500" size={18} />
-            <div className="text-sm font-bold text-yellow-500">Configuração Incompleta</div>
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-2 sm:p-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Database className="text-yellow-500" size={16} />
+            <div className="text-xs sm:text-sm font-bold text-yellow-500">Configuração Incompleta</div>
           </div>
-          <button onClick={() => setShowSetupHelper(true)} className="px-4 py-1.5 bg-yellow-500 text-black rounded-lg text-xs font-bold">Configurar</button>
+          <button onClick={() => setShowSetupHelper(true)} className="px-3 py-1 bg-yellow-500 text-black rounded-lg text-[10px] font-bold">Configurar</button>
         </div>
       )}
 
@@ -1290,224 +1301,342 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
         </div>
       )}
 
-      <header className="flex items-center justify-between gap-3 shrink-0 mb-2">
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
-            <button 
-              onClick={() => setIsPrivate(!isPrivate)} 
-              className="p-1.5 rounded-lg text-white/40 hover:text-white transition-all"
-              title={isPrivate ? "Mostrar Valores" : "Ocultar Valores"}
-            >
-              {isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <div className="w-[1px] h-4 bg-white/10 mx-1 my-auto" />
-            <button 
-              onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'gold' : 'dark')} 
-              className="p-1.5 rounded-lg text-white/40 hover:text-white transition-all"
-              title="Trocar Tema"
-            >
-              {theme === 'dark' ? <Moon size={16} /> : theme === 'light' ? <Sun size={16} /> : <Crown size={16} className="text-yellow-500" />}
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center"><Wallet className="text-white" size={18} /></div>
-            <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
-            {isMaintenanceBypass && (
-              <div className="ml-2 flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-full animate-pulse">
-                <ShieldAlert size={12} className="text-yellow-500" />
-                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider">Manutenção ativa</span>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex-1 min-w-0 mx-2">
-          <nav className="w-full overflow-x-auto no-scrollbar">
-            <div className="w-max min-w-full flex items-center gap-2 px-1">
-              {toolGroups.map(group => (
-                <div key={group.id} className="shrink-0 flex bg-white/5 p-1 rounded-xl border border-white/5 items-center gap-1">
-                  <div className="px-2 text-white/30 hidden lg:block">
-                    <group.icon size={14} />
-                  </div>
-                  <div className="flex gap-1">
-                    {group.tabs.map(tab => (
-                      <button 
-                        key={tab.id} 
-                        onClick={() => setActiveTab(tab.id as any)} 
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 shrink-0">
+        <div className="flex items-center justify-between w-full lg:w-auto">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center border border-brand-primary/20">
+              <Wallet className="text-brand-primary" size={24} />
             </div>
-          </nav>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-white/40 uppercase font-black tracking-widest leading-none">Dashboard</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 lg:hidden">
+            <button 
+              onClick={() => setIsPrivate(!isPrivate)}
+              className={`p-2 rounded-lg transition-all ${isPrivate ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40'}`}
+            >
+              {isPrivate ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+            <button 
+              onClick={() => setShowNotificationCenter(true)}
+              className="relative p-2 bg-white/5 text-white/40 rounded-lg"
+            >
+              <Bell size={18} />
+              {urgentNotifications.length > 0 && (
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-brand-primary rounded-full animate-pulse"></span>
+              )}
+            </button>
+            <button onClick={() => setShowAddModal(true)} className="p-2 bg-brand-primary text-black rounded-lg">
+              <Plus size={18} />
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`p-2 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40 hover:text-white'}`}
+            >
+              <Settings size={18} />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+
+        <nav className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:pb-0 justify-start lg:justify-center w-full lg:w-auto">
+          {toolGroups.map(group => (
+            <div key={group.id} className="flex bg-white/5 p-1 rounded-xl border border-white/10 items-center gap-0.5 shrink-0">
+              {group.tabs.map(tab => (
+                <button 
+                  key={tab.id} 
+                  onClick={() => setActiveTab(tab.id as any)} 
+                  className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap ${
+                    activeTab === tab.id 
+                      ? 'bg-brand-primary text-black shadow-lg shadow-brand-primary/20' 
+                      : 'text-white/40 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <div className="w-[1px] h-3 bg-white/10 last:hidden mx-0.5" />
+            </div>
+          ))}
+        </nav>
+
+        <div className="hidden lg:flex items-center gap-3">
           <button 
-            onClick={() => setShowNotificationCenter(true)}
-            className="relative p-2 text-white/60 hover:text-white transition-colors bg-white/5 rounded-lg border border-white/5"
+            onClick={() => setIsPrivate(!isPrivate)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              isPrivate ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40 hover:text-white'
+            }`}
           >
-            <Bell size={18} />
-            {urgentNotifications && urgentNotifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 bg-brand-primary text-[10px] text-black font-bold rounded-full flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(0,242,255,0.4)]">
-                {urgentNotifications.length}
-              </span>
-            )}
+            {isPrivate ? <EyeOff size={14} /> : <Eye size={14} />}
+            <span>Privado</span>
           </button>
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-3 py-1.5 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity"><Plus size={16} /><span>Lançar</span></button>
+          
+          <div className="h-4 w-px bg-white/10 mx-1"></div>
+          
           <button 
-            onClick={() => setActiveTab('base')} 
-            className={`p-1.5 transition-colors ${activeTab === 'base' ? 'text-brand-primary' : 'text-white/60 hover:text-white'}`}
+            onClick={() => setActiveTab('settings')}
+            className={`p-2 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40 hover:text-white'}`}
+            title="Configurações"
           >
             <Settings size={18} />
           </button>
-          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-1.5 text-white/60 hover:text-white transition-colors"><LogOut size={18} /></button>
+
+          <button 
+            onClick={() => setShowNotificationCenter(true)}
+            className="relative p-2 bg-white/5 text-white/40 rounded-lg hover:text-brand-primary transition-colors"
+          >
+            <Bell size={18} />
+            {urgentNotifications && urgentNotifications.length > 0 && (
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-brand-primary rounded-full"></span>
+            )}
+          </button>
+
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-4 py-2 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity">
+            <Plus size={18} />
+            <span>Lançar</span>
+          </button>
+          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-2 text-white/20 hover:text-white transition-colors">
+            <LogOut size={20} />
+          </button>
         </div>
       </header>
 
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-6 scroll-smooth px-1">
         {activeTab === 'overview' && (
-          <main className="flex-1 grid grid-cols-12 grid-rows-[auto_auto_auto_1.2fr_1fr_1.2fr] gap-4 overflow-hidden animate-fade-in">
+          <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 animate-fade-in">
             {urgentNotifications.length > 0 && (
-              <div className="col-span-12 glass-card !p-4 border-brand-primary/20 bg-brand-primary/5 flex items-center justify-between">
+              <div className="col-span-full glass-card !p-5 border-brand-primary/20 bg-brand-primary/5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-brand-primary/20 flex items-center justify-center animate-pulse">
-                    <AlertCircle className="text-brand-primary" size={20} />
+                  <div className="h-10 w-10 rounded-full bg-brand-primary/20 flex items-center justify-center shrink-0">
+                    <AlertCircle className="text-brand-primary" size={24} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold">Você tem {urgentNotifications.length} conta(s) pendente(s) hoje!</h3>
-                    <p className="text-[10px] text-white/60 uppercase font-bold tracking-wider">Acesse a Central de Alertas (sino) ou clique abaixo para baixar.</p>
+                    <h3 className="text-sm font-bold">Pendências Identificadas</h3>
+                    <p className="text-xs text-white/50">Você possui pagamentos pendentes que precisam de atenção hoje.</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setShowNotificationCenter(true)}
-                  className="px-4 py-2 bg-brand-primary text-black text-xs font-bold rounded-xl uppercase hover:opacity-90 transition-opacity"
-                >
-                  Ver Pendências
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowNotificationCenter(true)} className="px-4 py-2 bg-brand-primary text-black text-xs font-bold rounded-lg uppercase">Ver</button>
+                  <button onClick={() => setDismissedAlerts(prev => [...prev, ...urgentNotifications.map(n => n.id)])} className="px-4 py-2 bg-white/5 text-white/40 text-xs font-bold rounded-lg uppercase border border-white/5">Entendi</button>
+                </div>
               </div>
             )}
             
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between group">
+            <div className="lg:col-span-3 glass-card !p-4 flex flex-col justify-between group h-24">
               <div className="flex items-center justify-between">
-                <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Saldo Disponível</span>
-                <button 
-                  onClick={() => {
-                    setTempBalance(settings?.current_balance?.toString() || '0');
-                    setShowBalanceModal(true);
-                  }}
-                  className="p-1.5 rounded-lg bg-white/5 text-white/40 hover:text-brand-primary hover:bg-brand-primary/10 transition-all opacity-0 group-hover:opacity-100"
-                >
-                  <Pencil size={12} />
-                </button>
+                <span className="text-white/40 text-xs font-bold uppercase tracking-widest leading-none">Saldo</span>
+                <Pencil size={12} className="text-white/20 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => { setTempBalance(settings?.current_balance?.toString() || '0'); setShowBalanceModal(true); }} />
               </div>
-              <div className="text-2xl font-bold">{formatCurrency(Math.max(0, summary?.currentBalance ?? 0), isPrivate)}</div>
-            </div>
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between border-brand-primary/30">
-              <span className="text-brand-primary text-xs font-medium uppercase tracking-wider">Limite Diário</span>
-              <div className="text-2xl font-bold text-brand-primary">{formatCurrency(summary?.dailyLimit ?? 0, isPrivate)}</div>
-            </div>
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
-              <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Ciclo Atual</span>
-              <div className="text-2xl font-bold flex items-center gap-2">
-                {summary?.cyclePeriodLabel || '-- a --'}
-                <span className="text-[10px] text-white/20 font-normal">({summary?.daysRemaining ?? 0}d)</span>
-              </div>
-            </div>
-            <div className="col-span-3 glass-card !p-4 flex flex-col justify-between">
-              <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Gasto Hoje</span>
-              <div className={`text-2xl font-bold ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>{formatCurrency(Math.max(0, summary?.todaySpent ?? 0), isPrivate)}</div>
+              <div className="text-2xl font-bold tracking-tight">{formatCurrency(Math.max(0, summary?.currentBalance ?? 0), isPrivate)}</div>
             </div>
 
-            <div className={`col-span-6 glass-card !p-3 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
-              <AlertCircle className={summary?.smartAlert?.type === 'danger' ? 'text-red-400' : 'text-brand-primary'} size={20} />
-              <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Alerta Inteligente</h3><p className="text-xs text-white/70 truncate">{summary?.smartAlert?.message || "Ciclo estável."}</p></div>
-            </div>
-            <div className="col-span-6 glass-card !p-3 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
-              <TrendingUp className="text-brand-secondary" size={20} />
-              <div className="flex-1 min-w-0"><h3 className="font-bold text-sm">Insight do Dia</h3><p className="text-xs text-white/70 truncate">{summary?.dailyInsight || summary?.insights?.[0] || "Mantenha o ritmo."}</p></div>
+            <div className="lg:col-span-3 glass-card !p-4 border-brand-primary/30 flex flex-col justify-between bg-brand-primary/5 h-24">
+              <span className="text-brand-primary text-xs font-bold uppercase tracking-widest leading-none">Limite</span>
+              <div className="text-2xl font-bold tracking-tight text-brand-primary">{formatCurrency(summary?.dailyLimit ?? 0, isPrivate)}</div>
             </div>
 
-            <div className="col-span-8 glass-card !p-4 flex flex-col">
-              <h3 className="font-bold text-sm mb-2">Evolução do Saldo</h3>
-              <div className="flex-1 min-h-0"><Line data={lineChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }} /></div>
-            </div>
-            <div className="col-span-4 glass-card !p-4 flex flex-col justify-between">
-              <h3 className="font-bold text-sm mb-2">Resumo do Período</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between text-xs"><span className="text-white/40">Média Diária</span><span className="font-bold">R$ {(summary?.averageDailySpent ?? 0).toLocaleString('pt-BR')}</span></div>
-                <div className="flex justify-between text-xs"><span className="text-white/40">Maior Categoria</span><span className="font-bold text-brand-primary">{summary?.dominantCategory || 'Nenhuma'}</span></div>
+            <div className="lg:col-span-3 glass-card !p-4 flex flex-col justify-between h-24">
+              <span className="text-white/40 text-xs font-bold uppercase tracking-widest leading-none">Ciclo Atual</span>
+              <div className="text-xl font-bold tracking-tight truncate">
+                {summary?.cyclePeriodLabel || '--'}
+                <span className="ml-2 text-xs text-white/20 font-bold">({summary?.daysRemaining ?? 0}d)</span>
               </div>
             </div>
 
-            <div className="col-span-12 glass-card !p-4 flex flex-col">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-sm">Ritmo de Gastos</h3>
-                <div className="flex bg-white/5 p-1 rounded-lg">
+            <div className="lg:col-span-3 glass-card !p-4 flex flex-col justify-between h-24">
+              <span className="text-white/40 text-xs font-bold uppercase tracking-widest leading-none">Gasto Hoje</span>
+              <div className={`text-2xl font-bold tracking-tight ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>{formatCurrency(Math.max(0, summary?.todaySpent ?? 0), isPrivate)}</div>
+            </div>
+
+            <div className={`lg:col-span-6 glass-card !p-4 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/20' : 'bg-brand-primary/20'}`}>
+                <AlertCircle className={summary?.smartAlert?.type === 'danger' ? 'text-red-400' : 'text-brand-primary'} size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-sm">Status do Ciclo</h3>
+                <p className="text-xs text-white/50 truncate">{summary?.smartAlert?.message || "Ciclo operando dentro da normalidade."}</p>
+              </div>
+            </div>
+
+            <div className="lg:col-span-6 glass-card !p-4 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
+              <div className="h-10 w-10 rounded-xl bg-brand-secondary/20 flex items-center justify-center shrink-0">
+                <TrendingUp className="text-brand-secondary" size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-sm">Insight Financeiro</h3>
+                <p className="text-xs text-white/50 truncate">{summary?.dailyInsight || summary?.insights?.[0] || "Mantenha o controle para atingir suas metas."}</p>
+              </div>
+            </div>
+
+            <div className="col-span-full glass-card !p-5 flex flex-col h-[220px]">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <Activity size={18} className="text-brand-primary" />
+                  Evolução do Saldo
+                </h3>
+              </div>
+              <div className="flex-1 min-h-0">
+                <Line 
+                  data={lineChartData} 
+                  options={{ 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } }, 
+                    scales: { 
+                      y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } }, 
+                      x: { grid: { display: false }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } } 
+                    } 
+                  }} 
+                />
+              </div>
+            </div>
+
+            <div className="col-span-full glass-card !p-5 flex flex-col h-[220px]">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <HistoryIcon size={18} className="text-brand-primary" />
+                  Ritmo de Gastos
+                </h3>
+                <div className="flex bg-white/5 p-1 rounded-lg border border-white/10">
                   {(['day', 'week', 'month'] as const).map(f => (
-                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
+                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }} /></div>
+              <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } }, x: { grid: { display: false }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } } } }} /></div>
             </div>
 
-            <div className="col-span-4 glass-card !p-3 flex flex-col min-h-[160px]">
-              <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Top Categorias</span><PieChartIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">
+            <div className="md:col-span-2 lg:col-span-4 glass-card !p-5 flex flex-col h-[250px]">
+              <h3 className="font-bold text-sm flex items-center gap-2 mb-4">
+                <PieChartIcon size={18} className="text-brand-primary" />
+                Categorias Principais
+              </h3>
+              <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar">
                 {overviewTopCategories.length > 0 ? (
                   overviewTopCategories.map(cat => (
-                    <div key={cat.name} className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px]">
-                        <span className="text-white/70 truncate">{cat.name}</span>
-                        <span className="font-bold">R$ {cat.amount.toFixed(0)}</span>
+                    <div key={cat.name} className="flex flex-col gap-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/60 font-medium truncate">{cat.name}</span>
+                        <span className="font-bold">R$ {cat.amount.toFixed(2)}</span>
                       </div>
-                      <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="h-full flex items-center justify-center text-[10px] text-white/20 italic uppercase tracking-widest text-center px-4">Sem despesas nos últimos 30 dias</div>
+                  <div className="h-full flex items-center justify-center text-xs text-white/20 italic text-center px-4">Sem dados</div>
                 )}
               </div>
             </div>
-            <div className="col-span-4 glass-card !p-3 flex flex-col min-h-[160px]">
-              <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Lançamentos</span><HistoryIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">
+
+            <div className="md:col-span-2 lg:col-span-4 glass-card !p-5 flex flex-col h-[250px]">
+              <h3 className="font-bold text-sm flex items-center gap-2 mb-4">
+                <HistoryIcon size={18} className="text-brand-primary" />
+                Últimos Lançamentos
+              </h3>
+              <div className="flex-1 space-y-3 overflow-y-auto no-scrollbar">
                 {latestOverviewTransactions.length > 0 ? (
                   latestOverviewTransactions.map(t => (
-                    <div key={t.id} className="flex items-center justify-between text-[10px] p-2 bg-white/5 rounded-lg border border-white/5">
-                      <div className="truncate mr-2">
+                    <div key={t.id} className="flex items-center justify-between text-xs p-3 bg-white/5 rounded-xl border border-white/5 text-center">
+                      <div className="truncate mr-3">
                         <div className="font-bold truncate">{t.description || t.category}</div>
-                        <div className="text-white/40 font-mono">{t.date ? format(new Date(t.date), 'dd/MM') : '--/--'}</div>
+                        <div className="text-white/30 text-[10px]">{t.date ? format(new Date(t.date), 'dd/MM/yyyy') : '--/--'}</div>
                       </div>
                       <div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>
-                        {t.type === 'income' ? '+' : '-'} {Math.abs(t.amount).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                        {t.type === 'income' ? '+' : '-'} R$ {Math.abs(t.amount).toLocaleString('pt-BR')}
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="h-full flex items-center justify-center text-[10px] text-white/20 italic uppercase tracking-widest">Nenhum lançamento</div>
+                  <div className="h-full flex items-center justify-center text-xs text-white/20 italic">Vazio</div>
                 )}
               </div>
             </div>
-            <div className="col-span-4 glass-card !p-3 flex flex-col">
-              <h3 className="font-bold text-xs mb-3 flex items-center justify-between"><span>Cartões</span><CreditCardIcon size={14} className="text-white/40" /></h3>
-              <div className="flex-1 flex flex-col justify-center gap-3">
-                <div className="flex justify-between text-[10px]"><span className="text-white/40">Utilizado</span><span className="font-bold">R$ {overviewCardsUsed.toLocaleString('pt-BR')}</span></div>
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-secondary" style={{ width: `${overviewCardsUsagePercent}%` }}></div></div>
-                <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-[10px] text-white/40">Disponível</span><span className="text-xs font-bold text-brand-primary">R$ {overviewCardsAvailable.toLocaleString('pt-BR')}</span></div>
+            
+            <div className="md:col-span-2 lg:col-span-4 glass-card !p-5 flex flex-col h-[250px] justify-center">
+              <h3 className="font-bold text-sm flex items-center gap-2 mb-6">
+                <CreditCardIcon size={18} className="text-brand-primary" />
+                Uso de Cartões
+              </h3>
+              <div className="space-y-6">
+                <div className="flex justify-between text-sm"><span className="text-white/40">Utilizado</span><span className="font-bold">R$ {overviewCardsUsed.toLocaleString('pt-BR')}</span></div>
+                <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-secondary" style={{ width: `${overviewCardsUsagePercent}%` }}></div></div>
+                <div className="flex justify-between items-center pt-4 border-t border-white/10"><span className="text-xs text-white/40">Restante Disponível</span><span className="text-xl font-bold text-brand-primary leading-none">R$ {overviewCardsAvailable.toLocaleString('pt-BR')}</span></div>
               </div>
             </div>
           </main>
         )}
 
-        {activeTab === 'details' && <Details transactions={transactions} summary={summary} />}
-        {activeTab === 'insights' && <Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />}
-        {activeTab === 'history' && <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />}
+        {activeTab === 'history' && (
+          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
+            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit">
+              <button 
+                onClick={() => setHistorySubTab('list')} 
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${historySubTab === 'list' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              >
+                Movimentações
+              </button>
+              <button 
+                onClick={() => setHistorySubTab('import')} 
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${historySubTab === 'import' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
+              >
+                Importar Extrato
+              </button>
+            </div>
+            {historySubTab === 'list' ? (
+              <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />
+            ) : (
+              <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setHistorySubTab('list')} />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'analysis' && (
+          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
+            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit overflow-x-auto no-scrollbar">
+              <button onClick={() => setAnalysisSubTab('stats')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'stats' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Estatísticas</button>
+              <button onClick={() => setAnalysisSubTab('insights')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'insights' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Insights AI</button>
+              <button onClick={() => setAnalysisSubTab('health')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'health' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Saúde Financeira</button>
+              <button onClick={() => setAnalysisSubTab('goals')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'goals' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Metas</button>
+            </div>
+            {analysisSubTab === 'stats' && <Details transactions={transactions} summary={summary} />}
+            {analysisSubTab === 'insights' && <Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />}
+            {analysisSubTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, i) => sum + i.amount, 0), categoryCount: new Set(transactions.map(t => t.category)).size }} />}
+            {analysisSubTab === 'goals' && <FinancialGoals />}
+          </div>
+        )}
+
+        {activeTab === 'accounts' && (
+          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
+            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit overflow-x-auto no-scrollbar">
+              <button onClick={() => setAccountsSubTab('bills')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'bills' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Gestão de Contas</button>
+              <button onClick={() => setAccountsSubTab('calendar')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'calendar' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Calendário</button>
+              <button onClick={() => setAccountsSubTab('subscriptions')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'subscriptions' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Assinaturas</button>
+              <button onClick={() => setAccountsSubTab('investments')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'investments' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Investimentos</button>
+            </div>
+            {accountsSubTab === 'bills' && settings && (
+              <BaseFinanceira 
+                settings={settings} 
+                onSave={handleUpdateSettings} 
+                fixedBills={fixedBills} 
+                dailyBills={dailyBills} 
+                summary={summary} 
+                onToggleBillStatus={handleToggleBillStatus} 
+                onRefresh={fetchData} 
+                initialTab="bills"
+              />
+            )}
+            {accountsSubTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
+            {accountsSubTab === 'subscriptions' && <SubscriptionManager />}
+            {accountsSubTab === 'investments' && <Investments user={user} settings={settings} onRefresh={fetchData} />}
+          </div>
+        )}
+
         {activeTab === 'cards' && <Cartoes 
           cards={cards} 
           installments={installments} 
@@ -1520,26 +1649,27 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
           onPayInstallment={handlePayInstallment}
           onPayCardBill={handlePayCardBill}
         />}
-        {activeTab === 'investments' && <Investments user={user} settings={settings} onRefresh={fetchData} />}
-        {activeTab === 'goals' && <FinancialGoals />}
-        {activeTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, i) => sum + i.amount, 0), categoryCount: new Set(transactions.map(t => t.category)).size }} />}
-        {activeTab === 'subscriptions' && <SubscriptionManager />}
-        {activeTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
-        {activeTab === 'access_requests' && isAdminUser && <AdminAccessRequests user={user} />}
-        {activeTab === 'import' && <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setActiveTab('overview')} />}
-        {activeTab === 'base' && (
-          <div className="flex-1 overflow-hidden flex flex-col gap-4">
-            <div className="flex items-center justify-between shrink-0">
+
+        {activeTab === 'settings' && (
+          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
+            <div className="flex items-center justify-between shrink-0 mb-2">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center">
                   <Settings className="text-brand-primary" size={20} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold">Estrutura Salarial</h2>
-                  <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Ajustes e Configurações do Aplicativo</p>
+                  <h2 className="text-xl font-bold">Configurações</h2>
+                  <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Base Estrutural do Sistema</p>
                 </div>
               </div>
+              <button 
+                onClick={() => setShowSetupHelper(true)} 
+                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"
+              >
+                <Database size={14} />Helper
+              </button>
             </div>
+            
             {settings ? (
               <BaseFinanceira 
                 settings={settings} 
@@ -1549,12 +1679,14 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                 summary={summary} 
                 onToggleBillStatus={handleToggleBillStatus} 
                 onRefresh={fetchData} 
+                initialTab="income"
               />
             ) : (
               <div className="flex-1 flex items-center justify-center text-white/40 animate-pulse">Carregando...</div>
             )}
           </div>
         )}
+        {activeTab === 'admin_requests' && <AdminAccessRequests user={user} />}
       </div>
 
       {showAddModal && (
@@ -1666,6 +1798,7 @@ NOTIFY pgrst, 'reload schema';`}
         onClose={() => setShowNotificationCenter(false)}
         notifications={notifications}
         onPay={handleNotificationPay}
+        onDismiss={(id) => setDismissedAlerts(prev => [...prev, id])}
       />
 
       {showCardModal && (
@@ -1700,7 +1833,7 @@ NOTIFY pgrst, 'reload schema';`}
               </div>
 
               <div>
-                <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Descrição do Item</label>
+                <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Descricao do Item</label>
                 <input type="text" placeholder="Ex: iPhone 15, Notebook..." required value={installmentForm.description} onChange={e => setInstallmentForm({...installmentForm, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
               </div>
 

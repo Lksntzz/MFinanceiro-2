@@ -17,11 +17,15 @@ import {
   isSameWeek,
   isSameMonth,
   subDays,
+  addDays,
   subMonths,
   startOfWeek,
-  endOfWeek
+  endOfWeek,
+  parseISO
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { identifyCompany, normalizeText } from './company-aliases';
+import { PAYMENT_ALIASES } from '../data/payment-aliases';
 
 export function calculateFinanceSummary(
   transactions: Transaction[],
@@ -36,32 +40,121 @@ export function calculateFinanceSummary(
   const nextPayday = getNextPayday(settings, currentDate);
   const lastPayday = getLastPayday(settings, currentDate);
   const daysRemaining = Math.max(1, differenceInCalendarDays(nextPayday, currentDate));
+  const cycleInterval = { start: startOfDay(lastPayday), end: endOfDay(nextPayday) };
 
-  // 2. Balances & Commitments (INTELLIGENT CYCLE FILTERING)
+  // 2. Balances & Commitments
   const currentBalance = settings.current_balance;
   
-  // Define sub-cycle logic: only consider bills that fall BETWEEN lastPayday and nextPayday
-  // For monthly, it's the standard month. For biweekly, it's the specific 15-day window.
   const isInCycle = (dueDay: number) => {
-    const p1 = Number(settings.payday_1) || 5;
-    const p2 = Number(settings.payday_2) || 20;
-    
-    // We create a virtual date for the bill in the "current" month of the cycle
-    // A bit tricky: if lastPayday was the 20th and next is the 5th, 
-    // a bill on the 2nd IS in cycle, but a bill on the 10th is NOT.
     const billDateLocal = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay, 12, 0, 0);
-    
-    // If the due day is "behind" the lastPayday in the same month, it might belong to the previous cycle
-    // or the end of the current one if it's a wrap-around.
-    // Accurate check: is within [lastPayday, nextPayday]
     return isWithinInterval(billDateLocal, { start: startOfDay(lastPayday), end: endOfDay(nextPayday) }) ||
            isWithinInterval(addMonths(billDateLocal, 1), { start: startOfDay(lastPayday), end: endOfDay(nextPayday) }) ||
            isWithinInterval(subDays(billDateLocal, 30), { start: startOfDay(lastPayday), end: endOfDay(nextPayday) });
   };
 
-  // Calculate pending fixed commitments that fall WITHIN THIS SPECIFIC SUB-CYCLE
-  const pendingBillsTotal = fixedBills
-    .filter(bill => bill.status === 'pending' && isInCycle(bill.due_day))
+  // Filtrar transações do ciclo para conciliação
+  const cycleExpenses = transactions.filter(t => {
+    try {
+      const d = parseISO(t.date);
+      return t.type === 'expense' && isWithinInterval(d, cycleInterval);
+    } catch { return false; }
+  });
+
+  // RECONCILIAÇÃO INTELIGENTE COM ALIASES
+  const matchedTransactionIds = new Set<string>();
+  const processedFixedBills = fixedBills.map(bill => {
+    if (!isInCycle(bill.due_day)) return { ...bill, reconciledStatus: 'off-cycle' as const };
+    
+    const billValue = Math.abs(bill.amount);
+    const normalizedBillName = normalizeText(bill.name);
+    const billKeywords = (bill.keywords || []).map(normalizeText);
+    
+    // Identifica se a conta pertence a uma categoria conhecida (água, luz, etc)
+    const normBillName = normalizeText(bill.name);
+    let knownCategoryKey = '';
+    
+    for (const [catKey, companies] of Object.entries(PAYMENT_ALIASES)) {
+      if (normBillName.includes(catKey.replace('_', ' '))) {
+        knownCategoryKey = catKey;
+        break;
+      }
+      for (const comp of companies) {
+        if (normBillName.includes(normalizeText(comp.displayName)) || 
+            normBillName.includes(normalizeText(comp.officialName))) {
+          knownCategoryKey = catKey;
+          break;
+        }
+      }
+      if (knownCategoryKey) break;
+    }
+
+    const dueInCycle = setDate(new Date(cycleInterval.start), bill.due_day);
+    const searchStart = startOfDay(subDays(dueInCycle, 5));
+    const searchEnd = endOfDay(addDays(dueInCycle, 7));
+
+    const match = cycleExpenses.find(t => {
+      if (matchedTransactionIds.has(t.id)) return false;
+      if (t.type !== 'expense') return false;
+      
+      const tAmount = Math.abs(t.amount);
+      const tDate = parseISO(t.date);
+      const normalizedTDesc = normalizeText(t.description || '');
+
+      // 1. Verificação de Valor (tolerância de 0.5% ou R$ 2,00)
+      const valueMatch = Math.abs(tAmount - billValue) < Math.max(2, billValue * 0.005);
+      
+      // 2. Verificação de Data
+      const dateMatch = isWithinInterval(tDate, { start: searchStart, end: searchEnd });
+
+      // 3. Verificação de Nome (Inteligente via Base Estática)
+      // - Match direto no nome ou keywords
+      let textMatch = normalizedTDesc.includes(normalizedBillName) || 
+                      normalizedBillName.includes(normalizedTDesc) ||
+                      billKeywords.some(k => normalizedTDesc.includes(k));
+
+      // - Match por Alias identificado na base local
+      if (!textMatch) {
+        const identified = identifyCompany(t.description);
+        if (identified && identified.confidence >= 0.7) {
+          // Se identificamos a empresa e ela bate com o nome da conta ou categoria
+          const isSameCompany = normalizedBillName.includes(normalizeText(identified.company));
+          const isSameCategory = knownCategoryKey === identified.category;
+          
+          if (isSameCompany || isSameCategory) {
+            textMatch = true;
+          }
+        }
+      }
+      
+      // Regras de decisão de Match
+      // 1. Valor exato + Qualquer indício de texto ou proximidade de data
+      if (valueMatch && (textMatch || dateMatch)) return true;
+      
+      // 2. Match de texto forte + Proximidade de data (mesmo que o valor varie até 15%)
+      if (textMatch && dateMatch && Math.abs(tAmount - billValue) < billValue * 0.15) return true;
+
+      return false;
+    });
+
+    if (match) {
+      matchedTransactionIds.add(match.id);
+      return { ...bill, reconciledStatus: 'paid_identified' as const };
+    }
+
+    const currentMonthIdx = `${cycleInterval.start.getFullYear()}-${cycleInterval.start.getMonth() + 1}`;
+    if (bill.status === 'paid' && bill.last_paid_month === currentMonthIdx) {
+      return { ...bill, reconciledStatus: 'paid_identified' as const };
+    }
+
+    return { 
+      ...bill, 
+      reconciledStatus: (bill.due_day < currentDate.getDate() ? 'overdue' as const : 'pending' as const)
+    };
+  });
+
+  // Calculate pending fixed commitments
+  const pendingBillsTotal = processedFixedBills
+    .filter(bill => bill.reconciledStatus === 'pending' || bill.reconciledStatus === 'overdue')
     .reduce((sum, bill) => sum + bill.amount, 0);
     
   // Calculate card usage - only if the due date is within this sub-cycle
@@ -92,29 +185,16 @@ export function calculateFinanceSummary(
   const totalCommitments = pendingBillsTotal + cardsTotal + installmentsTotal + dailyBillsCommitment;
   const availableForDaily = Math.max(0, currentBalance - totalCommitments);
   const projectedBalance = currentBalance - pendingBillsTotal - installmentsTotal;
-
-  // 3. Cycle interval for transaction filtering
-  const cycleInterval = { start: startOfDay(lastPayday), end: endOfDay(nextPayday) };
   const cyclePeriodLabel = `${format(lastPayday, 'dd')} a ${format(nextPayday, 'dd')}`;
 
   // 4. Spending stats
   const todayStart = startOfDay(currentDate);
   const todayEnd = endOfDay(currentDate);
   
-  const cycleExpenses = transactions.filter(t => {
-    try {
-      const d = new Date(t.date);
-      if (isNaN(d.getTime())) return false;
-      return t.type === 'expense' && isWithinInterval(d, cycleInterval);
-    } catch {
-      return false;
-    }
-  });
-
   const todaySpent = cycleExpenses
     .filter(t => {
       try {
-        const d = new Date(t.date);
+        const d = parseISO(t.date);
         return isWithinInterval(d, { start: todayStart, end: todayEnd });
       } catch {
         return false;
@@ -235,15 +315,16 @@ export function calculateFinanceSummary(
   }
   
   // Pending Bills (Only in current sub-cycle)
-  fixedBills.filter(bill => bill.status === 'pending' && isInCycle(bill.due_day)).forEach(bill => {
+  processedFixedBills.filter(bill => bill.reconciledStatus === 'pending' || bill.reconciledStatus === 'overdue').forEach(bill => {
     const today = currentDate.getDate();
     const isDueSoon = bill.due_day === today || bill.due_day === today + 1;
+    const isOverdue = bill.reconciledStatus === 'overdue';
     
     priorities.push({
       id: `bill-${bill.id}`,
-      title: isDueSoon ? 'Pagar Hoje/Amanhã' : 'Conta do Ciclo',
-      message: `${bill.name}: R$ ${bill.amount.toLocaleString('pt-BR')} (Vence dia ${bill.due_day})`,
-      type: isDueSoon ? 'urgent' : 'warning'
+      title: isOverdue ? 'Conta Vencida' : (isDueSoon ? 'Pagar Hoje/Amanhã' : 'Conta do Ciclo'),
+      message: `${bill.name}: R$ ${bill.amount.toLocaleString('pt-BR')} (Venceu dia ${bill.due_day})`,
+      type: isOverdue ? 'urgent' : (isDueSoon ? 'urgent' : 'warning')
     });
   });
 
@@ -302,7 +383,8 @@ export function calculateFinanceSummary(
     smartAlert,
     rhythm,
     topCategories: sortedCategories.slice(0, 5),
-    priorities
+    priorities,
+    processedFixedBills
   };
 }
 

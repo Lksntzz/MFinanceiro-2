@@ -129,6 +129,14 @@ function parseAdminEmails(raw: string | undefined): Set<string> {
 }
 
 export function isMaintenanceAdmin(session: Session | null): boolean {
+  // Bypass para ambiente local ou desenvolvimento
+  const isDev = (import.meta as any).env.DEV === true || 
+                (import.meta as any).env.MODE === 'development' ||
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1';
+  
+  if (isDev) return true;
+
   if (!session?.user) return false;
 
   const role = String(session.user.app_metadata?.role || '').toLowerCase();

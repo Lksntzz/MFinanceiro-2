@@ -61,6 +61,9 @@ export interface FixedBill {
   status: 'paid' | 'pending';
   category: string;
   last_paid_month?: string;
+  keywords?: string[]; // Para conciliação automática com extrato
+  merchant_id?: string; // Próximos passos: integração banco
+  dda_reference?: string; // Próximos passos: DDA
 }
 
 export interface DailyBill {
@@ -138,6 +141,7 @@ export interface FinanceSummary {
   };
   topCategories: { name: string; amount: number; percentage: number }[];
   priorities: PriorityItem[];
+  processedFixedBills?: (FixedBill & { reconciledStatus: 'paid_identified' | 'pending' | 'overdue' | 'off-cycle' })[];
 }
 
 export interface Investment {

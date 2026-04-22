@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import { Wallet, LogIn, UserPlus, Github, Mail } from "lucide-react";
 import {
@@ -18,6 +19,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
+  const [lastCheckAt, setLastCheckAt] = useState(0);
   const [signupStatus, setSignupStatus] = useState<AccessRequestStatus | null>(null);
   const [signupUnlocked, setSignupUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,16 +136,21 @@ export default function Auth() {
       setError("Informe seu e-mail para solicitar acesso.");
       return;
     }
+    if (!password.trim()) {
+      setError("Informe uma senha para prosseguir.");
+      return;
+    }
 
     setLoading(true);
     requestInFlightRef.current = true;
     setError(null);
     setInfo(null);
     try {
-      const result = await requestAccess(name, email);
-      setInfo(result.message || getAccessStatusMessage(result.status));
-      if (result.status === "approved") {
+      const result = await requestAccess(name, email, password);
+      setInfo("Sua solicitação de acesso foi enviada! O administrador revisará seu pedido em breve.");
+      if (result.status === "approved" || result.status === "aprovado") {
         setSignupUnlocked(true);
+        setMode("login");
       }
     } catch (err: any) {
       setError(String(err?.message || "Falha ao enviar solicitacao de acesso."));
@@ -153,6 +160,28 @@ export default function Auth() {
       setLoading(false);
     }
   }
+
+  // Auto check status on mount if email is in local storage or state
+  useEffect(() => {
+    const checkInterval = setInterval(async () => {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail || mode !== 'request' || Date.now() - lastCheckAt < 30000) return;
+      
+      try {
+        const status = await fetchAccessStatus(normalizedEmail);
+        setSignupStatus(status);
+        setLastCheckAt(Date.now());
+        if (status === 'approved') {
+          setMode('login');
+          setInfo("Seu acesso foi aprovado! Agora você já pode entrar.");
+        }
+      } catch (e) {
+        // quiet fail for background check
+      }
+    }, 60000);
+
+    return () => clearInterval(checkInterval);
+  }, [email, mode, lastCheckAt]);
 
   async function handleSocialLogin(provider: "google" | "github") {
     if (!supabase) return;
@@ -253,7 +282,7 @@ export default function Auth() {
             />
           </div>
 
-          {(isLogin || (isSignUp && canFinishSignup)) && (
+          {(isLogin || isRequest || (isSignUp && canFinishSignup)) && (
             <div>
               <label className="block text-sm text-white/60 mb-1">Senha</label>
               <input
@@ -282,13 +311,13 @@ export default function Auth() {
           <button
             type="submit"
             disabled={loading || (isSignUp && !canFinishSignup)}
-            className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]"
           >
             {loading ? (
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent"></div>
             ) : (
               <>
-                {isSignUp ? <UserPlus size={20} /> : <LogIn size={20} />}
+                {isSignUp ? <UserPlus size={20} /> : (isLogin ? <LogIn size={20} /> : <UserPlus size={20} />)}
                 <span>
                   {mode === "login" && "Entrar"}
                   {mode === "request" && "Solicitar acesso"}
@@ -299,50 +328,41 @@ export default function Auth() {
           </button>
         </form>
 
-        {isRequest && (
-          <div className="mt-3">
+        <div className="mt-8 flex flex-col gap-3 text-center">
+          {isLogin ? (
             <button
-              type="button"
-              onClick={checkSignupAccessStatus}
-              disabled={checkingStatus || loading}
-              className="w-full bg-white/5 border border-white/10 text-white font-bold py-2.5 rounded-xl hover:bg-white/10 transition-colors disabled:opacity-50"
+              onClick={() => {
+                setMode("request");
+                setError(null);
+                setInfo(null);
+              }}
+              className="text-xs uppercase font-bold tracking-widest text-white/40 hover:text-brand-primary transition-colors"
             >
-              {checkingStatus ? "Verificando..." : "Ja fui aprovado"}
+              Solicitar acesso para novo usuário
             </button>
-          </div>
-        )}
+          ) : !isSignUp && (
+            <button
+              onClick={() => {
+                setMode("login");
+                setError(null);
+                setInfo(null);
+              }}
+              className="text-[10px] uppercase font-bold tracking-[0.2em] text-white/20 hover:text-white/40 transition-all mt-4"
+            >
+              Já tenho uma conta
+            </button>
+          )}
 
-        <div className="mt-6 grid grid-cols-1 gap-2 text-center">
-          <button
-            onClick={() => {
-              setMode("login");
-              setError(null);
-              setInfo(null);
-            }}
-            className={`text-sm transition-colors ${mode === "login" ? "text-brand-primary" : "text-white/40 hover:text-brand-primary"}`}
-          >
-            Ja tenho conta
-          </button>
-          <button
-            onClick={() => {
-              setMode("request");
-              setError(null);
-              setInfo(null);
-            }}
-            className={`text-sm transition-colors ${mode === "request" ? "text-brand-primary" : "text-white/40 hover:text-brand-primary"}`}
-          >
-            Solicitar acesso
-          </button>
-          {signupUnlocked && (
+          {signupUnlocked && mode !== "signup" && (
             <button
               onClick={() => {
                 setMode("signup");
                 setError(null);
                 setInfo(null);
               }}
-              className={`text-sm transition-colors ${mode === "signup" ? "text-brand-primary" : "text-white/40 hover:text-brand-primary"}`}
+              className="text-xs font-bold text-brand-primary hover:underline transition-all"
             >
-              Finalizar cadastro (aprovados)
+              Finalizar cadastro (Aprovado)
             </button>
           )}
         </div>

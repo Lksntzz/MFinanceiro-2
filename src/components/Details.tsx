@@ -30,53 +30,49 @@ export default function Details({ transactions, summary }: DetailsProps) {
   };
 
   return (
-    <div className="flex-1 grid grid-cols-12 grid-rows-[auto_1fr_1fr] gap-4 overflow-hidden animate-fade-in">
+    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 animate-fade-in">
       {/* Row 1: Summary Cards */}
-      <div className="col-span-3 glass-card !p-4">
-        <span className="text-[10px] text-white/40 uppercase font-bold">Total Gasto no Ciclo</span>
-        <div className="text-2xl font-bold mt-1">R$ {(summary?.totalSpentInCycle ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+      <div className="lg:col-span-3 glass-card !p-5">
+        <span className="text-white/40 text-xs font-bold uppercase tracking-widest block mb-2">Total Ciclo</span>
+        <div className="text-2xl font-bold tracking-tight">R$ {(summary?.totalSpentInCycle ?? 0).toLocaleString('pt-BR')}</div>
       </div>
-      <div className="col-span-3 glass-card !p-4">
-        <span className="text-[10px] text-white/40 uppercase font-bold">Média Diária Real</span>
-        <div className="text-2xl font-bold mt-1">R$ {(summary?.averageDailySpent ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+      <div className="lg:col-span-3 glass-card !p-5">
+        <span className="text-white/40 text-xs font-bold uppercase tracking-widest block mb-2">Média Diária</span>
+        <div className="text-2xl font-bold tracking-tight">R$ {(summary?.averageDailySpent ?? 0).toLocaleString('pt-BR')}</div>
       </div>
-      <div className="col-span-3 glass-card !p-4">
-        <span className="text-[10px] text-white/40 uppercase font-bold">Categoria Dominante</span>
-        <div className="text-2xl font-bold mt-1 text-brand-primary">{summary?.dominantCategory ?? 'Nenhuma'}</div>
+      <div className="lg:col-span-3 glass-card !p-5">
+        <span className="text-white/40 text-xs font-bold uppercase tracking-widest block mb-2">Maior Gasto</span>
+        <div className="text-2xl font-bold tracking-tight text-brand-primary truncate">{summary?.dominantCategory || 'Nenhum'}</div>
       </div>
-      <div className="col-span-3 glass-card !p-4">
-        <span className="text-[10px] text-white/40 uppercase font-bold">Saúde do Ciclo</span>
-        <div className={`text-2xl font-bold mt-1 ${summary?.spendingTrend === 'up' ? 'text-red-400' : 'text-green-400'}`}>
-          {summary?.spendingTrend === 'up' ? 'Em Risco' : 'Saudável'}
+      <div className="lg:col-span-3 glass-card !p-5">
+        <span className="text-white/40 text-xs font-bold uppercase tracking-widest block mb-2">Tendência</span>
+        <div className={`text-2xl font-bold tracking-tight ${summary?.spendingTrend === 'up' ? 'text-red-400' : 'text-green-400'}`}>
+          {summary?.spendingTrend === 'up' ? 'Aumentando' : 'Diminuindo'}
         </div>
       </div>
 
       {/* Row 2: Distribution & Top Categories */}
-      <div className="col-span-5 glass-card flex flex-col items-center justify-center relative">
-        <h3 className="absolute top-4 left-4 font-bold text-sm flex items-center gap-2">
-          <PieChartIcon size={16} /> Distribuição de Gastos
+      <div className="md:col-span-1 lg:col-span-5 glass-card !p-6 flex flex-col items-center justify-center relative min-h-[350px]">
+        <h3 className="absolute top-6 left-6 font-bold text-sm uppercase tracking-widest text-white/20 flex items-center gap-2">
+          <PieChartIcon size={18} /> Por Categoria
         </h3>
-        <div className="w-full h-[80%] flex items-center justify-center">
+        <div className="w-full h-[65%] flex items-center justify-center mt-6">
           <Doughnut data={doughnutData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
-        </div>
-        <div className="absolute flex flex-col items-center">
-          <span className="text-[10px] text-white/40 uppercase">Total</span>
-          <span className="font-bold text-lg">100%</span>
         </div>
       </div>
 
-      <div className="col-span-7 glass-card flex flex-col">
-        <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
-          <Activity size={16} /> Análise por Categoria
+      <div className="md:col-span-1 lg:col-span-7 glass-card !p-6 flex flex-col min-h-[350px]">
+        <h3 className="font-bold text-sm uppercase tracking-widest text-white/20 mb-6 flex items-center gap-2">
+          <Activity size={18} /> Top Categorias
         </h3>
-        <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar pr-2">
+        <div className="flex-1 space-y-5 overflow-y-auto no-scrollbar">
           {summary?.topCategories?.map(cat => (
-            <div key={cat.name} className="space-y-1">
+            <div key={cat.name} className="space-y-2">
               <div className="flex justify-between items-center text-sm">
-                <span className="font-medium">{cat.name}</span>
-                <div className="flex items-center gap-4">
-                  <span className="text-white/40 text-xs">{(cat.percentage ?? 0).toFixed(1)}%</span>
-                  <span className="font-bold">R$ {cat.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="font-bold text-white/80">{cat.name}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-white/30 text-xs">{(cat.percentage ?? 0).toFixed(0)}%</span>
+                  <span className="font-bold">R$ {cat.amount.toFixed(2)}</span>
                 </div>
               </div>
               <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
@@ -87,10 +83,10 @@ export default function Details({ transactions, summary }: DetailsProps) {
         </div>
       </div>
 
-      {/* Row 3: Temporal Analysis & Insights */}
-      <div className="col-span-8 glass-card flex flex-col">
-        <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
-          <TrendingUp size={16} /> Ritmo de Gasto (Semanal)
+      {/* Row 3: Insights */}
+      <div className="lg:col-span-8 glass-card !p-6 flex flex-col h-[350px]">
+        <h3 className="font-bold text-sm uppercase tracking-widest text-white/20 mb-6 flex items-center gap-2">
+          <TrendingUp size={18} /> Evolução Ciclo
         </h3>
         <div className="flex-1 min-h-0">
           <Bar 
@@ -105,31 +101,28 @@ export default function Details({ transactions, summary }: DetailsProps) {
                 borderRadius: 4
               }]
             }}
-            options={{ responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }}
+            options={{ 
+              responsive: true, 
+              maintainAspectRatio: false, 
+              scales: { 
+                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } }, 
+                x: { grid: { display: false }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } } 
+              }, 
+              plugins: { legend: { display: false } } 
+            }}
           />
         </div>
       </div>
 
-      <div className="col-span-4 glass-card flex flex-col">
-        <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
-          <Target size={16} /> Maiores Impactos
-        </h3>
-        <div className="flex-1 space-y-3">
-          {transactions
-            .filter(t => t.type === 'expense')
-            .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-            .slice(0, 4)
-            .map(t => (
-              <div key={t.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between">
-                <div className="min-w-0">
-                  <div className="font-bold text-xs truncate">{t.description || t.category}</div>
-                  <div className="text-[10px] text-white/40">{t.category}</div>
-                </div>
-                <div className="font-bold text-xs text-red-400 shrink-0">
-                  - R$ {Math.abs(t.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-            ))}
+      <div className="lg:col-span-4 glass-card !p-6 flex flex-col justify-center items-center gap-6">
+        <div className="h-20 w-20 rounded-full bg-brand-primary/10 flex items-center justify-center border border-brand-primary/20">
+          <Target className="text-brand-primary" size={40} />
+        </div>
+        <div className="text-center">
+          <h4 className="font-bold text-xl">Dica de Saúde</h4>
+          <p className="text-sm text-white/40 mt-2 leading-relaxed italic">
+            "{summary?.dailyInsight || "Acompanhe seus gastos diariamente para manter a saúde financeira."}"
+          </p>
         </div>
       </div>
     </div>
