@@ -6,11 +6,19 @@ import './index.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then(registration => {
-      console.log('SW registered: ', registration);
-    }).catch(registrationError => {
-      console.log('SW registration failed: ', registrationError);
-    });
+    // Keep SW only in production and force-check updates on each load.
+    if (import.meta.env.PROD) {
+      navigator.serviceWorker.register('/sw.js').then((registration) => {
+        registration.update().catch(() => {});
+      }).catch((registrationError) => {
+        console.log('SW registration failed: ', registrationError);
+      });
+    } else {
+      // In development, remove stale SW to avoid asset/cache interference.
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((registration) => registration.unregister());
+      });
+    }
   });
 }
 
