@@ -107,6 +107,8 @@ export interface ImportedTransaction {
   source_id?: string;
   type: 'income' | 'expense';
   category: string;
+  source?: string;
+  categorySuggestion?: string;
   status: 'pending' | 'duplicate' | 'ready' | 'error';
   confidence: number;
   original_description: string;

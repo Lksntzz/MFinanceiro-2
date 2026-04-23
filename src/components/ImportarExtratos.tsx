@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { ImportedTransaction } from '../types';
-import { parsePdfStatement } from '../lib/import-parsers/pdf/parse-pdf-statement';
 import { identifyCompany } from '../lib/company-aliases';
+import * as XLSX from 'xlsx';
 import {
   Upload,
   FileText,
@@ -21,6 +21,58 @@ import {
 interface ImportarExtratosProps {
   onImport: (transactions: ImportedTransaction[], newBalance?: number) => void;
   onCancel: () => void;
+  accountHolderName?: string;
+  internalAccountAliases?: string[];
+}
+
+type FileFormat = 'csv' | 'ofx' | 'pdf' | 'xls' | 'xlsx' | 'image' | 'unknown';
+
+interface FormatDetectionResult {
+  format: FileFormat;
+  formatLabel: string;
+  parserLabel: string;
+  parserExists: boolean;
+  supported: boolean;
+  reason?: string;
+}
+
+interface ImportDiagnostics {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  fileLastModified: number;
+  formatLabel: string;
+  parserLabel: string;
+  parserExists: boolean;
+  supported: boolean;
+  totalFound: number;
+  validFound: number;
+  linesExtracted: number;
+  linesIgnored: number;
+  rejectedLineReasons: string[];
+  reason?: string;
+  debugNote?: string;
+  baseTextPreview?: string;
+}
+
+interface DelimitedAnalysis {
+  nonEmptyLines: number;
+  hasHeaderKeywords: boolean;
+  hasTransactionSignals: boolean;
+}
+
+interface SpreadsheetAnalysis {
+  csv: string;
+  nonEmptyRows: number;
+  hasHeaderKeywords: boolean;
+  hasTransactionSignals: boolean;
+  selectedSheetName?: string;
+}
+
+interface ParserDebugSummary {
+  linesExtracted: number;
+  linesIgnored: number;
+  rejectedLineReasons: string[];
 }
 
 function normalizeHeader(value: string): string {
@@ -61,6 +113,165 @@ function parseCsvLine(line: string, delimiter: string): string[] {
 
   values.push(current.trim());
   return values;
+}
+
+function analyzeDelimitedContent(content: string): DelimitedAnalysis {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\uFEFF/g, '').trim())
+    .filter(Boolean);
+
+  const dateRegex = /\b\d{2}[./-]\d{2}(?:[./-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b/;
+  const amountRegex = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/;
+  const headerKeywords = /(data|date|descricao|hist[óo]rico|description|valor|amount|debito|credito|saldo|lan[çc]amento)/i;
+
+  const hasHeaderKeywords = lines.some((line) => headerKeywords.test(line));
+  const hasTransactionSignals = lines.some((line) => dateRegex.test(line) && amountRegex.test(line));
+
+  return {
+    nonEmptyLines: lines.length,
+    hasHeaderKeywords,
+    hasTransactionSignals,
+  };
+}
+
+async function analyzeSpreadsheetContent(file: File): Promise<SpreadsheetAnalysis> {
+  const bytes = await file.arrayBuffer();
+  const workbook = XLSX.read(bytes, { type: 'array' });
+  const sheetNames = workbook.SheetNames || [];
+  if (sheetNames.length === 0) {
+    return { csv: '', nonEmptyRows: 0, hasHeaderKeywords: false, hasTransactionSignals: false };
+  }
+  
+  let best: SpreadsheetAnalysis = {
+    csv: '',
+    nonEmptyRows: 0,
+    hasHeaderKeywords: false,
+    hasTransactionSignals: false,
+    selectedSheetName: sheetNames[0],
+  };
+
+  for (const sheetName of sheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+
+    const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+    const analysis = analyzeDelimitedContent(csv);
+    const candidate: SpreadsheetAnalysis = {
+      csv,
+      nonEmptyRows: analysis.nonEmptyLines,
+      hasHeaderKeywords: analysis.hasHeaderKeywords,
+      hasTransactionSignals: analysis.hasTransactionSignals,
+      selectedSheetName: sheetName,
+    };
+
+    const bestScore =
+      (best.hasTransactionSignals ? 1000 : 0) +
+      (best.hasHeaderKeywords ? 100 : 0) +
+      best.nonEmptyRows;
+    const candidateScore =
+      (candidate.hasTransactionSignals ? 1000 : 0) +
+      (candidate.hasHeaderKeywords ? 100 : 0) +
+      candidate.nonEmptyRows;
+
+    if (candidateScore > bestScore) {
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function inferEmptyResultReason(params: {
+  fileName?: string;
+  format: FileFormat;
+  csvAnalysis?: DelimitedAnalysis;
+  sheetAnalysis?: SpreadsheetAnalysis;
+  ofxContent?: string;
+  pdfReason?: string;
+}): string {
+  const { fileName, format, csvAnalysis, sheetAnalysis, ofxContent, pdfReason } = params;
+  const normalizedFileName = normalizeHeader(fileName || '');
+  const isMfinanceiroExport = normalizedFileName.includes('mfinanceirorelatoriotransacoes');
+
+  if (format === 'pdf') {
+    return pdfReason || 'nenhum registro de transacao encontrado';
+  }
+
+  if (format === 'csv') {
+    if (isMfinanceiroExport && (!csvAnalysis || csvAnalysis.nonEmptyLines === 0)) {
+      return 'arquivo do MFinanceiro sem transacoes para importar';
+    }
+    if (!csvAnalysis || csvAnalysis.nonEmptyLines === 0) return 'planilha vazia';
+    if (csvAnalysis.nonEmptyLines <= 1 && csvAnalysis.hasHeaderKeywords) return 'arquivo sem movimentacoes';
+    if (!csvAnalysis.hasTransactionSignals) return 'arquivo nao e um extrato bancario';
+    return 'nenhum registro de transacao encontrado';
+  }
+
+  if (format === 'xls' || format === 'xlsx') {
+    if (isMfinanceiroExport && (!sheetAnalysis || sheetAnalysis.nonEmptyRows === 0)) {
+      return 'arquivo do MFinanceiro sem transacoes para importar';
+    }
+    if (!sheetAnalysis || sheetAnalysis.nonEmptyRows === 0) return 'planilha vazia';
+    if (sheetAnalysis.nonEmptyRows <= 1 && sheetAnalysis.hasHeaderKeywords) return 'arquivo sem movimentacoes';
+    if (!sheetAnalysis.hasTransactionSignals) return 'arquivo nao e um extrato bancario';
+    return 'nenhum registro de transacao encontrado';
+  }
+
+  if (format === 'ofx') {
+    const content = ofxContent || '';
+    if (!content.trim()) return 'arquivo sem movimentacoes';
+    if (!/<OFX|<BANKTRANLIST|<STMTTRN>/i.test(content)) return 'arquivo nao e um extrato bancario';
+    if (!/<STMTTRN>/i.test(content)) return 'arquivo sem movimentacoes';
+    return 'nenhum registro de transacao encontrado';
+  }
+
+  return 'nenhum registro de transacao encontrado';
+}
+
+function buildTextPreview(raw: string | undefined): string {
+  if (!raw) return '';
+  return raw
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 280);
+}
+
+async function cloneFileForSession(source: File): Promise<File> {
+  const buffer = await source.arrayBuffer();
+  return new File([buffer], source.name, {
+    type: source.type,
+    lastModified: source.lastModified
+  });
+}
+
+function getInvalidLineReasons(items: ImportedTransaction[]): string[] {
+  const reasons: string[] = [];
+  for (const item of items) {
+    if (item.status !== 'error') continue;
+    if (!item.description || item.description === 'Sem descricao') {
+      reasons.push(`Linha rejeitada: descricao ausente (${item.id})`);
+      continue;
+    }
+    if (!item.amount || Math.abs(item.amount) <= 0) {
+      reasons.push(`Linha rejeitada: valor invalido (${item.id})`);
+      continue;
+    }
+    if (!item.date || Number.isNaN(new Date(item.date).getTime())) {
+      reasons.push(`Linha rejeitada: data invalida (${item.id})`);
+      continue;
+    }
+    reasons.push(`Linha rejeitada: nao reconhecida como transacao (${item.id})`);
+  }
+  return reasons;
+}
+
+function ensureMinimumTransactionFields(items: ImportedTransaction[]): ImportedTransaction[] {
+  return items.map((item) => ({
+    ...item,
+    source: item.source || item.bank_source || 'importacao_extrato',
+    categorySuggestion: item.categorySuggestion || item.category || 'Geral',
+  }));
 }
 
 function detectDelimiter(line: string): string {
@@ -321,7 +532,69 @@ function generateId(prefix: string, index: number): string {
   return `${prefix}-${Date.now()}-${index}`;
 }
 
-function parseCsvTransactions(content: string, bank: string): ImportedTransaction[] {
+export function detectFileFormat(file: File): FormatDetectionResult {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  const mime = file.type.toLowerCase();
+
+  if (ext === 'csv' || mime.includes('csv')) {
+    return { format: 'csv', formatLabel: 'CSV', parserLabel: 'Parser CSV', parserExists: true, supported: true };
+  }
+  if (ext === 'ofx' || mime.includes('ofx')) {
+    return { format: 'ofx', formatLabel: 'OFX', parserLabel: 'Parser OFX', parserExists: true, supported: true };
+  }
+  if (ext === 'pdf' || mime.includes('pdf')) {
+    return { format: 'pdf', formatLabel: 'PDF', parserLabel: 'Parser PDF', parserExists: true, supported: true };
+  }
+  if (ext === 'xlsx') {
+    return { format: 'xlsx', formatLabel: 'XLSX', parserLabel: 'Parser XLSX', parserExists: true, supported: true };
+  }
+  if (ext === 'xls') {
+    return { format: 'xls', formatLabel: 'XLS', parserLabel: 'Parser XLS', parserExists: true, supported: true };
+  }
+  if (mime.startsWith('image/')) {
+    return {
+      format: 'image',
+      formatLabel: 'Imagem',
+      parserLabel: 'OCR de imagem',
+      parserExists: false,
+      supported: false,
+      reason: 'Parser de imagem ainda nao esta implementado para importacao de extratos.'
+    };
+  }
+
+  return {
+    format: 'unknown',
+    formatLabel: ext ? ext.toUpperCase() : 'Desconhecido',
+    parserLabel: 'Nao disponivel',
+    parserExists: false,
+    supported: false,
+    reason: 'Formato nao suportado. Use CSV, OFX, PDF, XLS ou XLSX.'
+  };
+}
+
+export function normalizeImportedTransactions(items: ImportedTransaction[]): ImportedTransaction[] {
+  return items.map((item, idx) => {
+    const safeDate = Number.isNaN(new Date(item.date).getTime()) ? new Date().toISOString() : item.date;
+    const safeDescription = (item.description || '').trim() || 'Sem descricao';
+    const safeAmount = Math.abs(Number(item.amount) || 0);
+    const safeType: 'income' | 'expense' = item.type === 'income' ? 'income' : 'expense';
+    const isValid = safeDescription !== 'Sem descricao' && safeAmount > 0;
+    const normalizedStatus: ImportedTransaction['status'] =
+      isValid && item.status !== 'error' ? item.status : (isValid ? 'ready' : 'error');
+
+    return {
+      ...item,
+      id: item.id || generateId('imported', idx),
+      date: safeDate,
+      description: safeDescription,
+      amount: safeAmount,
+      type: safeType,
+      status: normalizedStatus
+    };
+  });
+}
+
+export function parseCsvTransactions(content: string, bank: string): ImportedTransaction[] {
   const lines = content
     .split(/\r?\n/)
     .map(line => line.replace(/\uFEFF/g, '').trim())
@@ -491,7 +764,7 @@ function parseCsvTransactions(content: string, bank: string): ImportedTransactio
   });
 }
 
-function parseOfxTransactions(content: string, bank: string): ImportedTransaction[] {
+export function parseOfxTransactions(content: string, bank: string): ImportedTransaction[] {
   const blocks = content.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi) || [];
   
   // Extrai o saldo final do extrato (Ledger Balance)
@@ -527,17 +800,39 @@ function parseOfxTransactions(content: string, bank: string): ImportedTransactio
   });
 }
 
-async function parsePdfTransactions(file: File, selectedBank: string): Promise<ImportedTransaction[]> {
-  return parsePdfStatement(file, selectedBank);
+export async function parsePdfTransactions(
+  file: File,
+  selectedBank: string,
+  options?: { accountHolderName?: string; internalAccountAliases?: string[] }
+): Promise<ImportedTransaction[]> {
+  const { parsePdfStatementWithDebug } = await import('../lib/import-parsers/pdf/parse-pdf-statement');
+  const { transactions } = await parsePdfStatementWithDebug(file, selectedBank, options);
+  return transactions;
 }
 
-export default function ImportarExtratos({ onImport, onCancel }: ImportarExtratosProps) {
+export async function parseSpreadsheetTransactions(file: File, selectedBank: string): Promise<ImportedTransaction[]> {
+  const { csv } = await analyzeSpreadsheetContent(file);
+  if (!csv.trim()) return [];
+
+  return parseCsvTransactions(csv, selectedBank);
+}
+
+export default function ImportarExtratos({
+  onImport,
+  onCancel,
+  accountHolderName,
+  internalAccountAliases
+}: ImportarExtratosProps) {
+  const importSessionRef = useRef(0);
   const [step, setStep] = useState<'upload' | 'processing' | 'review' | 'success'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [bank, setBank] = useState<string>('auto');
   const [importedData, setImportedData] = useState<ImportedTransaction[]>([]);
+  const [importDiagnostics, setImportDiagnostics] = useState<ImportDiagnostics | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [shouldCalibrateBalance, setShouldCalibrateBalance] = useState(false);
+  const readyItemsCount = importedData.filter(i => i.status === 'ready').length;
+  const canConfirmImport = readyItemsCount > 0;
 
   const signedAmountFromImported = (item: ImportedTransaction): number =>
     item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount);
@@ -591,6 +886,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
     if (e.target.files && e.target.files[0]) {
       processFile(e.target.files[0]);
     }
+    e.currentTarget.value = '';
   };
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -611,29 +907,186 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
     }
   }, [bank]);
 
+  const resetImportState = useCallback((targetStep: 'upload' | 'processing' = 'upload') => {
+    importSessionRef.current += 1;
+    setFile(null);
+    setImportedData([]);
+    setImportDiagnostics(null);
+    setShouldCalibrateBalance(false);
+    setStep(targetStep);
+  }, []);
+
   const processFile = async (selectedFile: File) => {
-    setFile(selectedFile);
+    const sessionId = ++importSessionRef.current;
+    const isStale = () => importSessionRef.current !== sessionId;
+    const fileSnapshot = await cloneFileForSession(selectedFile);
+
+    setFile(fileSnapshot);
+    setImportedData([]);
+    setImportDiagnostics(null);
     setStep('processing');
+    setShouldCalibrateBalance(false);
 
     try {
-      const filename = selectedFile.name.toLowerCase();
+      const detection = detectFileFormat(fileSnapshot);
       let parsed: ImportedTransaction[] = [];
+      let csvAnalysis: DelimitedAnalysis | undefined;
+      let sheetAnalysis: SpreadsheetAnalysis | undefined;
+      let ofxContent = '';
+      let rawTextPreview = '';
+      let parserDebug: ParserDebugSummary = { linesExtracted: 0, linesIgnored: 0, rejectedLineReasons: [] };
+      let pdfDebugInfo: {
+        totalPages: number;
+        totalTextItems: number;
+        linesExtracted: number;
+        ignoredLines?: number;
+        rejectedLineReasons?: string[];
+        usedGenericFallback: boolean;
+        isLikelyBankStatement?: boolean;
+        hasTransactionPattern?: boolean;
+        reason?: string;
+        textPreview: string;
+      } | null = null;
 
-      if (filename.endsWith('.csv')) {
-        const content = await selectedFile.text();
-        parsed = parseCsvTransactions(content, bank);
-      } else if (filename.endsWith('.ofx')) {
-        const content = await selectedFile.text();
-        parsed = parseOfxTransactions(content, bank);
-      } else if (filename.endsWith('.pdf')) {
-        parsed = await parsePdfTransactions(selectedFile, bank);
+      if (!detection.supported || !detection.parserExists) {
+        if (isStale()) return;
+        setImportedData([]);
+        setImportDiagnostics({
+          fileName: selectedFile.name,
+          mimeType: fileSnapshot.type || 'desconhecido',
+          fileSize: fileSnapshot.size,
+          fileLastModified: fileSnapshot.lastModified,
+          formatLabel: detection.formatLabel,
+          parserLabel: detection.parserLabel,
+          parserExists: detection.parserExists,
+          supported: detection.supported,
+          totalFound: 0,
+          validFound: 0,
+          linesExtracted: 0,
+          linesIgnored: 0,
+          rejectedLineReasons: [],
+          reason: detection.reason || 'Formato nao suportado para importacao.'
+        });
+        setStep('review');
+        return;
       }
 
-      setImportedData(parsed);
+      if (detection.format === 'csv') {
+        const content = await fileSnapshot.text();
+        rawTextPreview = buildTextPreview(content);
+        csvAnalysis = analyzeDelimitedContent(content);
+        parsed = parseCsvTransactions(content, bank);
+        const rejected = getInvalidLineReasons(parsed);
+        parserDebug = {
+          linesExtracted: Math.max(csvAnalysis.nonEmptyLines - 1, 0),
+          linesIgnored: rejected.length,
+          rejectedLineReasons: rejected
+        };
+      } else if (detection.format === 'ofx') {
+        ofxContent = await fileSnapshot.text();
+        rawTextPreview = buildTextPreview(ofxContent);
+        parsed = parseOfxTransactions(ofxContent, bank);
+        const rejected = getInvalidLineReasons(parsed);
+        parserDebug = {
+          linesExtracted: (ofxContent.match(/<STMTTRN>/gi) || []).length,
+          linesIgnored: rejected.length,
+          rejectedLineReasons: rejected
+        };
+      } else if (detection.format === 'pdf') {
+        const { parsePdfStatementWithDebug } = await import('../lib/import-parsers/pdf/parse-pdf-statement');
+        const pdfResult = await parsePdfStatementWithDebug(fileSnapshot, bank, {
+          accountHolderName,
+          internalAccountAliases
+        });
+        parsed = pdfResult.transactions;
+        pdfDebugInfo = pdfResult.debug;
+        rawTextPreview = buildTextPreview(pdfResult.debug.textPreview);
+        parserDebug = {
+          linesExtracted: pdfResult.debug.linesExtracted,
+          linesIgnored: pdfResult.debug.ignoredLines || 0,
+          rejectedLineReasons: pdfResult.debug.rejectedLineReasons || []
+        };
+      } else if (detection.format === 'xls' || detection.format === 'xlsx') {
+        sheetAnalysis = await analyzeSpreadsheetContent(fileSnapshot);
+        rawTextPreview = buildTextPreview(sheetAnalysis.csv);
+        parsed = sheetAnalysis.csv.trim() ? parseCsvTransactions(sheetAnalysis.csv, bank) : [];
+        const rejected = getInvalidLineReasons(parsed);
+        parserDebug = {
+          linesExtracted: Math.max(sheetAnalysis.nonEmptyRows - 1, 0),
+          linesIgnored: rejected.length,
+          rejectedLineReasons: rejected
+        };
+      }
+
+      if (isStale()) return;
+
+      const normalized = ensureMinimumTransactionFields(normalizeImportedTransactions(parsed));
+      const validFound = normalized.filter(
+        (item) => item.status === 'ready' && item.amount > 0 && item.description !== 'Sem descricao'
+      ).length;
+
+      setImportedData(normalized);
+      let debugNote: string | undefined;
+      if (detection.format === 'pdf' && pdfDebugInfo) {
+        const preview = pdfDebugInfo.textPreview ? ` | Texto extraido: "${pdfDebugInfo.textPreview}"` : '';
+        debugNote = `PDF Debug -> paginas: ${pdfDebugInfo.totalPages}, itens de texto: ${pdfDebugInfo.totalTextItems}, linhas extraidas: ${pdfDebugInfo.linesExtracted}, linhas ignoradas: ${pdfDebugInfo.ignoredLines || 0}, perfil extrato: ${pdfDebugInfo.isLikelyBankStatement ? 'sim' : 'nao'}, padrao transacao: ${pdfDebugInfo.hasTransactionPattern ? 'sim' : 'nao'}, fallback generico: ${pdfDebugInfo.usedGenericFallback ? 'sim' : 'nao'}${preview}`;
+      } else if ((detection.format === 'xls' || detection.format === 'xlsx') && sheetAnalysis) {
+        debugNote = `XLSX Debug -> aba usada: ${sheetAnalysis.selectedSheetName || 'desconhecida'}, linhas nao vazias: ${sheetAnalysis.nonEmptyRows}, sinais de transacao: ${sheetAnalysis.hasTransactionSignals ? 'sim' : 'nao'}`;
+      } else if (detection.format === 'csv' && csvAnalysis) {
+        debugNote = `CSV Debug -> linhas nao vazias: ${csvAnalysis.nonEmptyLines}, sinais de transacao: ${csvAnalysis.hasTransactionSignals ? 'sim' : 'nao'}`;
+      } else if (detection.format === 'ofx') {
+        debugNote = `OFX Debug -> blocos STMTTRN: ${(ofxContent.match(/<STMTTRN>/gi) || []).length}`;
+      }
+      const zeroResultReason = inferEmptyResultReason({
+        fileName: fileSnapshot.name,
+        format: detection.format,
+        csvAnalysis,
+        sheetAnalysis,
+        ofxContent,
+        pdfReason: pdfDebugInfo?.reason,
+      });
+      setImportDiagnostics({
+        fileName: selectedFile.name,
+        mimeType: fileSnapshot.type || 'desconhecido',
+        fileSize: fileSnapshot.size,
+        fileLastModified: fileSnapshot.lastModified,
+        formatLabel: detection.formatLabel,
+        parserLabel: detection.parserLabel,
+        parserExists: detection.parserExists,
+        supported: detection.supported,
+        totalFound: normalized.length,
+        validFound,
+        linesExtracted: parserDebug.linesExtracted,
+        linesIgnored: parserDebug.linesIgnored,
+        rejectedLineReasons: parserDebug.rejectedLineReasons,
+        reason: validFound === 0
+          ? zeroResultReason
+          : undefined,
+        debugNote,
+        baseTextPreview: rawTextPreview
+      });
+      if (isStale()) return;
       setStep('review');
     } catch (error) {
+      if (isStale()) return;
       console.error('Erro ao processar arquivo:', error);
       setImportedData([]);
+      setImportDiagnostics({
+        fileName: selectedFile.name,
+        mimeType: fileSnapshot.type || 'desconhecido',
+        fileSize: fileSnapshot.size,
+        fileLastModified: fileSnapshot.lastModified,
+        formatLabel: detectFileFormat(fileSnapshot).formatLabel,
+        parserLabel: detectFileFormat(fileSnapshot).parserLabel,
+        parserExists: true,
+        supported: true,
+        totalFound: 0,
+        validFound: 0,
+        linesExtracted: 0,
+        linesIgnored: 0,
+        rejectedLineReasons: [],
+        reason: 'Falha ao ler o arquivo. Verifique o formato e tente novamente.'
+      });
       setStep('review');
     }
   };
@@ -655,6 +1108,8 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
   };
 
   const handleFinalImport = () => {
+    if (!canConfirmImport) return;
+
     const readyItems = importedData.filter(item =>
       item.status === 'ready' &&
       item.amount > 0 &&
@@ -726,7 +1181,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                   type="file"
                   className="absolute inset-0 opacity-0 cursor-pointer"
                   onChange={handleFileSelect}
-                  accept=".csv,.ofx,.xlsx,.pdf,image/*"
+                  accept=".csv,.ofx,.xls,.xlsx,.pdf,image/*"
                 />
               </div>
 
@@ -793,6 +1248,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
           <Loader2 size={48} className="text-brand-secondary animate-spin" />
           <div className="text-center">
             <p className="font-bold">Interpretando Extrato...</p>
+            {file?.name && <p className="text-[10px] text-white/60 mt-1">Arquivo atual: {file.name}</p>}
             <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Normalizando dados e detectando duplicidades</p>
           </div>
         </div>
@@ -856,21 +1312,105 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[8px] text-white/40 uppercase font-bold">Prontos</span>
-                  <span className="text-sm font-bold text-green-400">{importedData.filter(i => i.status === 'ready').length}</span>
+                  <span className="text-sm font-bold text-green-400">{readyItemsCount}</span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[8px] text-white/40 uppercase font-bold">Erros</span>
                   <span className="text-sm font-bold text-red-400">{importedData.filter(i => i.status === 'error').length}</span>
                 </div>
               </div>
-              <button
-                onClick={handleFinalImport}
-                className="px-4 py-2 bg-brand-primary text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-brand-primary/80 transition-all flex items-center gap-2"
-              >
-                Confirmar Importacao <ChevronRight size={14} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => resetImportState('upload')}
+                  className="px-4 py-2 bg-white/10 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-white/20 transition-all"
+                >
+                  Novo Arquivo
+                </button>
+                <button
+                  onClick={handleFinalImport}
+                  disabled={!canConfirmImport}
+                  className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 ${
+                    canConfirmImport
+                      ? 'bg-brand-primary text-white hover:bg-brand-primary/80'
+                      : 'bg-white/10 text-white/40 cursor-not-allowed'
+                  }`}
+                >
+                  Confirmar Importacao <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
           </div>
+
+          {importDiagnostics && (
+            <div className="glass-card !p-3 shrink-0 border border-white/10">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <div className="text-white/40 uppercase text-[9px] font-bold">Arquivo atual</div>
+                  <div className="font-bold truncate">{importDiagnostics.fileName}</div>
+                </div>
+                <div>
+                  <div className="text-white/40 uppercase text-[9px] font-bold">Formato detectado</div>
+                  <div className="font-bold">{importDiagnostics.formatLabel}</div>
+                </div>
+                <div>
+                  <div className="text-white/40 uppercase text-[9px] font-bold">Parser</div>
+                  <div className="font-bold">{importDiagnostics.parserLabel}</div>
+                </div>
+                <div>
+                  <div className="text-white/40 uppercase text-[9px] font-bold">Tipo detectado</div>
+                  <div className="font-bold">{importDiagnostics.mimeType || 'desconhecido'}</div>
+                </div>
+                <div>
+                  <div className="text-white/40 uppercase text-[9px] font-bold">Parser disponivel</div>
+                  <div className={`font-bold ${importDiagnostics.parserExists ? 'text-green-400' : 'text-red-400'}`}>
+                    {importDiagnostics.parserExists ? 'Sim' : 'Nao'}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 text-[10px] text-white/60">
+                <span className="text-white/40 uppercase text-[9px] font-bold">Tamanho:</span>{' '}
+                {(importDiagnostics.fileSize / 1024).toFixed(1)} KB{' '}
+                <span className="text-white/30">|</span>{' '}
+                <span className="text-white/40 uppercase text-[9px] font-bold">Modificado:</span>{' '}
+                {new Date(importDiagnostics.fileLastModified).toLocaleString('pt-BR')}
+              </div>
+              <div className="mt-2 text-[11px]">
+                <span className="text-white/40 uppercase text-[9px] font-bold">Lancamentos validos:</span>{' '}
+                <span className="font-bold">{importDiagnostics.validFound}</span>
+              </div>
+              <div className="mt-1 text-[11px]">
+                <span className="text-white/40 uppercase text-[9px] font-bold">Linhas extraidas:</span>{' '}
+                <span className="font-bold">{importDiagnostics.linesExtracted}</span>{' '}
+                <span className="text-white/30">|</span>{' '}
+                <span className="text-white/40 uppercase text-[9px] font-bold">Linhas ignoradas:</span>{' '}
+                <span className="font-bold">{importDiagnostics.linesIgnored}</span>
+              </div>
+              {importDiagnostics.reason && (
+                <div className="mt-2 text-[11px] text-yellow-300">
+                  {importDiagnostics.reason}
+                </div>
+              )}
+              {importDiagnostics.baseTextPreview && (
+                <div className="mt-2 text-[10px] text-white/60 break-words">
+                  <span className="text-white/40 uppercase text-[9px] font-bold">Texto base identificado:</span>{' '}
+                  {importDiagnostics.baseTextPreview}
+                </div>
+              )}
+              {importDiagnostics.debugNote && (
+                <div className="mt-2 text-[10px] text-white/50 break-words">
+                  {importDiagnostics.debugNote}
+                </div>
+              )}
+              {importDiagnostics.rejectedLineReasons.length > 0 && (
+                <div className="mt-2 text-[10px] text-red-300 space-y-1">
+                  <div className="text-[9px] uppercase text-red-200/80 font-bold">Motivos de rejeicao (amostra)</div>
+                  {importDiagnostics.rejectedLineReasons.map((msg, idx) => (
+                    <div key={`${idx}-${msg.slice(0, 20)}`}>- {msg}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
             {importedData.map(item => (
@@ -925,7 +1465,7 @@ export default function ImportarExtratos({ onImport, onCancel }: ImportarExtrato
             ))}
             {importedData.length === 0 && (
               <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-xs text-yellow-300">
-                Nenhum lancamento valido encontrado. Para XLSX/imagem ainda falta parser no app. Se puder, exporte o extrato em CSV, OFX ou PDF.
+                {importDiagnostics?.reason || 'Nenhum lancamento valido encontrado. Revise o formato e tente novamente.'}
               </div>
             )}
           </div>

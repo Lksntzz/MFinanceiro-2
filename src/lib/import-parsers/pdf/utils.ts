@@ -1,5 +1,9 @@
 import { ExtractedPdfTransaction, PdfParserContext } from './types';
 
+const DATE_TOKEN_REGEX = /\b(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
+const AMOUNT_TOKEN_REGEX = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/g;
+const AMOUNT_TOKEN_TEST_REGEX = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/;
+
 export function normalizeHeader(value: string): string {
   return value
     .normalize('NFD')
@@ -69,11 +73,27 @@ export function looksLikeNoiseLine(line: string): boolean {
 }
 
 export function parsePdfDateToIso(rawDate: string): string {
-  const match = rawDate.match(/(\d{2})[./-](\d{2})[./-](\d{4})/);
-  if (!match) return new Date().toISOString();
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
+  const fullYear = rawDate.match(/(\d{2})[./-](\d{2})[./-](\d{4})/);
+  if (fullYear) {
+    const day = Number(fullYear[1]);
+    const month = Number(fullYear[2]);
+    const year = Number(fullYear[3]);
+    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
+  }
+
+  const shortYear = rawDate.match(/(\d{2})[./-](\d{2})[./-](\d{2})/);
+  if (shortYear) {
+    const day = Number(shortYear[1]);
+    const month = Number(shortYear[2]);
+    const year = Number(`20${shortYear[3]}`);
+    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
+  }
+
+  const withoutYear = rawDate.match(/(\d{2})[./-](\d{2})$/);
+  if (!withoutYear) return new Date().toISOString();
+  const day = Number(withoutYear[1]);
+  const month = Number(withoutYear[2]);
+  const year = new Date().getUTCFullYear();
   return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
 }
 
@@ -93,13 +113,13 @@ export function parseByDateAndCurrencyLines(context: PdfParserContext): Extracte
   const extracted: ExtractedPdfTransaction[] = [];
 
   for (const line of context.lines) {
-    const dateMatch = line.match(/\b(\d{2}[./-]\d{2}[./-]\d{4})\b/);
-    const amountMatches = [...line.matchAll(/R\$\s*-?\s*\d[\d.]*,\d{2}/g)].map(match => match[0]);
+    const dateMatch = line.match(DATE_TOKEN_REGEX);
+    const amountMatches = [...line.matchAll(AMOUNT_TOKEN_REGEX)].map(match => match[0]);
 
     if (!dateMatch || amountMatches.length === 0) {
-      const hasDate = /\b\d{2}[./-]\d{2}[./-]\d{4}\b/.test(line);
-      const hasCurrency = /R\$\s*-?\s*\d[\d.]*,\d{2}/.test(line);
-      if (!hasDate && !hasCurrency && !looksLikeNoiseLine(line)) {
+      const hasDate = DATE_TOKEN_REGEX.test(line);
+      const hasAmount = AMOUNT_TOKEN_TEST_REGEX.test(line);
+      if (!hasDate && !hasAmount && !looksLikeNoiseLine(line)) {
         pendingDescription.push(line);
       }
       continue;
@@ -111,7 +131,7 @@ export function parseByDateAndCurrencyLines(context: PdfParserContext): Extracte
 
     const descriptionFromLine = line
       .replace(rawDate, ' ')
-      .replace(/R\$\s*-?\s*\d[\d.]*,\d{2}/g, ' ')
+      .replace(AMOUNT_TOKEN_REGEX, ' ')
       .replace(/\b\d{9,}\b/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -138,7 +158,7 @@ export function parseByDateAndCurrencyLines(context: PdfParserContext): Extracte
 export function parseByBlockRegex(context: PdfParserContext): ExtractedPdfTransaction[] {
   const normalizedText = context.fullText.replace(/\s+/g, ' ').trim();
   const extracted: ExtractedPdfTransaction[] = [];
-  const blockRegex = /(\d{2}[./-]\d{2}[./-]\d{4})\s+(.+?)\s+(R\$\s*-?\s*\d[\d.]*,\d{2})(?:\s+R\$\s*-?\s*\d[\d.]*,\d{2})?/g;
+  const blockRegex = /(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\s+(.+?)\s+((?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?)(?:\s+(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?)?/g;
   let match: RegExpExecArray | null;
 
   while ((match = blockRegex.exec(normalizedText)) !== null) {

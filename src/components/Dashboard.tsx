@@ -97,6 +97,7 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   const db = supabase;
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests'>('overview');
   const [historySubTab, setHistorySubTab] = useState<'list' | 'import'>('list');
+  const [historyImportNonce, setHistoryImportNonce] = useState(0);
   const [analysisSubTab, setAnalysisSubTab] = useState<'stats' | 'insights' | 'health' | 'goals'>('stats');
   const [accountsSubTab, setAccountsSubTab] = useState<'bills' | 'calendar' | 'subscriptions' | 'investments'>('bills');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -1232,6 +1233,25 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     return role === "admin" || role === "owner" || user.user_metadata?.is_admin === true;
   }, [user]);
 
+  const importAccountHolderName = useMemo(() => {
+    const maybeName = String(
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.user_metadata?.display_name ||
+      ''
+    ).trim();
+    return maybeName || undefined;
+  }, [user]);
+
+  const importInternalAliases = useMemo(() => {
+    const aliases = new Set<string>();
+    if (user.email) aliases.add(user.email.split('@')[0]);
+    for (const card of cards) {
+      if (card.name?.trim()) aliases.add(card.name.trim());
+    }
+    return [...aliases].filter(Boolean);
+  }, [user, cards]);
+
   const toolGroups = useMemo(() => {
     const groups = [
       {
@@ -1582,7 +1602,10 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
                 Movimentações
               </button>
               <button 
-                onClick={() => setHistorySubTab('import')} 
+                onClick={() => {
+                  setHistorySubTab('import');
+                  setHistoryImportNonce((prev) => prev + 1);
+                }} 
                 className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${historySubTab === 'import' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
               >
                 Importar Extrato
@@ -1591,7 +1614,13 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
             {historySubTab === 'list' ? (
               <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />
             ) : (
-              <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setHistorySubTab('list')} />
+              <ImportarExtratos
+                key={`history-import-${historyImportNonce}`}
+                onImport={handleImportTransactions}
+                onCancel={() => setHistorySubTab('list')}
+                accountHolderName={importAccountHolderName}
+                internalAccountAliases={importInternalAliases}
+              />
             )}
           </div>
         )}
