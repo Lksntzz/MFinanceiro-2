@@ -128,15 +128,19 @@ export default function Auth() {
       setError("Servico indisponivel no momento.");
       return;
     }
-    if (!name.trim()) {
+    const normalizedName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPassword = password.trim();
+
+    if (!normalizedName) {
       setError("Informe seu nome para solicitar acesso.");
       return;
     }
-    if (!email.trim()) {
+    if (!normalizedEmail) {
       setError("Informe seu e-mail para solicitar acesso.");
       return;
     }
-    if (!password.trim()) {
+    if (!normalizedPassword) {
       setError("Informe uma senha para prosseguir.");
       return;
     }
@@ -146,7 +150,7 @@ export default function Auth() {
     setError(null);
     setInfo(null);
     try {
-      const result = await requestAccess(name, email, password);
+      const result = await requestAccess(normalizedName, normalizedEmail, normalizedPassword);
       setInfo("Sua solicitação de acesso foi enviada! O administrador revisará seu pedido em breve.");
       if (result.status === "approved" || result.status === "aprovado") {
         setSignupUnlocked(true);
