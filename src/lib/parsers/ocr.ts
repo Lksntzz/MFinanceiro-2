@@ -3,9 +3,17 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NormalizedTransaction } from "../../types";
 import { suggestCategory, generateDuplicateKey } from "./utils";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+function getGeminiApiKey(): string | undefined {
+  const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  return apiKey && apiKey.trim().length > 0 ? apiKey : undefined;
+}
 
 export async function parseWithOCR(file: File, bankName?: string): Promise<NormalizedTransaction[]> {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    throw new Error("VITE_GEMINI_API_KEY não configurada para OCR.");
+  }
+  const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   // Convert file to base64

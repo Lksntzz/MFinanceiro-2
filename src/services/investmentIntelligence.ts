@@ -1,7 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const MODEL_NAME = "gemini-3-flash-preview";
+const MODEL_NAME = "gemini-2.0-flash";
+
+function getGeminiApiKey(): string | undefined {
+  const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  return apiKey && apiKey.trim().length > 0 ? apiKey : undefined;
+}
+
+function getAiClient(): GoogleGenAI | null {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) return null;
+  return new GoogleGenAI({ apiKey });
+}
+
+function responseTextOrEmpty(response: { text?: string }): string {
+  return response.text ?? '';
+}
 
 export interface MarketInsight {
   summary: string;
@@ -18,6 +32,8 @@ export interface InvestmentAdvice {
 
 export async function getMarketIntelligence(): Promise<MarketInsight> {
   try {
+    const ai = getAiClient();
+    if (!ai) throw new Error('Gemini API key not configured');
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: "Analise o cenário atual do mercado financeiro brasileiro (Selic, Inflação, Bolsa) e forneça um resumo para investidores pessoa física. Forneça o resultado estritamente em JSON.",
@@ -26,7 +42,7 @@ export async function getMarketIntelligence(): Promise<MarketInsight> {
       }
     });
 
-    const text = response.text.replace(/```json|```/g, '');
+    const text = responseTextOrEmpty(response).replace(/```json|```/g, '');
     return JSON.parse(text);
   } catch (err) {
     console.error('Error fetching market intelligence:', err);
@@ -45,6 +61,8 @@ export async function getPredictiveAnalysis(
   fixedBills: any[]
 ): Promise<string> {
   try {
+    const ai = getAiClient();
+    if (!ai) throw new Error('Gemini API key not configured');
     const prompt = `
       Histórico de Transações (JSON): ${JSON.stringify(transactions.slice(0, 30))}
       Saldo Atual: R$ ${currentBalance}
@@ -60,7 +78,7 @@ export async function getPredictiveAnalysis(
       contents: prompt,
     });
     
-    return response.text;
+    return responseTextOrEmpty(response);
   } catch (error) {
     console.error('Error in Predictive Analysis:', error);
     return 'Não foi possível realizar a análise preditiva no momento.';
@@ -75,6 +93,8 @@ export async function getInvestmentAdvice(
   budgets: any[]
 ): Promise<InvestmentAdvice> {
   try {
+    const ai = getAiClient();
+    if (!ai) throw new Error('Gemini API key not configured');
     const prompt = `
       Situação Financeira do Usuário:
       - Saldo Atual: R$ ${balance}
@@ -100,7 +120,7 @@ export async function getInvestmentAdvice(
       }
     });
 
-    const text = response.text.replace(/```json|```/g, '');
+    const text = responseTextOrEmpty(response).replace(/```json|```/g, '');
     return JSON.parse(text);
   } catch (err) {
     console.error('Error fetching investment advice:', err);
@@ -125,6 +145,8 @@ export async function getFundamentalistAnalysis(
   metrics: { pl?: number; roe?: number; ebitda?: number; liquid_debt?: number; dy?: number }
 ): Promise<FundamentalistAnalysis> {
   try {
+    const ai = getAiClient();
+    if (!ai) throw new Error('Gemini API key not configured');
     const prompt = `
       Ativo: ${name}
       Indicadores:
@@ -147,7 +169,7 @@ export async function getFundamentalistAnalysis(
       }
     });
 
-    const text = response.text.replace(/```json|```/g, '');
+    const text = responseTextOrEmpty(response).replace(/```json|```/g, '');
     return JSON.parse(text);
   } catch (err) {
     console.error('Error in fundamentalist analysis:', err);
