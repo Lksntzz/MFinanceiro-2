@@ -114,6 +114,26 @@ function installUserTracking() {
   });
 }
 
+function openCurrentTutorialFromProfile(event: MouseEvent, target: HTMLElement | null) {
+  const button = target?.closest<HTMLButtonElement>('button');
+  if (!button || normalize(button.textContent) !== 'ver tutorial') return false;
+
+  const profileBackdrop = button.closest<HTMLElement>('.mf-dialog-backdrop');
+  if (!profileBackdrop || isLegacyTutorial(profileBackdrop)) return false;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  const closeProfileButton = profileBackdrop.querySelector<HTMLButtonElement>('.mf-dialog-header button');
+  closeProfileButton?.click();
+
+  window.setTimeout(() => {
+    window.dispatchEvent(new Event('mf:open-tutorial'));
+  }, 0);
+
+  return true;
+}
+
 function installTutorialLoopGuard() {
   if (installed) return;
   installed = true;
@@ -122,6 +142,9 @@ function installTutorialLoopGuard() {
 
   document.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
+
+    if (openCurrentTutorialFromProfile(event, target)) return;
+
     const safeRoot = target?.closest<HTMLElement>(`#${SAFE_TUTORIAL_ROOT_ID}`);
     if (!safeRoot) return;
 
