@@ -18,22 +18,31 @@ import {
 
 type Primary = 'home' | 'movements' | 'accounts' | 'cards' | 'income' | 'analysis';
 type Subroute = 'fixed' | 'subscriptions' | 'budgets' | 'summary' | 'insights' | 'health' | 'goals' | 'investments';
-
 type RouteState = { primary: Primary; sub?: Subroute };
 
 const normalize = (value?: string | null) =>
   String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
 
 function legacyButtons(): HTMLButtonElement[] {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-nav > button[data-mf-hierarchy-original="true"], .mf-nav > button:not([data-mf-simple-nav])'))
-    .filter((button) => !button.closest('#mf-hierarchy-nav-host'));
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-nav > button'))
+    .filter((button) => !button.closest('#mf-simple-navigation-app'));
 }
 
-function findButton(labels: string[], scope: ParentNode = document): HTMLButtonElement | null {
+function suppressLegacyNavigation() {
+  legacyButtons().forEach((button) => {
+    button.dataset.mfLegacyNav = 'true';
+    button.style.setProperty('display', 'none', 'important');
+    button.setAttribute('aria-hidden', 'true');
+    button.tabIndex = -1;
+  });
+}
+
+function findLegacyButton(labels: string[], scope: ParentNode = document): HTMLButtonElement | null {
   const wanted = labels.map(normalize);
   return Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
     if (button.closest('#mf-simple-navigation-root')) return false;
@@ -42,27 +51,27 @@ function findButton(labels: string[], scope: ParentNode = document): HTMLButtonE
   }) || null;
 }
 
-function click(labels: string[], scope: ParentNode = document) {
-  const button = findButton(labels, scope);
+function clickLegacy(labels: string[]) {
+  const button = findLegacyButton(labels);
   if (!button) return false;
   button.click();
   return true;
 }
 
 function delayed(labels: string[], delay: number) {
-  window.setTimeout(() => click(labels), delay);
+  window.setTimeout(() => clickLegacy(labels), delay);
 }
 
 function go(route: RouteState) {
   sessionStorage.setItem('mf-simple-route', JSON.stringify(route));
 
-  if (route.primary === 'home') click(['Dashboard']);
-  if (route.primary === 'movements') click(['Histórico']);
-  if (route.primary === 'cards') click(['Cartões']);
-  if (route.primary === 'income') click(['Renda e Folha', 'Preferências']);
+  if (route.primary === 'home') clickLegacy(['Dashboard']);
+  if (route.primary === 'movements') clickLegacy(['Histórico']);
+  if (route.primary === 'cards') clickLegacy(['Cartões']);
+  if (route.primary === 'income') clickLegacy(['Renda e Folha', 'Preferências']);
 
   if (route.primary === 'accounts') {
-    click(['Contas']);
+    clickLegacy(['Contas']);
     if (route.sub === 'subscriptions') delayed(['Assinaturas'], 90);
     else {
       delayed(['Gestão de contas'], 90);
@@ -72,11 +81,11 @@ function go(route: RouteState) {
 
   if (route.primary === 'analysis') {
     if (route.sub === 'investments') {
-      click(['Contas']);
+      clickLegacy(['Contas']);
       delayed(['Investimentos'], 90);
       return;
     }
-    click(['Análises']);
+    clickLegacy(['Análises']);
     if (route.sub === 'insights') delayed(['Insights AI'], 90);
     else if (route.sub === 'health') delayed(['Saúde financeira'], 90);
     else if (route.sub === 'goals') delayed(['Metas'], 90);
@@ -111,61 +120,23 @@ function inferRoute(): RouteState {
   return { primary: 'home' };
 }
 
-function patchTutorial() {
-  document.querySelectorAll<HTMLElement>('.mf-area-card').forEach((card) => {
-    const title = card.querySelector<HTMLElement>('div');
-    const text = card.querySelector<HTMLElement>('p');
-    const label = normalize(title?.textContent);
-    if (label === 'compromissos') {
-      if (title) title.childNodes[title.childNodes.length - 1].textContent = 'Contas';
-      if (text) text.textContent = 'Contas fixas, assinaturas e orçamentos, organizados pelo mês de vencimento.';
-    }
-    if (label === 'planejamento') {
-      if (title) title.childNodes[title.childNodes.length - 1].textContent = 'Cartões';
-      if (text) text.textContent = 'Cartões, faturas, limites e compras parceladas.';
-    }
-    if (label === 'analises' && text) {
-      text.textContent = 'Resumo, insights, saúde financeira, metas e investimentos.';
-    }
-  });
-
-  document.querySelectorAll<HTMLElement>('.mf-dialog h2').forEach((heading) => {
-    if (normalize(heading.textContent).includes('seis areas')) heading.textContent = 'Seis ferramentas diretas';
-  });
-}
-
 function SimpleNavigation() {
-  const [host, setHost] = useState<HTMLElement | null>(null);
   const [route, setRoute] = useState<RouteState>({ primary: 'home' });
 
   useEffect(() => {
     const sync = () => {
-      const hierarchyHost = document.querySelector<HTMLElement>('#mf-hierarchy-nav-host');
-      if (hierarchyHost) setHost(hierarchyHost);
+      suppressLegacyNavigation();
       setRoute(inferRoute());
-      patchTutorial();
     };
 
     sync();
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-    const timer = window.setInterval(sync, 400);
-
-    const capture = (event: MouseEvent) => {
-      const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>('button');
-      if (!button || button.closest('#mf-simple-navigation-root')) return;
-      if (normalize(button.textContent) === 'conta ou cartao') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        go({ primary: 'accounts', sub: 'fixed' });
-      }
-    };
-    document.addEventListener('click', capture, true);
+    const timer = window.setInterval(sync, 500);
 
     return () => {
       observer.disconnect();
       window.clearInterval(timer);
-      document.removeEventListener('click', capture, true);
     };
   }, []);
 
@@ -194,13 +165,11 @@ function SimpleNavigation() {
         ]
       : [];
 
-  if (!host) return null;
-
   return (
     <div id="mf-simple-navigation-root">
       <style>{`
-        #mf-hierarchy-nav-host > .mf-hierarchy-shell { display: none !important; }
-        #mf-simple-navigation-root { width: 100%; min-width: 0; }
+        #mf-simple-navigation-app { width:100%; min-width:0; }
+        #mf-simple-navigation-root { width:100%; min-width:0; }
         .mf-simple-main,.mf-simple-sub { display:flex; align-items:center; gap:6px; overflow-x:auto; scrollbar-width:none; }
         .mf-simple-main::-webkit-scrollbar,.mf-simple-sub::-webkit-scrollbar { display:none; }
         .mf-simple-nav { width:100%; display:flex; flex-direction:column; gap:7px; }
@@ -214,16 +183,16 @@ function SimpleNavigation() {
       <nav className="mf-simple-nav" aria-label="Ferramentas financeiras">
         <div className="mf-simple-main">
           {primaryItems.map((item) => (
-            <button key={item.id} type="button" className={`mf-simple-button ${route.primary === item.id ? 'active' : ''}`} onClick={() => go({ primary: item.id, sub: item.id === 'accounts' ? 'fixed' : item.id === 'analysis' ? 'summary' : undefined })}>
-              <item.icon size={15} /><span>{item.label}</span>
+            <button data-mf-simple-nav="true" key={item.id} type="button" className={`mf-simple-button ${route.primary === item.id ? 'active' : ''}`} onClick={() => go({ primary: item.id, sub: item.id === 'accounts' ? 'fixed' : item.id === 'analysis' ? 'summary' : undefined })}>
+              <item.icon size={15}/><span>{item.label}</span>
             </button>
           ))}
         </div>
         {subItems.length > 0 && (
           <div className="mf-simple-sub">
             {subItems.map((item) => (
-              <button key={item.id} type="button" className={`mf-simple-button ${route.sub === item.id ? 'active' : ''}`} onClick={() => go({ primary: route.primary, sub: item.id })}>
-                <item.icon size={13} /><span>{item.label}</span>
+              <button data-mf-simple-nav="true" key={item.id} type="button" className={`mf-simple-button ${route.sub === item.id ? 'active' : ''}`} onClick={() => go({ primary: route.primary, sub: item.id })}>
+                <item.icon size={13}/><span>{item.label}</span>
               </button>
             ))}
           </div>
@@ -238,10 +207,25 @@ function mount() {
   const host = document.createElement('div');
   host.id = 'mf-simple-navigation-app';
   document.body.appendChild(host);
-  createRoot(host).render(<SimpleNavigation />);
+  createRoot(host).render(<SimpleNavigation/>);
+
+  const place = () => {
+    suppressLegacyNavigation();
+    const nav = document.querySelector<HTMLElement>('.mf-nav');
+    if (nav && host.parentElement !== nav) nav.appendChild(host);
+  };
+
+  place();
+  const observer = new MutationObserver(place);
+  observer.observe(document.body, { subtree:true, childList:true });
+  const timer = window.setInterval(place, 500);
+  window.addEventListener('beforeunload', () => {
+    observer.disconnect();
+    window.clearInterval(timer);
+  }, { once:true });
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once:true });
 else mount();
 
 export {};
