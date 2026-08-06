@@ -16,6 +16,7 @@ import './lib/monthly-fixed-bills-mount';
 import './lib/standalone-insights-mount';
 import './lib/insights-fixed-bill-count-guard';
 import './lib/unified-transaction-launcher-mount';
+import './lib/release-update-notification-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
