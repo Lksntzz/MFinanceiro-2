@@ -9,6 +9,7 @@ import './lib/installment-manager-mount';
 import './lib/income-payroll-center-mount';
 import './lib/income-payroll-layer-guard';
 import './lib/payroll-cycle-display-guard';
+import './lib/navigation-profile-onboarding-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
