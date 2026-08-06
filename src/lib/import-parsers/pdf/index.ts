@@ -7,6 +7,7 @@ import { parseSantanderPdf } from './santander';
 import { parseC6BankPdf } from './c6bank';
 import { parseGenericPdf } from './generic';
 import { detectBankFromText } from './utils';
+import { mergePdfTransactions, parseUniversalPdfStatement } from './universal';
 
 const BANK_PDF_PARSERS: Record<string, PdfBankParser> = {
   mercadopago: parseMercadoPagoPdf,
@@ -24,5 +25,11 @@ export function resolvePdfBank(selectedBank: string, fullText: string): string {
 }
 
 export function getPdfBankParser(bank: string): PdfBankParser {
-  return BANK_PDF_PARSERS[bank] || parseGenericPdf;
+  const bankParser = BANK_PDF_PARSERS[bank] || parseGenericPdf;
+
+  return (context) => {
+    const bankSpecific = bankParser(context);
+    const universal = parseUniversalPdfStatement(context);
+    return mergePdfTransactions(bankSpecific, universal);
+  };
 }
