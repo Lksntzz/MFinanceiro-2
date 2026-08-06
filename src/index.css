@@ -69,7 +69,7 @@ body {
 }
 
 #root > div > header {
-  margin-bottom: 0.5rem !important;
+  margin-bottom: 0.35rem !important;
 }
 
 #root > div > .flex-1.overflow-y-auto {
@@ -78,83 +78,90 @@ body {
   padding-bottom: 0 !important;
 }
 
-/* Overview cards: keep all information visible without page scrolling. */
-#root .h-\[250px\] {
-  height: 220px !important;
-  padding: 0.85rem !important;
+/* Only History is allowed to scroll vertically. */
+.history-shell,
+.history-scroll {
+  min-height: 0;
 }
 
-#root .h-\[250px\] > h3 {
-  margin-bottom: 0.65rem !important;
+.history-scroll {
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
 }
 
-/* Latest transactions: show three complete rows instead of cutting five rows. */
-#root .h-\[250px\] .space-y-3 > * {
-  margin-top: 0.35rem !important;
+/* Dashboard: charts share one row instead of stacking vertically. */
+@media (min-width: 1024px) {
+  main.grid {
+    gap: 0.55rem !important;
+    align-content: start;
+  }
+
+  main.grid > [class~="h-[220px]"] {
+    grid-column: span 6 / span 6 !important;
+    height: clamp(150px, 20vh, 190px) !important;
+    padding: 0.8rem !important;
+  }
+
+  main.grid > [class~="h-[250px]"] {
+    height: clamp(145px, 19vh, 180px) !important;
+    padding: 0.75rem !important;
+    justify-content: flex-start !important;
+  }
+
+  main.grid > [class~="h-[250px]"] h3 {
+    margin-bottom: 0.55rem !important;
+  }
+
+  main.grid > [class~="h-[250px]"] .overflow-y-auto {
+    overflow: hidden !important;
+  }
+
+  main.grid > [class~="h-[250px]"] .space-y-3,
+  main.grid > [class~="h-[250px]"] .space-y-4,
+  main.grid > [class~="h-[250px]"] .space-y-6 {
+    gap: 0.4rem !important;
+  }
+
+  main.grid > [class~="h-[250px]"] [class*="p-3"] {
+    padding: 0.45rem !important;
+  }
+
+  /* Compact analysis cards and prevent internal clipping. */
+  [class*="animate-fade-in"] .glass-card {
+    min-height: 0;
+  }
+
+  [class*="animate-fade-in"] [class*="h-[300px]"],
+  [class*="animate-fade-in"] [class*="h-[320px]"],
+  [class*="animate-fade-in"] [class*="h-[350px]"] {
+    height: clamp(170px, 24vh, 220px) !important;
+  }
 }
 
-#root .h-\[250px\] .space-y-3 > :first-child {
-  margin-top: 0 !important;
-}
-
-#root .h-\[250px\] .space-y-3 > :nth-child(n + 4) {
-  display: none;
-}
-
-#root .h-\[250px\] .space-y-3 .p-3 {
-  padding: 0.5rem 0.65rem !important;
-}
-
-/* Card usage summary: reduce decorative spacing while preserving all values. */
-#root .h-\[250px\].justify-center > h3 {
-  margin-bottom: 0.75rem !important;
-}
-
-#root .h-\[250px\].justify-center .space-y-6 > * {
-  margin-top: 0.75rem !important;
-}
-
-#root .h-\[250px\].justify-center .space-y-6 > :first-child {
-  margin-top: 0 !important;
-}
-
-#root .h-\[250px\].justify-center .pt-4 {
-  padding-top: 0.75rem !important;
-}
-
-/* Compact the dashboard on shorter screens instead of adding a page scrollbar. */
 @media (min-width: 1024px) and (max-height: 900px) {
   #root > div.h-screen,
   #root > div.min-h-screen {
-    padding: 0.5rem !important;
-    gap: 0.35rem !important;
+    padding: 0.45rem !important;
+    gap: 0.3rem !important;
   }
 
   #root > div > header {
-    margin-bottom: 0.25rem !important;
-    gap: 0.5rem !important;
+    margin-bottom: 0.2rem !important;
+    gap: 0.4rem !important;
   }
 
   #root > div > .flex-1.overflow-y-auto {
-    zoom: 0.88;
-    width: 113.64%;
-    height: 113.64%;
-  }
-
-  #root .h-\[250px\] {
-    height: 205px !important;
+    zoom: 0.92;
+    width: 108.7%;
+    height: 108.7%;
   }
 }
 
 @media (min-width: 1024px) and (max-height: 760px) {
   #root > div > .flex-1.overflow-y-auto {
-    zoom: 0.76;
-    width: 131.58%;
-    height: 131.58%;
-  }
-
-  #root .h-\[250px\] {
-    height: 190px !important;
+    zoom: 0.82;
+    width: 121.95%;
+    height: 121.95%;
   }
 }
 
