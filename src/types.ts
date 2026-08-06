@@ -29,11 +29,11 @@ export interface UserSettings {
   current_balance: number;
   gross_salary: number;
   net_salary_estimated: number;
-  benefits: number; // VR, VA, etc
-  deductions: number; // Added field for payroll deductions
+  benefits: number;
+  deductions: number;
   payday_cycle: 'monthly' | 'biweekly';
-  payday_1: number; // Day of month (1-31)
-  payday_2?: number; // Optional second payday
+  payday_1: number;
+  payday_2?: number;
   payday_1_percentage?: number;
   payday_2_percentage?: number;
 }
@@ -61,18 +61,9 @@ export interface FixedBill {
   status: 'paid' | 'pending';
   category: string;
   last_paid_month?: string;
-  keywords?: string[]; // Para conciliação automática com extrato
-  merchant_id?: string; // Próximos passos: integração banco
-  dda_reference?: string; // Próximos passos: DDA
-}
-
-export interface DailyBill {
-  id: string;
-  user_id: string;
-  name: string;
-  average_amount: number;
-  frequency: 'weekly' | 'monthly';
-  category: string;
+  keywords?: string[];
+  merchant_id?: string;
+  dda_reference?: string;
 }
 
 export interface CreditCard {
@@ -152,23 +143,22 @@ export interface Investment {
   name: string;
   type: 'fixed_income' | 'variable_income' | 'crypto' | 'other';
   institution: string;
-  amount: number; // Current value (patrimony)
-  initial_amount?: number; // Total invested initially
+  amount: number;
+  initial_amount?: number;
   quantity?: number;
   average_price?: number;
   current_price?: number;
   dividends_received?: number;
-  target_percentage?: number; // % Ideal
+  target_percentage?: number;
   yield_percentage?: number;
   purchase_date?: string;
   category: string;
-  // Fundamentalist Indicators
   pl?: number;
   roe?: number;
   ebitda?: number;
   liquid_debt?: number;
-  dividend_yield?: number; // Current Yield for variable income
-  score?: number; // 0-10 based on analysis
+  dividend_yield?: number;
+  score?: number;
   note?: string;
 }
 
@@ -191,7 +181,7 @@ export interface Subscription {
 }
 
 export interface FinancialHealth {
-  score: number; // 0-1000
+  score: number;
   level: 'Iniciante' | 'Aprendiz' | 'Gestor' | 'Estrategista' | 'Wealth Master';
   nextLevelProgress: number;
   unlockedBadges: string[];
