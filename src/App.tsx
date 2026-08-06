@@ -5,14 +5,21 @@ import Auth from './components/Auth';
 import DashboardBootstrap from './components/DashboardBootstrap';
 import ConfigRequired from './components/ConfigRequired';
 import MaintenanceScreen from './components/MaintenanceScreen';
-import MaintenanceAdminPanel from './components/MaintenanceAdminPanel';
 import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
+
+function normalizeMaintenanceRow(row: any): MaintenanceConfig {
+  return {
+    maintenance_mode: row?.maintenance_mode === true,
+    maintenance_message:
+      String(row?.maintenance_message || '').trim() ||
+      'Estamos realizando melhorias importantes. O MFinanceiro estará disponível novamente em breve.',
+  };
+}
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [maintenance, setMaintenance] = useState<MaintenanceConfig | null>(null);
-  const [forceAdminAuth, setForceAdminAuth] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -54,7 +61,9 @@ export default function App() {
 
     void initialize();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
 
       if (event === 'SIGNED_OUT' || !nextSession) {
@@ -76,16 +85,41 @@ export default function App() {
 
     let active = true;
 
+    const applyMaintenance = (next: MaintenanceConfig) => {
+      if (!active) return;
+      setMaintenance(next);
+    };
+
     const refreshMaintenance = async () => {
       try {
-        const next = await fetchMaintenanceConfig(supabase);
-        if (!active) return;
-        setMaintenance(next);
-        if (!next.maintenance_mode) setForceAdminAuth(false);
+        applyMaintenance(await fetchMaintenanceConfig(supabase));
       } catch (err) {
         console.warn('Falha ao atualizar o modo de manutenção:', err);
       }
     };
+
+    const realtimeChannel = supabase
+      .channel('mf-global-maintenance')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'mf_global_settings',
+          filter: 'key=eq.global',
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (row && Object.keys(row).length) applyMaintenance(normalizeMaintenanceRow(row));
+          else void refreshMaintenance();
+        },
+      )
+      .on('broadcast', { event: 'maintenance-changed' }, ({ payload }) => {
+        if (payload) applyMaintenance(normalizeMaintenanceRow(payload));
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') void refreshMaintenance();
+      });
 
     const onFocus = () => void refreshMaintenance();
     const onVisibilityChange = () => {
@@ -93,22 +127,21 @@ export default function App() {
     };
     const onMaintenanceChanged = (event: Event) => {
       const next = (event as CustomEvent<MaintenanceConfig>).detail;
-      if (!next) return;
-      setMaintenance(next);
-      if (!next.maintenance_mode) setForceAdminAuth(false);
+      if (next) applyMaintenance(next);
     };
 
-    const intervalId = window.setInterval(() => void refreshMaintenance(), 5000);
+    const fallbackInterval = window.setInterval(() => void refreshMaintenance(), 30000);
     window.addEventListener('focus', onFocus);
     window.addEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       active = false;
-      window.clearInterval(intervalId);
+      window.clearInterval(fallbackInterval);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      void supabase.removeChannel(realtimeChannel);
     };
   }, []);
 
@@ -124,43 +157,19 @@ export default function App() {
 
   const isAdmin = isMaintenanceAdmin(session);
   const maintenanceEnabled = Boolean(maintenance?.maintenance_mode);
+  const hiddenAdminLogin = new URLSearchParams(window.location.search).get('maintenance_admin') === '1';
 
-  if (maintenanceEnabled) {
-    if (!session && forceAdminAuth) return <Auth />;
-
-    if (session && isAdmin && forceAdminAuth && maintenance) {
-      return (
-        <MaintenanceAdminPanel
-          config={maintenance}
-          onBack={() => setForceAdminAuth(false)}
-          onChanged={(next) => {
-            setMaintenance(next);
-            if (!next.maintenance_mode) setForceAdminAuth(false);
-          }}
-        />
-      );
-    }
-
-    return (
-      <MaintenanceScreen
-        message={maintenance?.maintenance_message}
-        onAdminLogin={async () => {
-          if (session && isAdmin) {
-            setForceAdminAuth(true);
-            return;
-          }
-
-          if (session) {
-            await supabase.auth.signOut();
-            setSession(null);
-          }
-          setForceAdminAuth(true);
-        }}
-      />
-    );
+  if (maintenanceEnabled && !isAdmin) {
+    if (!session && hiddenAdminLogin) return <Auth />;
+    return <MaintenanceScreen message={maintenance?.maintenance_message} />;
   }
 
   if (!session) return <Auth />;
 
-  return <DashboardBootstrap user={session.user} isMaintenanceBypass={false} />;
+  return (
+    <DashboardBootstrap
+      user={session.user}
+      isMaintenanceBypass={isAdmin && maintenanceEnabled}
+    />
+  );
 }
