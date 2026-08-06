@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
-  BadgeDollarSign,
   CalendarDays,
   CheckCircle2,
   FileText,
@@ -85,13 +84,21 @@ function competenceDate(key: string): Date {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
-function findPayrollTrigger(): HTMLButtonElement | null {
-  return (
-    Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
-      if (button.dataset.mfIncomePayrollAction === 'true') return false;
-      return button.textContent?.trim().toLowerCase() === 'folha de pagamento';
-    }) || null
-  );
+function defaultForm(): FormState {
+  return {
+    competence: monthKey(),
+    grossSalary: '0',
+    inssAmount: '0',
+    irrfAmount: '0',
+    otherDeductions: '0',
+    benefits: '0',
+    paydayCycle: 'monthly',
+    payday1: '5',
+    payday2: '20',
+    payday1Percentage: '100',
+    payday2Percentage: '0',
+    notes: '',
+  };
 }
 
 function normalizeSettings(row: any): SettingsRow {
@@ -129,23 +136,6 @@ function normalizePayroll(row: any): PayrollRow {
   };
 }
 
-function defaultForm(): FormState {
-  return {
-    competence: monthKey(),
-    grossSalary: '0',
-    inssAmount: '0',
-    irrfAmount: '0',
-    otherDeductions: '0',
-    benefits: '0',
-    paydayCycle: 'monthly',
-    payday1: '5',
-    payday2: '20',
-    payday1Percentage: '100',
-    payday2Percentage: '0',
-    notes: '',
-  };
-}
-
 function IncomePayrollCenter() {
   const [visible, setVisible] = useState(false);
   const [top, setTop] = useState(72);
@@ -176,7 +166,6 @@ function IncomePayrollCenter() {
   useEffect(() => {
     const detect = () => {
       const navButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-nav button'));
-
       navButtons.forEach((button) => {
         const label = button.querySelector<HTMLSpanElement>('span');
         if (label?.textContent?.trim() === 'Preferências') label.textContent = 'Renda e Folha';
@@ -188,6 +177,11 @@ function IncomePayrollCenter() {
 
       const header = document.querySelector<HTMLElement>('.mf-topbar');
       setTop(Math.ceil(header?.getBoundingClientRect().bottom || 64) + 8);
+
+      const payrollButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim().toLowerCase() === 'folha de pagamento',
+      );
+      if (payrollButton) payrollButton.style.display = activeLabel.includes('renda e folha') ? 'none' : '';
     };
 
     detect();
@@ -203,31 +197,8 @@ function IncomePayrollCenter() {
     };
   }, []);
 
-  useEffect(() => {
-    const syncTrigger = () => {
-      const trigger = findPayrollTrigger();
-      if (!trigger) return;
-      if (visible) {
-        if (trigger.dataset.mfIncomePayrollHidden !== 'true') {
-          trigger.dataset.mfIncomePayrollOriginalDisplay = trigger.style.display || '';
-          trigger.dataset.mfIncomePayrollHidden = 'true';
-        }
-        trigger.style.display = 'none';
-      } else if (trigger.dataset.mfIncomePayrollHidden === 'true') {
-        trigger.style.display = trigger.dataset.mfIncomePayrollOriginalDisplay || '';
-        delete trigger.dataset.mfIncomePayrollHidden;
-        delete trigger.dataset.mfIncomePayrollOriginalDisplay;
-      }
-    };
-
-    syncTrigger();
-    const interval = window.setInterval(syncTrigger, 250);
-    return () => window.clearInterval(interval);
-  }, [visible]);
-
-  const hydrate = useCallback((competence: string, nextSettings: SettingsRow | null, sourceRows: PayrollRow[]) => {
+  function hydrate(competence: string, nextSettings: SettingsRow | null, sourceRows: PayrollRow[]) {
     const existing = sourceRows.find((row) => row.competence.slice(0, 7) === competence);
-
     if (existing) {
       setForm({
         competence,
@@ -249,8 +220,7 @@ function IncomePayrollCenter() {
 
     const gross = Number(nextSettings?.gross_salary || 0);
     const estimate = calculatePayrollFromGross(gross, competenceDate(competence));
-    const storedDeductions = Number(nextSettings?.deductions || 0);
-    const inferredOther = Math.max(0, storedDeductions - estimate.inss - estimate.irrf);
+    const inferredOther = Math.max(0, Number(nextSettings?.deductions || 0) - estimate.inss - estimate.irrf);
     const cycle = nextSettings?.payday_cycle || 'monthly';
 
     setForm({
@@ -268,9 +238,9 @@ function IncomePayrollCenter() {
       notes: '',
     });
     setDirty(false);
-  }, []);
+  }
 
-  const loadData = useCallback(async (selectedCompetence?: string) => {
+  async function loadData(targetCompetence = monthKey()) {
     if (!userId) return;
     setLoading(true);
     setError(null);
@@ -292,28 +262,15 @@ function IncomePayrollCenter() {
     const nextRows = (rowsResult.data || []).map(normalizePayroll);
     setSettings(nextSettings);
     setRows(nextRows);
-    hydrate(selectedCompetence || form.competence || monthKey(), nextSettings, nextRows);
+    hydrate(targetCompetence, nextSettings, nextRows);
     setLoading(false);
-  }, [userId, hydrate, form.competence]);
+  }
 
   useEffect(() => {
-    if (!userId) return;
-    void loadData(monthKey());
-
-    const channel = supabase
-      .channel(`income-payroll-center-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_user_settings', filter: `user_id=eq.${userId}` }, () => {
-        if (!dirty) void loadData(form.competence);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_payroll_statements', filter: `user_id=eq.${userId}` }, () => {
-        if (!dirty) void loadData(form.competence);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId, loadData, dirty, form.competence]);
+    if (visible && userId) void loadData(form.competence || monthKey());
+    // Carrega somente ao entrar na área ou trocar a sessão; edição local não dispara recarga.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, userId]);
 
   const gross = numberValue(form.grossSalary);
   const expected = useMemo(
@@ -570,7 +527,6 @@ function IncomePayrollCenter() {
                     <button
                       key={row.id}
                       type="button"
-                      data-mf-income-payroll-action="true"
                       onClick={() => selectCompetence(row.competence.slice(0, 7))}
                       className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-brand-primary/30"
                     >
