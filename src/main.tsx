@@ -10,6 +10,8 @@ import './lib/income-payroll-center-mount';
 import './lib/income-payroll-layer-guard';
 import './lib/payroll-cycle-display-guard';
 import './lib/navigation-profile-onboarding-mount';
+import './lib/simple-navigation-mount';
+import './lib/monthly-fixed-bills-mount';
 import './lib/unified-transaction-launcher-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
