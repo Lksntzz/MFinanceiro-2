@@ -5,6 +5,7 @@ import './lib/rhythm-chart-filter';
 import './lib/admin-maintenance-mount';
 import './lib/bank-excel-parser-guard';
 import './lib/bank-csv-parser-guard';
+import './lib/historical-import-review-guard';
 import './lib/installment-manager-mount';
 import './lib/income-payroll-center-mount';
 import './lib/payroll-advance-correction-guard';
