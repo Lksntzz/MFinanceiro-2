@@ -11,7 +11,6 @@ const TABLES_TO_SYNC = [
   'mf_card_installments',
   'mf_user_settings',
   'mf_fixed_bills',
-  'mf_daily_bills',
 ];
 
 if (typeof window !== 'undefined' && !window.__mfDashboardDataSyncInstalled) {
