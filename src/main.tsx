@@ -1,4 +1,3 @@
-import './lib/settings-conflict-recovery';
 import './lib/dashboard-data-sync';
 import './lib/rhythm-chart-filter';
 import './lib/admin-maintenance-mount';
