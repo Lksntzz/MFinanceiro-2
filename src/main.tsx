@@ -11,11 +11,9 @@ import './lib/income-payroll-center-mount';
 import './lib/payroll-advance-correction-guard';
 import './lib/income-payroll-layer-guard';
 import './lib/payroll-cycle-display-guard';
-import './lib/navigation-profile-onboarding-mount';
-import './lib/tutorial-loop-guard';
-import './lib/safe-tutorial-mount';
 import './lib/simple-navigation-mount';
-import './lib/simple-navigation-placement-guard';
+import './lib/profile-onboarding-mount';
+import './lib/safe-tutorial-mount';
 import './lib/monthly-fixed-bills-mount';
 import './lib/standalone-insights-mount';
 import './lib/insights-fixed-bill-count-guard';
@@ -31,7 +29,6 @@ import './layout-tuning.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    // Keep SW only in production and force-check updates on each load.
     if (import.meta.env.PROD) {
       navigator.serviceWorker.register('/sw.js').then((registration) => {
         registration.update().catch(() => {});
@@ -39,7 +36,6 @@ if ('serviceWorker' in navigator) {
         console.log('SW registration failed: ', registrationError);
       });
     } else {
-      // In development, remove stale SW to avoid asset/cache interference.
       navigator.serviceWorker.getRegistrations().then((registrations) => {
         registrations.forEach((registration) => registration.unregister());
       });
