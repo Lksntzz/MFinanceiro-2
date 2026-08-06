@@ -68,6 +68,55 @@ function delayed(labels: string[], delay: number) {
   window.setTimeout(() => clickLegacy(labels), delay);
 }
 
+function findLegacyIncomePanel(): HTMLElement | null {
+  const legacyTab = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+    .find((button) => normalize(button.textContent) === 'renda e ciclo');
+  if (!legacyTab) return null;
+
+  let current: HTMLElement | null = legacyTab.parentElement;
+  while (current && current !== document.body) {
+    const text = normalize(current.textContent);
+    if (text.includes('renda e ciclo') && text.includes('ajustes') && text.includes('resumo salarial estimado')) return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function syncIncomePayrollLayer(active: boolean) {
+  const legacyPanel = findLegacyIncomePanel();
+  if (legacyPanel) {
+    if (active) {
+      if (legacyPanel.dataset.mfOriginalDisplay === undefined) legacyPanel.dataset.mfOriginalDisplay = legacyPanel.style.display || '';
+      legacyPanel.style.display = 'none';
+      legacyPanel.setAttribute('aria-hidden', 'true');
+    } else if (legacyPanel.dataset.mfOriginalDisplay !== undefined) {
+      legacyPanel.style.display = legacyPanel.dataset.mfOriginalDisplay;
+      legacyPanel.removeAttribute('aria-hidden');
+      delete legacyPanel.dataset.mfOriginalDisplay;
+    }
+  }
+
+  const page = document.querySelector<HTMLElement>('#mf-income-payroll-center-root > div');
+  if (!page) return;
+  if (!active) {
+    page.style.removeProperty('left');
+    page.style.removeProperty('right');
+    page.style.removeProperty('top');
+    page.style.removeProperty('bottom');
+    page.style.removeProperty('border-radius');
+    return;
+  }
+
+  const content = document.querySelector<HTMLElement>('.mf-content');
+  if (!content) return;
+  const rect = content.getBoundingClientRect();
+  page.style.left = `${Math.max(0, Math.round(rect.left))}px`;
+  page.style.right = `${Math.max(0, Math.round(window.innerWidth - rect.right))}px`;
+  page.style.top = `${Math.max(0, Math.round(rect.top))}px`;
+  page.style.bottom = '0px';
+  page.style.borderRadius = '0';
+}
+
 function go(route: RouteState) {
   sessionStorage.setItem('mf-simple-route', JSON.stringify(route));
 
@@ -179,17 +228,21 @@ function SimpleNavigation() {
   useEffect(() => {
     const sync = () => {
       suppressLegacyNavigation();
-      setRoute(inferRoute());
+      const next = inferRoute();
+      syncIncomePayrollLayer(next.primary === 'income');
+      setRoute(next);
     };
 
     sync();
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
     const timer = window.setInterval(sync, 500);
+    window.addEventListener('resize', sync);
 
     return () => {
       observer.disconnect();
       window.clearInterval(timer);
+      window.removeEventListener('resize', sync);
     };
   }, []);
 
