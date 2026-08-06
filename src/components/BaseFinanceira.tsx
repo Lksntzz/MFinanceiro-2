@@ -1,30 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { UserSettings, FixedBill, DailyBill, FinanceSummary } from '../types';
-import { supabase } from '../lib/supabase';
-import { calculatePayrollFromGross } from '../lib/payroll-tax';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Activity, Banknote, Calendar, CheckCircle2, LayoutGrid, Plus, Save, Trash2, Wallet, X } from 'lucide-react';
+
 import { CATEGORIES } from '../lib/constants';
-import { format, addMonths } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { 
-  ShieldCheck, 
-  Wallet, 
-  Banknote, 
-  Calendar, 
-  MinusCircle, 
-  PlusCircle, 
-  Calculator, 
-  Save,
-  Info,
-  CheckCircle2,
-  Clock,
-  Plus,
-  Activity,
-  TrendingDown,
-  X,
-  Check,
-  Circle,
-  LayoutGrid
-} from 'lucide-react';
+import { formatCurrency } from '../lib/formatters';
+import { calculatePayrollFromGross } from '../lib/payroll-tax';
+import { supabase } from '../lib/supabase';
+import { DailyBill, FinanceSummary, FixedBill, UserSettings } from '../types';
 
 interface BaseFinanceiraProps {
   settings: UserSettings;
@@ -37,946 +18,276 @@ interface BaseFinanceiraProps {
   initialTab?: 'income' | 'adjustments' | 'bills' | 'operating' | 'budget';
 }
 
-type BenefitEntry = {
-  id: string;
-  name: string;
-  amount: number;
-  payrollDeducted: boolean;
-};
+type Tab = 'income' | 'adjustments' | 'bills' | 'operating' | 'budget';
+type Modal = 'fixed' | 'daily' | 'budget' | null;
 
-const BENEFITS_STORAGE_KEY_PREFIX = 'mfinanceiro-benefits';
-const PAYDAY_SPLIT_STORAGE_KEY_PREFIX = 'mfinanceiro-payday-split';
+const money = (value: number) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-function getBenefitsStorageKey(userId: string): string {
-  return `${BENEFITS_STORAGE_KEY_PREFIX}:${userId}`;
-}
-
-function getPaydaySplitStorageKey(userId: string): string {
-  return `${PAYDAY_SPLIT_STORAGE_KEY_PREFIX}:${userId}`;
-}
-
-function sanitizeBenefitEntries(raw: unknown): BenefitEntry[] {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((item: any) => ({
-      id: String(item?.id || ''),
-      name: String(item?.name || '').trim(),
-      amount: Math.max(0, Number(item?.amount) || 0),
-      payrollDeducted: Boolean(item?.payrollDeducted),
-    }))
-    .filter(item => item.id && item.name && item.amount > 0);
-}
-
-export default function BaseFinanceira({ 
-  settings, 
-  onSave, 
-  fixedBills, 
-  dailyBills, 
-  summary, 
+export default function BaseFinanceira({
+  settings,
+  onSave,
+  fixedBills,
+  dailyBills,
+  summary,
   onToggleBillStatus,
   onRefresh,
-  initialTab
+  initialTab,
 }: BaseFinanceiraProps) {
-  const [formData, setFormData] = useState<UserSettings>(settings);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'income' | 'adjustments' | 'bills' | 'operating' | 'budget'>(initialTab || 'income');
-  
-  useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab]);
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'income');
+  const [form, setForm] = useState<UserSettings>(settings);
+  const [extraDeductions, setExtraDeductions] = useState(0);
   const [budgets, setBudgets] = useState<any[]>([]);
-  const [newBudget, setNewBudget] = useState({ category: CATEGORIES[1], amount: '' });
-  const [benefitEntries, setBenefitEntries] = useState<BenefitEntry[]>([]);
-  const [paydaySplit, setPaydaySplit] = useState({ payday1Percent: 50, payday2Percent: 50 });
-  const [newBenefit, setNewBenefit] = useState({
-    name: '',
-    amount: '',
-    payrollDeducted: false,
-  });
-  
-  const [newFixed, setNewFixed] = useState({
-    name: '',
-    amount: '',
-    category: CATEGORIES[6] || 'Contas Fixas',
-    due_day: '5',
-    keywords: ''
-  });
-  
-  const [newDaily, setNewDaily] = useState({
-    name: '',
-    amount: '',
-    average_amount: '',
-    category: CATEGORIES[1] || 'Alimentação',
-    frequency: 'weekly' as 'weekly' | 'monthly'
-  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [modal, setModal] = useState<Modal>(null);
+  const [page, setPage] = useState(1);
+  const [fixedForm, setFixedForm] = useState({ name: '', amount: '', due_day: '5', category: CATEGORIES[0] || 'Moradia' });
+  const [dailyForm, setDailyForm] = useState({ name: '', average_amount: '', frequency: 'weekly', category: CATEGORIES[1] || 'Alimentação' });
+  const [budgetForm, setBudgetForm] = useState({ category: CATEGORIES[1] || 'Alimentação', limit_amount: '' });
 
   useEffect(() => {
-    setFormData(settings);
+    setForm(settings);
+    const payroll = calculatePayrollFromGross(Number(settings.gross_salary || 0), new Date());
+    setExtraDeductions(Math.max(0, Number(settings.deductions || 0) - payroll.totalDeductions));
   }, [settings]);
 
   useEffect(() => {
-    if (!settings?.user_id || typeof window === 'undefined') return;
-
-    const storageKey = getBenefitsStorageKey(settings.user_id);
-    const raw = window.localStorage.getItem(storageKey);
-    if (raw) {
-      try {
-        const parsed = sanitizeBenefitEntries(JSON.parse(raw));
-        setBenefitEntries(parsed);
-        return;
-      } catch {
-        // fallback abaixo
-      }
-    }
-
-    if ((settings.benefits || 0) > 0) {
-      setBenefitEntries([
-        {
-          id: `legacy-${settings.user_id}`,
-          name: 'Benefícios gerais',
-          amount: settings.benefits || 0,
-          payrollDeducted: false,
-        },
-      ]);
-    } else {
-      setBenefitEntries([]);
-    }
-  }, [settings.user_id, settings.benefits]);
-
-  useEffect(() => {
-    if (!settings?.user_id || typeof window === 'undefined') return;
-    const storageKey = getBenefitsStorageKey(settings.user_id);
-    window.localStorage.setItem(storageKey, JSON.stringify(benefitEntries));
-  }, [benefitEntries, settings.user_id]);
-
-  useEffect(() => {
-    if (!settings?.user_id || typeof window === 'undefined') return;
-    const storageKey = getPaydaySplitStorageKey(settings.user_id);
-    const raw = window.localStorage.getItem(storageKey);
-
-    if (!raw) {
-      setPaydaySplit({ payday1Percent: 50, payday2Percent: 50 });
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-      const payday1Percent = Math.min(100, Math.max(0, Number(parsed?.payday1Percent) || 50));
-      const payday2PercentRaw = Number(parsed?.payday2Percent);
-      const payday2Percent = Number.isFinite(payday2PercentRaw)
-        ? Math.min(100, Math.max(0, payday2PercentRaw))
-        : Math.max(0, 100 - payday1Percent);
-      const total = payday1Percent + payday2Percent;
-
-      if (total > 0) {
-        const normalizedPayday1 = Math.round((payday1Percent / total) * 100);
-        setPaydaySplit({
-          payday1Percent: normalizedPayday1,
-          payday2Percent: 100 - normalizedPayday1,
-        });
-      } else {
-        setPaydaySplit({ payday1Percent: 50, payday2Percent: 50 });
-      }
-    } catch {
-      setPaydaySplit({ payday1Percent: 50, payday2Percent: 50 });
-    }
-  }, [settings.user_id]);
-
-  const handleChange = (field: keyof UserSettings, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  useEffect(() => {
-    fetchBudgets();
-  }, [settings.user_id]);
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   async function fetchBudgets() {
     if (!settings.user_id) return;
+    const { data, error: queryError } = await supabase
+      .from('mf_budgets')
+      .select('*')
+      .eq('user_id', settings.user_id)
+      .order('category');
+    if (queryError) {
+      setError(queryError.message);
+      return;
+    }
+    setBudgets(data || []);
+  }
+
+  useEffect(() => { void fetchBudgets(); }, [settings.user_id]);
+
+  const payroll = useMemo(
+    () => calculatePayrollFromGross(Number(form.gross_salary || 0), new Date()),
+    [form.gross_salary],
+  );
+  const totalDeductions = payroll.totalDeductions + Math.max(0, extraDeductions);
+  const estimatedNet = Math.max(0, payroll.netSalary - Math.max(0, extraDeductions));
+  const realBase = estimatedNet + Math.max(0, Number(form.benefits || 0));
+  const totalFixed = fixedBills.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const pendingFixed = fixedBills.filter((item) => item.status !== 'paid').reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalDailyMonthly = dailyBills.reduce((sum, item) => {
+    const amount = Number(item.average_amount || 0);
+    return sum + (item.frequency === 'weekly' ? amount * 4.33 : amount);
+  }, 0);
+  const totalBudget = budgets.reduce((sum, item) => sum + Number(item.limit_amount || 0), 0);
+
+  const availableTabs = initialTab === 'bills'
+    ? ([['bills', 'Contas fixas', Calendar], ['operating', 'Gastos estimados', Activity], ['budget', 'Orçamentos', LayoutGrid]] as const)
+    : ([['income', 'Renda e ciclo', Banknote], ['adjustments', 'Ajustes', Wallet]] as const);
+
+  const activeItems = activeTab === 'bills' ? fixedBills : activeTab === 'operating' ? dailyBills : activeTab === 'budget' ? budgets : [];
+  const pageSize = activeTab === 'bills' ? 5 : 6;
+  const pages = Math.max(1, Math.ceil(activeItems.length / pageSize));
+  const visibleItems = activeItems.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => { setPage(1); }, [activeTab]);
+  useEffect(() => { if (page > pages) setPage(pages); }, [page, pages]);
+
+  function change(field: keyof UserSettings, value: any) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function changeFirstPercentage(value: number) {
+    const first = Math.max(0, Math.min(100, Math.round(value || 0)));
+    setForm((current) => ({ ...current, payday_1_percentage: first, payday_2_percentage: 100 - first }));
+  }
+
+  function changeSecondPercentage(value: number) {
+    const second = Math.max(0, Math.min(100, Math.round(value || 0)));
+    setForm((current) => ({ ...current, payday_1_percentage: 100 - second, payday_2_percentage: second }));
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
     try {
-      const { data, error } = await supabase.from('mf_budgets').select('*').eq('user_id', settings.user_id);
-      if (!error) setBudgets(data || []);
-    } catch (err) {
-      console.error('Error fetching budgets:', err);
+      const payday1 = Number(form.payday_1 || 0);
+      const payday2 = Number(form.payday_2 || 0);
+      if (payday1 < 1 || payday1 > 31) throw new Error('O dia principal de pagamento deve ficar entre 1 e 31.');
+      if (form.payday_cycle === 'biweekly' && (payday2 < 1 || payday2 > 31)) throw new Error('O segundo dia de pagamento deve ficar entre 1 e 31.');
+
+      await onSave({
+        ...form,
+        net_salary_estimated: estimatedNet,
+        deductions: totalDeductions,
+        payday_2: form.payday_cycle === 'biweekly' ? payday2 : undefined,
+        payday_1_percentage: form.payday_cycle === 'biweekly' ? Number(form.payday_1_percentage ?? 50) : 100,
+        payday_2_percentage: form.payday_cycle === 'biweekly' ? Number(form.payday_2_percentage ?? 50) : 0,
+      });
+      setMessage('Preferências atualizadas.');
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Não foi possível salvar as preferências.');
+    } finally {
+      setSaving(false);
     }
   }
 
-  const handleAddBudget = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supabase) return;
+  async function addFixed(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
     try {
-      const { error } = await supabase.from('mf_budgets').upsert({
+      const amount = Number(fixedForm.amount);
+      const dueDay = Number(fixedForm.due_day);
+      if (!fixedForm.name.trim()) throw new Error('Informe o nome da conta.');
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Informe um valor válido.');
+      if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) throw new Error('O vencimento deve ficar entre 1 e 31.');
+
+      const { error: insertError } = await supabase.from('mf_fixed_bills').insert({
         user_id: settings.user_id,
-        category: newBudget.category,
-        limit_amount: parseFloat(newBudget.amount)
-      }, { onConflict: 'user_id,category' });
-
-      if (error) throw error;
-      setNewBudget({ ...newBudget, amount: '' });
-      fetchBudgets();
-    } catch (err) {
-      console.error('Error adding budget:', err);
-    }
-  };
-
-  const handleDeleteBudget = async (id: string) => {
-    try {
-      await supabase.from('mf_budgets').delete().eq('id', id);
-      fetchBudgets();
-    } catch (err) {
-      console.error('Error deleting budget:', err);
-    }
-  };
-
-  const payroll = useMemo(
-    () => calculatePayrollFromGross(formData.gross_salary || 0, new Date()),
-    [formData.gross_salary]
-  );
-  const totalBenefitsOffered = useMemo(
-    () => benefitEntries.reduce((sum, item) => sum + item.amount, 0),
-    [benefitEntries]
-  );
-  const totalBenefitsPayrollDiscount = useMemo(
-    () => benefitEntries.filter(item => item.payrollDeducted).reduce((sum, item) => sum + item.amount, 0),
-    [benefitEntries]
-  );
-  const calculatedDeductions = payroll.totalDeductions + totalBenefitsPayrollDiscount;
-  const estimatedNetSalary = Math.max(0, payroll.netSalary - totalBenefitsPayrollDiscount);
-  const benefitsNetAddition = Math.max(0, totalBenefitsOffered - totalBenefitsPayrollDiscount);
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      if (typeof window !== 'undefined' && settings?.user_id) {
-        const storageKey = getPaydaySplitStorageKey(settings.user_id);
-        window.localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            payday1Percent: paydaySplit.payday1Percent,
-            payday2Percent: paydaySplit.payday2Percent,
-          })
-        );
-      }
-
-      await onSave({
-        ...formData,
-        deductions: calculatedDeductions,
-        net_salary_estimated: estimatedNetSalary,
-        benefits: totalBenefitsOffered
-      });
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-    } catch (error) {
-      console.error('Error saving settings:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const netRealBase = estimatedNetSalary + totalBenefitsOffered;
-
-  const totalFixed = useMemo(() => fixedBills.reduce((sum, b) => sum + Number(b.amount || 0), 0), [fixedBills]);
-  const totalDaily = useMemo(() => dailyBills.reduce((sum, b) => sum + Number(b.average_amount || 0), 0), [dailyBills]);
-  const totalCommitted = totalFixed + totalDaily;
-
-  const handleAddFixed = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supabase) {
-      alert('Supabase não configurado. Não foi possível salvar a conta fixa.');
-      return;
-    }
-    try {
-      const keywordsArray = newFixed.keywords
-        .split(',')
-        .map(k => k.trim())
-        .filter(k => k !== '');
-
-      const { error } = await supabase.from('mf_fixed_bills').insert({
-        user_id: settings.user_id,
-        name: newFixed.name,
-        amount: parseFloat(newFixed.amount),
-        category: newFixed.category,
-        due_day: parseInt(newFixed.due_day),
-        status: 'pending',
-        keywords: keywordsArray
-      });
-
-      if (error) {
-        if (error.code === 'PGRST205') {
-          alert('Tabela mf_fixed_bills não encontrada. Crie-a no Supabase para salvar permanentemente.');
-          return;
-        }
-        throw error;
-      }
-      
-      setNewFixed({ name: '', amount: '', category: 'Moradia', due_day: '5', keywords: '' });
-      onRefresh();
-    } catch (err: any) {
-      console.error('Error adding fixed bill:', err);
-      alert(`Erro: ${err.message || 'Falha ao salvar'}`);
-    }
-  };
-
-  const handleAddDaily = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supabase) {
-      alert('Supabase não configurado. Não foi possível salvar a conta diária.');
-      return;
-    }
-    try {
-      const { error } = await supabase.from('mf_daily_bills').insert({
-        user_id: settings.user_id,
-        name: newDaily.name,
-        average_amount: parseFloat(newDaily.average_amount),
-        category: newDaily.category,
-        frequency: newDaily.frequency
-      });
-
-      if (error) {
-        if (error.code === 'PGRST205') {
-          alert('Tabela mf_daily_bills não encontrada. Crie-a no Supabase para salvar permanentemente.');
-          return;
-        }
-        throw error;
-      }
-
-      setNewDaily({ name: '', amount: '', average_amount: '', category: 'Alimentação', frequency: 'weekly' });
-      onRefresh();
-    } catch (err: any) {
-      console.error('Error adding daily bill:', err);
-      alert(`Erro: ${err.message || 'Falha ao salvar'}`);
-    }
-  };
-
-  const handleAddBenefit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newBenefit.name.trim();
-    const amount = Math.max(0, Number(newBenefit.amount) || 0);
-    if (!name || amount <= 0) return;
-
-    setBenefitEntries(prev => [
-      ...prev,
-      {
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        name,
+        name: fixedForm.name.trim(),
         amount,
-        payrollDeducted: newBenefit.payrollDeducted,
-      },
-    ]);
-    setNewBenefit({ name: '', amount: '', payrollDeducted: false });
-  };
+        due_day: dueDay,
+        category: fixedForm.category,
+        status: 'pending',
+      });
+      if (insertError) throw insertError;
+      setFixedForm({ name: '', amount: '', due_day: '5', category: CATEGORIES[0] || 'Moradia' });
+      setModal(null);
+      setMessage('Conta fixa adicionada.');
+      onRefresh();
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Não foi possível adicionar a conta fixa.');
+    } finally { setSaving(false); }
+  }
 
-  const handleToggleBenefitPayrollDeducted = (id: string) => {
-    setBenefitEntries(prev =>
-      prev.map(item =>
-        item.id === id ? { ...item, payrollDeducted: !item.payrollDeducted } : item
-      )
-    );
-  };
+  async function addDaily(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const amount = Number(dailyForm.average_amount);
+      if (!dailyForm.name.trim()) throw new Error('Informe o nome do gasto estimado.');
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Informe um valor válido.');
 
-  const handleDeleteBenefit = (id: string) => {
-    setBenefitEntries(prev => prev.filter(item => item.id !== id));
-  };
+      const { error: insertError } = await supabase.from('mf_daily_bills').insert({
+        user_id: settings.user_id,
+        name: dailyForm.name.trim(),
+        average_amount: amount,
+        frequency: dailyForm.frequency,
+        category: dailyForm.category,
+      });
+      if (insertError) throw insertError;
+      setDailyForm({ name: '', average_amount: '', frequency: 'weekly', category: CATEGORIES[1] || 'Alimentação' });
+      setModal(null);
+      setMessage('Gasto estimado adicionado.');
+      onRefresh();
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Não foi possível adicionar o gasto estimado.');
+    } finally { setSaving(false); }
+  }
 
-  const handleDeleteFixed = async (id: string) => {
-    if (!supabase) {
-      alert('Supabase não configurado. Não foi possível apagar a conta fixa.');
+  async function addBudget(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const limit = Number(budgetForm.limit_amount);
+      if (!Number.isFinite(limit) || limit <= 0) throw new Error('Informe um limite válido.');
+      const { error: upsertError } = await supabase.from('mf_budgets').upsert({
+        user_id: settings.user_id,
+        category: budgetForm.category,
+        limit_amount: limit,
+      }, { onConflict: 'user_id,category' });
+      if (upsertError) throw upsertError;
+      setBudgetForm({ ...budgetForm, limit_amount: '' });
+      setModal(null);
+      setMessage('Orçamento atualizado.');
+      await fetchBudgets();
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Não foi possível salvar o orçamento.');
+    } finally { setSaving(false); }
+  }
+
+  async function remove(table: string, id: string) {
+    setError(null);
+    const { error: deleteError } = await supabase
+      .from(table)
+      .delete()
+      .eq('id', id)
+      .eq('user_id', settings.user_id);
+    if (deleteError) {
+      setError(deleteError.message);
       return;
     }
-    try {
-      const { error } = await supabase.from('mf_fixed_bills').delete().eq('id', id);
-      if (error) throw error;
-      onRefresh();
-    } catch (err) {
-      console.error('Error deleting fixed bill:', err);
-    }
-  };
-
-  const handleDeleteDaily = async (id: string) => {
-    if (!supabase) {
-      alert('Supabase não configurado. Não foi possível apagar a conta diária.');
-      return;
-    }
-    try {
-      const { error } = await supabase.from('mf_daily_bills').delete().eq('id', id);
-      if (error) throw error;
-      onRefresh();
-    } catch (err) {
-      console.error('Error deleting daily bill:', err);
-    }
-  };
-
-  const handlePayday1PercentChange = (value: string) => {
-    const parsed = Math.min(100, Math.max(0, Number(value) || 0));
-    const normalized = Math.round(parsed);
-    setPaydaySplit({
-      payday1Percent: normalized,
-      payday2Percent: 100 - normalized,
-    });
-  };
-
-  const handlePayday2PercentChange = (value: string) => {
-    const parsed = Math.min(100, Math.max(0, Number(value) || 0));
-    const normalized = Math.round(parsed);
-    setPaydaySplit({
-      payday1Percent: 100 - normalized,
-      payday2Percent: normalized,
-    });
-  };
-
-  const totalPendingFixed = useMemo(() => fixedBills.filter(b => b.status === 'pending').reduce((sum, b) => sum + Number(b.amount || 0), 0), [fixedBills]);
-  const isBalanceCritical = (formData.current_balance || 0) < totalPendingFixed;
+    if (table === 'mf_budgets') await fetchBudgets();
+    else onRefresh();
+  }
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-[500px] animate-fade-in text-white overflow-hidden">
-      {/* Sidebar de Navegação Interna */}
-      <div className="w-full md:w-64 shrink-0 flex flex-col gap-2">
-        {(initialTab === 'bills' || !initialTab) && (
-          <>
-            <button 
-              onClick={() => setActiveTab('bills')}
-              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'bills' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-            >
-              <Calendar size={18} />
-              <div className="flex-1">
-                <div className="text-sm font-bold">Contas Fixas</div>
-                <div className="text-[10px] opacity-60">Compromissos Mensais</div>
-              </div>
-            </button>
+    <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden animate-fade-in text-white">
+      <nav className="flex shrink-0 items-center gap-2">
+        {availableTabs.map(([id, label, Icon]) => (
+          <button key={id} onClick={() => setActiveTab(id)} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${activeTab === id ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/50'}`}><Icon size={15} /> {label}</button>
+        ))}
+      </nav>
 
-            <button 
-              onClick={() => setActiveTab('operating')}
-              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'operating' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-            >
-              <Activity size={18} />
-              <div className="flex-1">
-                <div className="text-sm font-bold">Gastos Estimados</div>
-                <div className="text-[10px] opacity-60">Rateio Operacional</div>
-              </div>
-            </button>
+      {error && <div className="shrink-0 flex items-center rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">{error}<button onClick={() => setError(null)} className="ml-auto"><X size={14} /></button></div>}
+      {message && <div className="shrink-0 rounded-xl border border-green-500/20 bg-green-500/10 px-4 py-2 text-xs text-green-400">{message}</div>}
 
-            <button 
-              onClick={() => setActiveTab('budget')}
-              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'budget' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-            >
-              <LayoutGrid size={18} />
-              <div className="flex-1">
-                <div className="text-sm font-bold">Orçamentos</div>
-                <div className="text-[10px] opacity-60">Limites por Categoria</div>
-              </div>
-            </button>
-          </>
-        )}
-
-        {(initialTab === 'income' || !initialTab) && (
-          <>
-            <button 
-              onClick={() => setActiveTab('income')}
-              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'income' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-            >
-              <Banknote size={18} />
-              <div className="flex-1">
-                <div className="text-sm font-bold">Renda & Ciclo</div>
-                <div className="text-[10px] opacity-60">Salário e Pagamento</div>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('adjustments')}
-              className={`flex items-center gap-3 p-4 rounded-2xl transition-all text-left border ${activeTab === 'adjustments' ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10 hover:text-white'}`}
-            >
-              <PlusCircle size={18} />
-              <div className="flex-1">
-                <div className="text-sm font-bold">Ajustes & Benefícios</div>
-                <div className="text-[10px] opacity-60">Descontos e Extras</div>
-              </div>
-            </button>
-          </>
-        )}
-
-        <div className="mt-auto pt-4 space-y-3">
-          <div className="glass-card !p-4 bg-brand-primary/5 border-brand-primary/20">
-            <div className="text-[10px] text-brand-primary uppercase font-bold mb-1">Base Real Estimada</div>
-            <div className="text-xl font-bold tracking-tight">R$ {(netRealBase || 0).toLocaleString('pt-BR')}</div>
+      {activeTab === 'income' && (
+        <section className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4 overflow-hidden">
+          <div className="xl:col-span-7 glass-card !p-5 grid content-start grid-cols-2 gap-4">
+            <Field label="Salário bruto"><input type="number" min="0" step="0.01" value={form.gross_salary || 0} onChange={(e) => change('gross_salary', Number(e.target.value || 0))} /></Field>
+            <ReadOnly label="Líquido estimado" value={money(estimatedNet)} />
+            <Field label="Ciclo"><select value={form.payday_cycle || 'monthly'} onChange={(e) => change('payday_cycle', e.target.value)}><option value="monthly">Mensal</option><option value="biweekly">Quinzenal</option></select></Field>
+            <Field label="Primeiro pagamento"><input type="number" min="1" max="31" value={form.payday_1 || ''} onChange={(e) => change('payday_1', Number(e.target.value))} /></Field>
+            {form.payday_cycle === 'biweekly' && <><Field label="Percentual 1"><input type="number" min="0" max="100" value={form.payday_1_percentage ?? 50} onChange={(e) => changeFirstPercentage(Number(e.target.value))} /></Field><Field label="Segundo pagamento"><input type="number" min="1" max="31" value={form.payday_2 || ''} onChange={(e) => change('payday_2', Number(e.target.value))} /></Field><Field label="Percentual 2"><input type="number" min="0" max="100" value={form.payday_2_percentage ?? 50} onChange={(e) => changeSecondPercentage(Number(e.target.value))} /></Field></>}
           </div>
-          
-          <button 
-            onClick={handleSave}
-            disabled={isSaving}
-            className="w-full bg-brand-primary text-black py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:brightness-110 transition-all disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]"
-          >
-            {isSaving ? <Clock className="animate-spin" size={18} /> : (showSuccess ? <CheckCircle2 size={18} /> : <Save size={18} />)}
-            {isSaving ? "Salvando..." : (showSuccess ? "Configuração Salva" : "Aplicar Mudanças")}
-          </button>
-        </div>
-      </div>
+          <aside className="xl:col-span-5 glass-card !p-5 flex flex-col gap-3"><h3 className="text-sm font-bold">Resumo salarial estimado</h3><Row label="INSS e IRRF estimados" value={money(payroll.totalDeductions)} /><Row label="Descontos adicionais" value={money(extraDeductions)} /><Row label="Benefícios" value={money(Number(form.benefits || 0))} /><Row label="Base real estimada" value={money(realBase)} highlight /><button onClick={saveSettings} disabled={saving} className="mt-auto flex items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-sm font-bold text-black disabled:opacity-50"><Save size={16} /> {saving ? 'Salvando...' : 'Aplicar mudanças'}</button></aside>
+        </section>
+      )}
 
-      {/* Conteúdo Principal */}
-      <div className="flex-1 overflow-y-auto no-scrollbar pr-1">
-        {activeTab === 'income' && (
-          <div className="space-y-6">
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div>
-                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                  <Banknote className="text-brand-primary" size={20} /> Estrutura Salarial
-                </h3>
-                <p className="text-xs text-white/40">Defina sua renda bruta e veja o cálculo estimado do seu líquido.</p>
-              </div>
+      {activeTab === 'adjustments' && (
+        <section className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden">
+          <div className="glass-card !p-5 grid content-start grid-cols-1 gap-4"><h3 className="text-sm font-bold">Ajustes de renda</h3><Field label="Benefícios mensais"><input type="number" min="0" step="0.01" value={form.benefits || 0} onChange={(e) => change('benefits', Number(e.target.value || 0))} /></Field><Field label="Descontos adicionais"><input type="number" min="0" step="0.01" value={extraDeductions} onChange={(e) => setExtraDeductions(Number(e.target.value || 0))} /></Field><button onClick={saveSettings} disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-sm font-bold text-black disabled:opacity-50"><Save size={16} /> Salvar ajustes</button></div>
+          <div className="glass-card !p-5 flex flex-col gap-3"><h3 className="text-sm font-bold">Impacto estimado</h3><Row label="Líquido após descontos" value={money(estimatedNet)} /><Row label="Benefícios adicionados" value={money(Number(form.benefits || 0))} /><Row label="Base real" value={money(realBase)} highlight /><p className="mt-auto text-[10px] text-white/35">Os cálculos tributários são estimativas e podem diferir da folha oficial.</p></div>
+        </section>
+      )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] text-white/60 uppercase font-bold">Salário Bruto Mensal</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-white/20">R$</span>
-                    <input 
-                      type="number" 
-                      value={formData.gross_salary}
-                      onChange={(e) => handleChange('gross_salary', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 outline-none focus:border-brand-primary transition-all font-bold text-lg"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] text-brand-primary uppercase font-bold">Salário Líquido (Estimado)</label>
-                  <div className="w-full bg-brand-primary/5 border border-brand-primary/20 rounded-xl py-3 px-4 font-bold text-lg text-brand-primary">
-                    R$ {estimatedNetSalary.toLocaleString('pt-BR')}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div>
-                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                  <Calendar className="text-brand-primary" size={20} /> Ciclo de Recebimento
-                </h3>
-                <p className="text-xs text-white/40">Como você recebe seu salário ao longo do mês?</p>
-              </div>
-
-              <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 max-w-sm">
-                <button 
-                  onClick={() => handleChange('payday_cycle', 'monthly')}
-                  className={`flex-1 py-3 rounded-lg text-xs font-bold transition-all ${formData.payday_cycle === 'monthly' ? 'bg-brand-primary text-black shadow-lg' : 'text-white/40 hover:text-white'}`}
-                >
-                  Mensal (1x)
-                </button>
-                <button 
-                  onClick={() => handleChange('payday_cycle', 'biweekly')}
-                  className={`flex-1 py-3 rounded-lg text-xs font-bold transition-all ${formData.payday_cycle === 'biweekly' ? 'bg-brand-primary text-black shadow-lg' : 'text-white/40 hover:text-white'}`}
-                >
-                  Quinzenal (2x)
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6 p-4 bg-white/5 rounded-2xl border border-white/5">
-                <div className="space-y-3">
-                  <label className="text-[10px] text-white/40 uppercase font-bold block">{formData.payday_cycle === 'biweekly' ? 'Primeiro Pagamento' : 'Dia do Pagamento'}</label>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white/20">DIA</span>
-                      <input 
-                        type="number" 
-                        min="1" max="31"
-                        value={formData.payday_1 || ''}
-                        onChange={(e) => handleChange('payday_1', e.target.value === '' ? '' : parseInt(e.target.value))}
-                        className="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-brand-primary transition-all font-bold"
-                      />
-                    </div>
-                    {formData.payday_cycle === 'biweekly' && (
-                      <div className="relative shrink-0">
-                        <input
-                          type="number"
-                          min="0" max="100"
-                          value={paydaySplit.payday1Percent}
-                          onChange={(e) => handlePayday1PercentChange(e.target.value)}
-                          className="w-20 bg-black/20 border border-white/10 rounded-xl py-3 px-3 outline-none focus:border-brand-primary text-center font-bold"
-                        />
-                        <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] bg-brand-primary text-black px-1 rounded font-bold">%</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {formData.payday_cycle === 'biweekly' && (
-                  <div className="space-y-3">
-                    <label className="text-[10px] text-white/40 uppercase font-bold block">Segundo Pagamento</label>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white/20">DIA</span>
-                        <input 
-                          type="number" 
-                          min="1" max="31"
-                          value={formData.payday_2 || ''}
-                          onChange={(e) => handleChange('payday_2', e.target.value === '' ? '' : parseInt(e.target.value))}
-                          className="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-brand-primary transition-all font-bold"
-                        />
-                      </div>
-                      <div className="relative shrink-0">
-                        <input
-                          type="number"
-                          min="0" max="100"
-                          value={paydaySplit.payday2Percent}
-                          onChange={(e) => handlePayday2PercentChange(e.target.value)}
-                          className="w-20 bg-black/20 border border-white/10 rounded-xl py-3 px-3 outline-none focus:border-brand-primary text-center font-bold"
-                        />
-                        <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] bg-brand-primary text-black px-1 rounded font-bold">%</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
+      {(activeTab === 'bills' || activeTab === 'operating' || activeTab === 'budget') && (
+        <section className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+          <div className="grid shrink-0 grid-cols-2 lg:grid-cols-4 gap-3"><Metric label="Contas fixas" value={money(totalFixed)} /><Metric label="Pendentes" value={money(pendingFixed)} danger={pendingFixed > Number(form.current_balance || 0)} /><Metric label="Estimados/mês" value={money(totalDailyMonthly)} /><Metric label="Orçamentos" value={money(totalBudget)} /></div>
+          <div className="glass-card !p-4 flex flex-1 min-h-0 flex-col overflow-hidden">
+            <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">{activeTab === 'bills' ? 'Contas fixas' : activeTab === 'operating' ? 'Gastos estimados' : 'Limites por categoria'}</h3><p className="text-[9px] uppercase text-white/30">{activeItems.length} registro(s)</p></div><button onClick={() => setModal(activeTab === 'bills' ? 'fixed' : activeTab === 'operating' ? 'daily' : 'budget')} className="flex items-center gap-2 rounded-xl bg-brand-primary px-3 py-2 text-xs font-bold text-black"><Plus size={14} /> Adicionar</button></div>
+            {visibleItems.length === 0 ? <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-white/30">Nenhum registro cadastrado.</div> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 content-start">{visibleItems.map((item: any) => activeTab === 'bills' ? <BillCard key={item.id} item={item} onToggle={onToggleBillStatus} onDelete={() => remove('mf_fixed_bills', item.id)} /> : activeTab === 'operating' ? <DailyCard key={item.id} item={item} onDelete={() => remove('mf_daily_bills', item.id)} /> : <BudgetCard key={item.id} item={item} onDelete={() => remove('mf_budgets', item.id)} />)}</div>}
+            {pages > 1 && <Pager page={page} pages={pages} onChange={setPage} />}
           </div>
-        )}
+          {summary && <div className="shrink-0 text-[10px] text-white/30">Limite diário atual: {formatCurrency(Number(summary.dailyLimit || 0), false)} • Saldo: {formatCurrency(Number(form.current_balance || 0), false)}</div>}
+        </section>
+      )}
 
-        {activeTab === 'adjustments' && (
-          <div className="space-y-6">
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div>
-                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                  <MinusCircle className="text-red-400" size={20} /> Descontos Automáticos
-                </h3>
-                <p className="text-xs text-white/40">Cálculos baseados nas tabelas oficiais de INSS e IRRF 2024.</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-[10px] text-white/40 uppercase font-bold mb-1">INSS</div>
-                  <div className="text-lg font-bold text-red-400">- R$ {payroll.inss.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-                </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-[10px] text-white/40 uppercase font-bold mb-1">IRRF</div>
-                  <div className="text-lg font-bold text-red-400">- R$ {payroll.irrf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-                </div>
-                <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
-                  <div className="text-[10px] text-red-400 uppercase font-bold mb-1">Total Taxas</div>
-                  <div className="text-lg font-bold">- R$ {payroll.totalDeductions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-                </div>
-              </div>
-            </section>
-
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                    <PlusCircle className="text-green-400" size={20} /> Benefícios & Extras
-                  </h3>
-                  <p className="text-xs text-white/40">VR, VA, Combustível ou qualquer entrada fixa extra.</p>
-                </div>
-                <div className="text-right">
-                  <div className="text-[10px] text-green-400 uppercase font-bold tracking-widest">Saldo de Benefícios</div>
-                  <div className="text-xl font-bold">R$ {totalBenefitsOffered.toLocaleString('pt-BR')}</div>
-                </div>
-              </div>
-
-              <form onSubmit={handleAddBenefit} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Nome do Benefício</label>
-                    <input
-                      type="text"
-                      value={newBenefit.name}
-                      onChange={(e) => setNewBenefit(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="Ex: Vale Refeição"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Valor Mensal</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={newBenefit.amount}
-                      onChange={(e) => setNewBenefit(prev => ({ ...prev, amount: e.target.value }))}
-                      placeholder="0,00"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-3 cursor-pointer group">
-                    <div className={`h-5 w-5 rounded-md border flex items-center justify-center transition-all ${newBenefit.payrollDeducted ? 'bg-red-500 border-red-500' : 'bg-white/5 border-white/10 group-hover:border-white/30'}`}>
-                      {newBenefit.payrollDeducted && <Check size={14} className="text-white" />}
-                    </div>
-                    <input
-                      type="checkbox"
-                      className="hidden"
-                      checked={newBenefit.payrollDeducted}
-                      onChange={(e) => setNewBenefit(prev => ({ ...prev, payrollDeducted: e.target.checked }))}
-                    />
-                    <span className="text-xs text-white/60">Este benefício é descontado do salário?</span>
-                  </label>
-                  <button type="submit" className="bg-brand-primary text-black px-6 py-2 rounded-xl font-bold text-xs hover:brightness-110 shadow-lg">
-                    Adicionar
-                  </button>
-                </div>
-              </form>
-
-              <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto no-scrollbar pr-1">
-                {benefitEntries.length === 0 && <div className="text-center py-8 text-white/20 italic text-sm">Nenhum benefício cadastrado.</div>}
-                {benefitEntries.map(item => (
-                  <div key={item.id} className="group p-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${item.payrollDeducted ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
-                        {item.payrollDeducted ? <TrendingDown size={18} /> : <Plus size={18} />}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold">{item.name}</div>
-                        <div className={`text-[10px] ${item.payrollDeducted ? 'text-red-400' : 'text-green-400'}`}>
-                          {item.payrollDeducted ? 'Desconto em Folha' : 'Entrada Extra'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-sm font-bold">R$ {item.amount.toLocaleString('pt-BR')}</div>
-                      <button onClick={() => handleDeleteBenefit(item.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'bills' && (
-          <div className="space-y-6">
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                    <Calendar className="text-brand-primary" size={20} /> Contas Fixas
-                  </h3>
-                  <p className="text-xs text-white/40">Contas que ocorrem todo mês com dia certo de vencimento.</p>
-                </div>
-                <div className="text-right">
-                  <div className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Total Mensal</div>
-                  <div className="text-xl font-bold">R$ {totalFixed.toLocaleString('pt-BR')}</div>
-                </div>
-              </div>
-
-              <form onSubmit={handleAddFixed} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Nome da Conta</label>
-                    <input type="text" placeholder="Ex: Aluguel" required value={newFixed.name} onChange={e => setNewFixed({...newFixed, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Valor</label>
-                    <input type="number" placeholder="0,00" required value={newFixed.amount} onChange={e => setNewFixed({...newFixed, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Dia do Vencimento</label>
-                    <input type="number" min="1" max="31" required value={newFixed.due_day} onChange={e => setNewFixed({...newFixed, due_day: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
-                    <select value={newFixed.category} onChange={e => setNewFixed({...newFixed, category: e.target.value})} className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm [&>option]:bg-[#121212] [&>option]:text-white">
-                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-white/40 uppercase font-bold">Palavras-chave (Aliases) separadas por vírgula</label>
-                  <input type="text" placeholder="Ex: internet, claro, net fibra" value={newFixed.keywords} onChange={e => setNewFixed({...newFixed, keywords: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" />
-                  <p className="text-[10px] text-white/20">Isso ajuda a identificar o pagamento no seu extrato carregado.</p>
-                </div>
-                <button type="submit" className="w-full bg-brand-primary text-black py-3 rounded-xl font-bold text-sm tracking-wide hover:brightness-110 shadow-lg mt-2">
-                  Adicionar Conta Fixa
-                </button>
-              </form>
-
-              <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto no-scrollbar pr-1">
-                {fixedBills.length === 0 && <div className="text-center py-10 text-white/20 italic text-sm">Nenhuma conta fixa cadastrada.</div>}
-                {fixedBills.map(bill => {
-                  const processed = summary?.processedFixedBills?.find(p => p.id === bill.id);
-                  const status = processed?.reconciledStatus || 'pending';
-                  
-                  const today = new Date();
-                  const currentMonth = format(today, 'yyyy-MM');
-                  const isPaidManual = bill.last_paid_month === currentMonth;
-                  const isPaidAuto = status === 'paid_identified';
-                  const isPaid = isPaidManual || isPaidAuto;
-                  const isOverdue = status === 'overdue';
-
-                  const nextDate = new Date(today.getFullYear(), today.getMonth(), bill.due_day, 12, 0, 0, 0);
-                  const displayDate = isPaidManual ? addMonths(nextDate, 1) : nextDate;
-
-                  return (
-                    <div key={bill.id} className={`group p-4 rounded-xl border flex items-center justify-between transition-all ${isPaidAuto ? 'bg-brand-primary/5 border-brand-primary/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                      <div className="flex items-center gap-4">
-                        <div onClick={() => onToggleBillStatus(bill.id)} className={`h-10 w-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${isPaid ? 'bg-green-500/20 text-green-400' : (isOverdue ? 'bg-red-500/20 text-red-400' : 'bg-white/10 text-white/40 hover:bg-brand-primary/20 hover:text-brand-primary')}`}>
-                          {isPaid ? <CheckCircle2 size={20} /> : (isOverdue ? <Clock size={20} /> : <Circle size={20} />)}
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold flex items-center gap-2">
-                            {bill.name}
-                            {isPaidAuto && <span className="text-[8px] bg-brand-primary text-black px-1 rounded font-bold uppercase">Extrato</span>}
-                            {isOverdue && <span className="text-[8px] bg-red-500 text-white px-1 rounded font-bold uppercase">Vencida</span>}
-                          </div>
-                          <div className="text-[10px] text-white/40 flex items-center gap-1">
-                            <Clock size={10} /> Vence dia {bill.due_day} • {isPaidManual ? 'Próximo: ' : ''} {format(displayDate, "dd 'de' MMM", { locale: ptBR })}
-                          </div>
-                          {bill.keywords && bill.keywords.length > 0 && (
-                            <div className="text-[9px] text-white/20 mt-1">Tags: {bill.keywords.join(', ')}</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-sm font-bold">R$ {bill.amount.toLocaleString('pt-BR')}</div>
-                        <button onClick={() => handleDeleteFixed(bill.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                          <X size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'operating' && (
-          <div className="space-y-6">
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                    <Activity className="text-brand-secondary" size={20} /> Gastos Estimados
-                  </h3>
-                  <p className="text-xs text-white/40">Despesas variáveis mas recorrentes (Mercado, Lazer, etc).</p>
-                </div>
-                <div className="text-right">
-                  <div className="text-[10px] text-brand-secondary uppercase font-bold tracking-widest">Reserva Diária</div>
-                  <div className="text-xl font-bold">R$ {totalDaily.toLocaleString('pt-BR')}</div>
-                </div>
-              </div>
-
-              <form onSubmit={handleAddDaily} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Título do Gasto</label>
-                    <input type="text" placeholder="Ex: Mercado Mensal" required value={newDaily.name} onChange={e => setNewDaily({...newDaily, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Previsão de Valor</label>
-                    <input type="number" placeholder="0,00" required value={newDaily.average_amount} onChange={e => setNewDaily({...newDaily, average_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Frequência</label>
-                    <select value={newDaily.frequency} onChange={e => setNewDaily({...newDaily, frequency: e.target.value as 'weekly' | 'monthly'})} className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm [&>option]:bg-[#121212] [&>option]:text-white">
-                      <option value="weekly">Semanal</option>
-                      <option value="monthly">Mensal</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
-                    <select value={newDaily.category} onChange={e => setNewDaily({...newDaily, category: e.target.value})} className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-secondary text-sm [&>option]:bg-[#121212] [&>option]:text-white">
-                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <button type="submit" className="w-full bg-brand-secondary text-black py-3 rounded-xl font-bold text-sm tracking-wide hover:brightness-110 shadow-lg mt-2">
-                  Adicionar Previsão
-                </button>
-              </form>
-
-              <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto no-scrollbar pr-1">
-                {dailyBills.length === 0 && <div className="text-center py-10 text-white/20 italic text-sm">Nenhum gasto estimado cadastrado.</div>}
-                {dailyBills.map(bill => (
-                  <div key={bill.id} className="group p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-xl bg-brand-secondary/10 flex items-center justify-center text-brand-secondary">
-                        <TrendingDown size={20} />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold">{bill.name}</div>
-                        <div className="text-[10px] text-white/40">Frequência: {bill.frequency === 'weekly' ? 'Semanal' : 'Mensal'} • {bill.category}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-sm font-bold">R$ {bill.average_amount.toLocaleString('pt-BR')}</div>
-                      <button onClick={() => handleDeleteDaily(bill.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'budget' && (
-          <div className="space-y-6">
-            <section className="glass-card !p-6 space-y-6 border-white/5">
-              <div>
-                <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
-                  <LayoutGrid className="text-brand-primary" size={20} /> Orçamentos por Categoria
-                </h3>
-                <p className="text-xs text-white/40">Defina limites mensais para cada categoria de gasto.</p>
-              </div>
-
-              <form onSubmit={handleAddBudget} className="bg-black/20 p-4 rounded-2xl border border-white/5 flex flex-col md:flex-row gap-4 items-end">
-                <div className="flex-1 space-y-1 w-full">
-                  <label className="text-[10px] text-white/40 uppercase font-bold">Categoria</label>
-                  <select 
-                    value={newBudget.category} 
-                    onChange={e => setNewBudget({...newBudget, category: e.target.value})} 
-                    className="w-full bg-[#121212] border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm [&>option]:bg-[#121212]"
-                  >
-                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                </div>
-                <div className="flex-1 space-y-1 w-full">
-                  <label className="text-[10px] text-white/40 uppercase font-bold">Limite Mensal (R$)</label>
-                  <input 
-                    type="number" 
-                    placeholder="0,00" 
-                    required 
-                    value={newBudget.amount} 
-                    onChange={e => setNewBudget({...newBudget, amount: e.target.value})} 
-                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-brand-primary text-sm" 
-                  />
-                </div>
-                <button type="submit" className="w-full md:w-auto bg-brand-primary text-black px-6 py-2 rounded-xl font-bold text-xs hover:brightness-110 shadow-lg h-[42px]">
-                  Configurar Limite
-                </button>
-              </form>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto no-scrollbar pr-1">
-                {budgets.length === 0 && <div className="col-span-2 text-center py-10 text-white/20 italic text-sm">Nenhum orçamento configurado.</div>}
-                {budgets.map(b => (
-                  <div key={b.id} className="group p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-brand-primary/10 flex items-center justify-center text-brand-primary">
-                        <Calculator size={16} />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold">{b.category}</div>
-                        <div className="text-[10px] text-white/40">Limite de gastos planejado</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-sm font-bold">R$ {b.limit_amount?.toLocaleString('pt-BR')}</div>
-                      <button onClick={() => handleDeleteBudget(b.id)} className="p-2 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
-      </div>
+      {modal === 'fixed' && <Modal title="Nova conta fixa" onClose={() => setModal(null)}><form onSubmit={addFixed} className="grid grid-cols-2 gap-4"><Field label="Nome"><input required value={fixedForm.name} onChange={(e) => setFixedForm({ ...fixedForm, name: e.target.value })} /></Field><Field label="Valor"><input required type="number" min="0.01" step="0.01" value={fixedForm.amount} onChange={(e) => setFixedForm({ ...fixedForm, amount: e.target.value })} /></Field><Field label="Vencimento"><input required type="number" min="1" max="31" value={fixedForm.due_day} onChange={(e) => setFixedForm({ ...fixedForm, due_day: e.target.value })} /></Field><Field label="Categoria"><select value={fixedForm.category} onChange={(e) => setFixedForm({ ...fixedForm, category: e.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></Field><Submit saving={saving} /></form></Modal>}
+      {modal === 'daily' && <Modal title="Novo gasto estimado" onClose={() => setModal(null)}><form onSubmit={addDaily} className="grid grid-cols-2 gap-4"><Field label="Nome"><input required value={dailyForm.name} onChange={(e) => setDailyForm({ ...dailyForm, name: e.target.value })} /></Field><Field label="Valor médio"><input required type="number" min="0.01" step="0.01" value={dailyForm.average_amount} onChange={(e) => setDailyForm({ ...dailyForm, average_amount: e.target.value })} /></Field><Field label="Frequência"><select value={dailyForm.frequency} onChange={(e) => setDailyForm({ ...dailyForm, frequency: e.target.value })}><option value="weekly">Semanal</option><option value="monthly">Mensal</option></select></Field><Field label="Categoria"><select value={dailyForm.category} onChange={(e) => setDailyForm({ ...dailyForm, category: e.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></Field><Submit saving={saving} /></form></Modal>}
+      {modal === 'budget' && <Modal title="Limite por categoria" onClose={() => setModal(null)}><form onSubmit={addBudget} className="grid grid-cols-2 gap-4"><Field label="Categoria"><select value={budgetForm.category} onChange={(e) => setBudgetForm({ ...budgetForm, category: e.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></Field><Field label="Limite"><input required type="number" min="0.01" step="0.01" value={budgetForm.limit_amount} onChange={(e) => setBudgetForm({ ...budgetForm, limit_amount: e.target.value })} /></Field><Submit saving={saving} /></form></Modal>}
     </div>
   );
 }
+
+function Field({ label, children }: { label: string; children: React.ReactElement<any> }) { return <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">{label}{React.cloneElement(children, { className: 'mt-1 w-full rounded-xl border border-white/10 bg-[#121212] px-3 py-2.5 text-sm text-white outline-none focus:border-brand-primary' })}</label>; }
+function ReadOnly({ label, value }: { label: string; value: string }) { return <div><div className="text-[10px] font-bold uppercase tracking-widest text-white/40">{label}</div><div className="mt-1 rounded-xl border border-brand-primary/20 bg-brand-primary/5 px-3 py-2.5 font-bold text-brand-primary">{value}</div></div>; }
+function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) { return <div className="flex items-center justify-between border-b border-white/5 pb-2 text-xs"><span className="text-white/40">{label}</span><strong className={highlight ? 'text-brand-primary' : ''}>{value}</strong></div>; }
+function Metric({ label, value, danger }: { label: string; value: string; danger?: boolean }) { return <div className="glass-card !p-3"><div className="text-[9px] font-bold uppercase text-white/35">{label}</div><div className={`mt-1 truncate text-sm font-black ${danger ? 'text-red-400' : ''}`}>{value}</div></div>; }
+function BillCard({ item, onToggle, onDelete }: { item: any; onToggle: (id: string) => void; onDelete: () => void }) { const paid = item.status === 'paid'; return <article className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><div className="flex justify-between gap-2"><div className="min-w-0"><h4 className={`truncate text-xs font-bold ${paid ? 'line-through text-white/30' : ''}`}>{item.name}</h4><p className="text-[9px] text-white/30">{item.category || 'Conta'} • dia {item.due_day}</p></div><button onClick={onDelete} className="text-white/20 hover:text-red-400"><Trash2 size={13} /></button></div><div className="mt-2 flex items-center justify-between"><strong>{money(item.amount)}</strong><button onClick={() => onToggle(item.id)} className={`rounded-lg px-2 py-1 text-[9px] font-bold ${paid ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'}`}>{paid ? 'Pago' : 'Marcar pago'}</button></div></article>; }
+function DailyCard({ item, onDelete }: { item: any; onDelete: () => void }) { return <article className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><div className="flex justify-between"><div><h4 className="text-xs font-bold">{item.name}</h4><p className="text-[9px] text-white/30">{item.category || 'Geral'} • {item.frequency === 'weekly' ? 'semanal' : 'mensal'}</p></div><button onClick={onDelete} className="text-white/20 hover:text-red-400"><Trash2 size={13} /></button></div><strong className="mt-2 block">{money(item.average_amount)}</strong></article>; }
+function BudgetCard({ item, onDelete }: { item: any; onDelete: () => void }) { return <article className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><div className="flex justify-between"><div><h4 className="text-xs font-bold">{item.category}</h4><p className="text-[9px] text-white/30">Limite mensal</p></div><button onClick={onDelete} className="text-white/20 hover:text-red-400"><Trash2 size={13} /></button></div><strong className="mt-2 block text-brand-primary">{money(item.limit_amount)}</strong></article>; }
+function Pager({ page, pages, onChange }: { page: number; pages: number; onChange: (page: number) => void }) { return <div className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px]"><button onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1} className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30">Anterior</button><span className="text-white/40">{page} de {pages}</span><button onClick={() => onChange(Math.min(pages, page + 1))} disabled={page === pages} className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30">Próxima</button></div>; }
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><div className="glass-card w-full max-w-lg !p-6"><div className="mb-5 flex items-center justify-between"><h3 className="text-lg font-bold">{title}</h3><button onClick={onClose}><X size={18} /></button></div>{children}</div></div>; }
+function Submit({ saving }: { saving: boolean }) { return <button disabled={saving} className="col-span-2 rounded-xl bg-brand-primary py-3 text-sm font-bold text-black disabled:opacity-50">{saving ? 'Salvando...' : 'Salvar'}</button>; }
