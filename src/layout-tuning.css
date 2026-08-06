@@ -7,7 +7,12 @@
   }
 
   .mf-topbar {
-    padding-bottom: clamp(6px, 0.72vh, 10px);
+    padding-bottom: clamp(7px, 0.85vh, 12px);
+  }
+
+  /* Add dedicated breathing room below the toolbar without widening every dashboard gap. */
+  .mf-content {
+    padding-top: clamp(8px, 1.1vh, 16px);
   }
 
   /* Keep the four KPI cards compact and return space to the remaining dashboard rows. */
@@ -55,6 +60,10 @@
 @media (max-height: 800px) and (min-width: 1024px) {
   .mf-app-shell {
     row-gap: clamp(8px, 1vh, 12px);
+  }
+
+  .mf-content {
+    padding-top: clamp(6px, 0.8vh, 10px);
   }
 
   .mf-dashboard-grid {
