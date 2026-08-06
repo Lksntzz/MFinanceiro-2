@@ -1,4 +1,4 @@
-// Bootstrap intentionally keeps only active runtime integrations.
+// Bootstrap contains only active consolidated runtime integrations.
 import './lib/admin-maintenance-mount';
 import './lib/bank-excel-parser-guard';
 import './lib/bank-csv-parser-guard';
