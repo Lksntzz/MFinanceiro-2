@@ -183,7 +183,10 @@ function filteredRows(shell: HTMLElement, includePending = false): LedgerRow[] {
 function findSummaryGrid(shell: HTMLElement): HTMLElement | null {
   return Array.from(shell.querySelectorAll<HTMLElement>('div.grid')).find((grid) => {
     const labels = Array.from(grid.children).map((child) => normalize(child.querySelector('div')?.textContent));
-    return labels.includes('entradas') && labels.includes('saidas') && labels.includes('saldo');
+    const hasIncome = labels.some((label) => label.startsWith('entradas'));
+    const hasExpense = labels.some((label) => label.startsWith('saidas'));
+    const hasResult = labels.some((label) => label === 'saldo' || label.startsWith('movimento liquido'));
+    return hasIncome && hasExpense && hasResult;
   }) || null;
 }
 
@@ -289,8 +292,9 @@ function openLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: bo
   const configure = (attempt = 0) => {
     const root = document.getElementById('mf-unified-transaction-root');
     if (!root || attempt > 20) return;
-    const visibleRoot = Array.from(root.querySelectorAll<HTMLElement>('div')).find((element) => isVisible(element) && normalize(element.textContent).includes('novo lançamento')) || root;
-    const incomeButton = Array.from(visibleRoot.querySelectorAll<HTMLButtonElement>('button')).find((button) => normalize(button.textContent) === 'entrada');
+    const incomeButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      isVisible(button) && normalize(button.textContent) === 'entrada',
+    );
     if (incomeButton) incomeButton.click();
 
     window.setTimeout(() => {
@@ -306,7 +310,9 @@ function openLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: bo
         }
       }
       if (benefitMethod) {
-        const benefitButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) => normalize(button.textContent) === 'beneficio');
+        const benefitButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+          isVisible(button) && normalize(button.textContent) === 'beneficio',
+        );
         benefitButton?.click();
       }
     }, 60);
@@ -314,7 +320,7 @@ function openLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: bo
 
   const waitForLauncher = (attempt = 0) => {
     const root = document.getElementById('mf-unified-transaction-root');
-    if (root && isVisible(root)) configure(attempt);
+    if (root) configure(attempt);
     else if (attempt < 20) window.setTimeout(() => waitForLauncher(attempt + 1), 50);
   };
   waitForLauncher();
