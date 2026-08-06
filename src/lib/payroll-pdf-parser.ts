@@ -38,11 +38,26 @@ type MoneyCell = { amount: number; raw: string; x: number };
 
 const amountRegex = /(?:R\$\s*)?\(?-?\d{1,3}(?:\.\d{3})*,\d{2}\)?-?|(?:R\$\s*)?\(?-?\d+\.\d{2}\)?-?/g;
 
+const MONTHS: Record<string, string> = {
+  janeiro: '01', jan: '01',
+  fevereiro: '02', fev: '02',
+  marco: '03', mar: '03',
+  abril: '04', abr: '04',
+  maio: '05', mai: '05',
+  junho: '06', jun: '06',
+  julho: '07', jul: '07',
+  agosto: '08', ago: '08',
+  setembro: '09', set: '09',
+  outubro: '10', out: '10',
+  novembro: '11', nov: '11',
+  dezembro: '12', dez: '12',
+};
+
 const DEDUCTION_TERMS = [
   'inss', 'irrf', 'imposto de renda', 'previdencia', 'vale transporte', 'plano de saude',
   'assistencia medica', 'odontologico', 'coparticipacao', 'sindicato', 'emprestimo',
   'consignado', 'adiantamento', 'pensao', 'falta', 'atraso', 'seguro', 'convenio',
-  'farmacia', 'desconto', 'mensalidade', 'aviso previo',
+  'farmacia', 'desconto', 'mensalidade', 'aviso previo', 'desc.',
 ];
 
 const EARNING_TERMS = [
@@ -59,12 +74,17 @@ const BENEFIT_TERMS = [
 const SUMMARY_TERMS = [
   'total de vencimentos', 'total vencimentos', 'total de proventos', 'total proventos',
   'total de descontos', 'total descontos', 'liquido a receber', 'valor liquido',
-  'salario liquido', 'base inss', 'base irrf', 'base fgts', 'fgts do mes',
-  'salario base', 'total bruto', 'total liquido',
+  'salario liquido', 'liquido de ferias', 'base inss', 'base irrf', 'base fgts',
+  'fgts do mes', 'salario base', 'total bruto', 'total liquido', 'valor a receber',
 ];
 
 function normalize(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function round(value: number): number {
@@ -125,12 +145,42 @@ function groupRows(tokens: Token[]): Row[] {
     .sort((a, b) => a.page - b.page || b.tokens[0].y - a.tokens[0].y);
 }
 
-function detectCompetence(rows: Row[]): string | undefined {
+function competenceFromMonthName(value: string): string | undefined {
+  const text = normalize(value);
+  const match = text.match(/\b(janeiro|jan|fevereiro|fev|marco|mar|abril|abr|maio|mai|junho|jun|julho|jul|agosto|ago|setembro|set|outubro|out|novembro|nov|dezembro|dez)\s*(?:\/|-|de)?\s*(20\d{2})\b/);
+  if (!match) return undefined;
+  return `${match[2]}-${MONTHS[match[1]]}`;
+}
+
+function competenceFromFileName(fileName: string): string | undefined {
+  const name = normalize(fileName.replace(/\.pdf$/i, ' '));
+  const compactYearMonth = name.match(/(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(?:\D|$)/);
+  if (compactYearMonth) return `${compactYearMonth[1]}-${compactYearMonth[2]}`;
+
+  const compactMonthYear = name.match(/(?:^|\D)(0[1-9]|1[0-2])(20\d{2})(?:\D|$)/);
+  if (compactMonthYear) return `${compactMonthYear[2]}-${compactMonthYear[1]}`;
+
+  return competenceFromMonthName(name);
+}
+
+function detectCompetence(rows: Row[], fileName: string): string | undefined {
   const text = normalize(rows.map((row) => row.text).join(' '));
-  const direct = text.match(/(?:competencia|referencia|mes\/ano|periodo|folha)\D{0,30}(0?[1-9]|1[0-2])[\/.\-](20\d{2})/);
+
+  const direct = text.match(/(?:competencia|referencia|mes\/ano|periodo|folha)\D{0,40}(0?[1-9]|1[0-2])[\/.\-](20\d{2})/);
   if (direct) return `${direct[2]}-${String(Number(direct[1])).padStart(2, '0')}`;
-  const reverse = text.match(/(?:competencia|referencia|mes\/ano|periodo|folha)\D{0,30}(20\d{2})[\/.\-](0?[1-9]|1[0-2])/);
+
+  const reverse = text.match(/(?:competencia|referencia|mes\/ano|periodo|folha)\D{0,40}(20\d{2})[\/.\-](0?[1-9]|1[0-2])/);
   if (reverse) return `${reverse[1]}-${String(Number(reverse[2])).padStart(2, '0')}`;
+
+  const named = competenceFromMonthName(text);
+  if (named) return named;
+
+  const fromFile = competenceFromFileName(fileName);
+  if (fromFile) return fromFile;
+
+  const compact = text.match(/(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(?:\D|$)/);
+  if (compact) return `${compact[1]}-${compact[2]}`;
+
   const fallback = text.match(/\b(0?[1-9]|1[0-2])[\/.\-](20\d{2})\b/);
   return fallback ? `${fallback[2]}-${String(Number(fallback[1])).padStart(2, '0')}` : undefined;
 }
@@ -163,7 +213,7 @@ function summaries(rows: Row[]) {
       if (earningsLabel) earnings = values[values.length - 1];
       if (deductionsLabel) deductions = values[values.length - 1];
     }
-    if (/(liquido a receber|valor liquido|salario liquido|total liquido)/.test(text)) net = values[values.length - 1];
+    if (/(liquido a receber|valor liquido|salario liquido|total liquido|liquido de ferias)/.test(text)) net = values[values.length - 1];
     if (/(salario base|base salarial)/.test(text)) salaryBase = values[values.length - 1];
   });
 
@@ -203,6 +253,16 @@ function classify(textValue: string, amountX: number, earningX: number | null, d
   return null;
 }
 
+function isMetadataDescription(description: string): boolean {
+  const text = normalize(description);
+  if (!text || /^\*+$/.test(text.replace(/\s/g, ''))) return true;
+  if (SUMMARY_TERMS.some((term) => text.includes(term))) return true;
+  if (/cpf|cnpj|matricula|admissao|banco|agencia|conta|cargo|funcao|empresa|empregador/.test(text)) return true;
+  if (/\b\d{1,3}\/\d{4}-\d{2}\b/.test(text)) return true;
+  if (/\b(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/?20\d{2}\b/.test(text) && /\d/.test(text)) return true;
+  return false;
+}
+
 function itemRows(rows: Row[], grossHint: number): PayrollItem[] {
   const earningX = findHeaderX(rows, ['vencimento', 'provento', 'credito']);
   const deductionX = findHeaderX(rows, ['desconto', 'debito']);
@@ -228,8 +288,10 @@ function itemRows(rows: Row[], grossHint: number): PayrollItem[] {
     if (codeMatch) description = codeMatch[2];
     description = description.replace(/^[-–—.:\s]+|[-–—.:\s]+$/g, '').trim();
 
-    if (description.length < 2 || /cpf|cnpj|matricula|admissao|banco|agencia|conta|cargo|funcao/.test(normalize(description))) return;
+    if (description.length < 2 || isMetadataDescription(description)) return;
     const amount = round(amountCell.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) return;
+
     const key = `${row.page}:${normalize(description)}:${amount}:${inferred.kind}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -294,7 +356,7 @@ export async function analyzePayrollPdf(file: File, onProgress?: (progress: numb
   const totalEarnings = summary.earnings || earningsFromItems || grossSalary;
   const totalDeductions = summary.deductions || deductionsFromItems;
   const netSalary = summary.net || Math.max(0, round(grossSalary - totalDeductions));
-  const competence = detectCompetence(rows);
+  const competence = detectCompetence(rows, file.name);
   const warnings: string[] = [];
 
   if (!competence) warnings.push('A competência não foi identificada; confirme o mês antes de salvar.');
@@ -303,8 +365,8 @@ export async function analyzePayrollPdf(file: File, onProgress?: (progress: numb
   if (summary.deductions > 0 && deductionsFromItems > 0 && Math.abs(summary.deductions - deductionsFromItems) > 1) {
     warnings.push('A soma das rubricas reconhecidas difere do total de descontos do PDF. Revise as linhas antes de salvar.');
   }
-  if (summary.net > 0 && grossSalary > 0 && Math.abs(summary.net - (grossSalary - totalDeductions)) > 1) {
-    warnings.push('O líquido informado no PDF difere do cálculo das rubricas reconhecidas.');
+  if (summary.net > 0 && grossSalary > 0 && Math.abs(summary.net - Math.max(0, grossSalary - deductionsFromItems)) > 1) {
+    warnings.push('O líquido informado no PDF difere da soma das rubricas reconhecidas.');
   }
 
   return {
