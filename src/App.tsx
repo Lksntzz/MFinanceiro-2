@@ -74,6 +74,47 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    let active = true;
+
+    const refreshMaintenance = async () => {
+      try {
+        const next = await fetchMaintenanceConfig(supabase);
+        if (!active) return;
+        setMaintenance(next);
+        if (!next.maintenance_mode) setForceAdminAuth(false);
+      } catch (err) {
+        console.warn('Falha ao atualizar o modo de manutenção:', err);
+      }
+    };
+
+    const onFocus = () => void refreshMaintenance();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshMaintenance();
+    };
+    const onMaintenanceChanged = (event: Event) => {
+      const next = (event as CustomEvent<MaintenanceConfig>).detail;
+      if (!next) return;
+      setMaintenance(next);
+      if (!next.maintenance_mode) setForceAdminAuth(false);
+    };
+
+    const intervalId = window.setInterval(() => void refreshMaintenance(), 10000);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#050505]">
@@ -85,13 +126,21 @@ export default function App() {
   if (!isSupabaseConfigured()) return <ConfigRequired />;
 
   const isAdmin = isMaintenanceAdmin(session);
-  const isMaintenanceActive = maintenance?.maintenance_mode && !isAdmin;
+  const maintenanceEnabled = Boolean(maintenance?.maintenance_mode);
 
-  if (isMaintenanceActive && !forceAdminAuth) {
+  if (maintenanceEnabled && !isAdmin) {
+    if (!session && forceAdminAuth) return <Auth />;
+
     return (
       <MaintenanceScreen
         message={maintenance?.maintenance_message}
-        onAdminLogin={() => setForceAdminAuth(true)}
+        onAdminLogin={async () => {
+          if (session) {
+            await supabase.auth.signOut();
+            setSession(null);
+          }
+          setForceAdminAuth(true);
+        }}
       />
     );
   }
@@ -101,7 +150,7 @@ export default function App() {
   return (
     <DashboardBootstrap
       user={session.user}
-      isMaintenanceBypass={isAdmin && Boolean(maintenance?.maintenance_mode)}
+      isMaintenanceBypass={isAdmin && maintenanceEnabled}
     />
   );
 }
