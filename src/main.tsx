@@ -1,9 +1,11 @@
 import './lib/settings-conflict-recovery';
 import './lib/auth-refresh-guard';
+import './lib/dashboard-data-sync';
 import './lib/rhythm-chart-filter';
 import './lib/admin-maintenance-mount';
 import './lib/bank-excel-parser-guard';
 import './lib/bank-csv-parser-guard';
+import './lib/installment-manager-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
