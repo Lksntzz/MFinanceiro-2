@@ -1,25 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, Banknote, Calendar, CheckCircle2, LayoutGrid, Plus, Save, Trash2, Wallet, X } from 'lucide-react';
+import { Banknote, Calendar, LayoutGrid, Plus, Save, Trash2, Wallet, X } from 'lucide-react';
 
 import { CATEGORIES } from '../lib/constants';
 import { formatCurrency } from '../lib/formatters';
 import { calculatePayrollFromGross } from '../lib/payroll-tax';
 import { supabase } from '../lib/supabase';
-import { DailyBill, FinanceSummary, FixedBill, UserSettings } from '../types';
+import { FinanceSummary, FixedBill, UserSettings } from '../types';
 
 interface BaseFinanceiraProps {
   settings: UserSettings;
   onSave: (settings: UserSettings) => Promise<void>;
   fixedBills: FixedBill[];
-  dailyBills: DailyBill[];
   summary: FinanceSummary | null;
   onToggleBillStatus: (id: string) => void;
   onRefresh: () => void;
-  initialTab?: 'income' | 'adjustments' | 'bills' | 'operating' | 'budget';
+  initialTab?: 'income' | 'adjustments' | 'bills' | 'budget';
 }
 
-type Tab = 'income' | 'adjustments' | 'bills' | 'operating' | 'budget';
-type Modal = 'fixed' | 'daily' | 'budget' | null;
+type Tab = 'income' | 'adjustments' | 'bills' | 'budget';
+type Modal = 'fixed' | 'budget' | null;
 
 const money = (value: number) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -27,7 +26,6 @@ export default function BaseFinanceira({
   settings,
   onSave,
   fixedBills,
-  dailyBills,
   summary,
   onToggleBillStatus,
   onRefresh,
@@ -43,7 +41,6 @@ export default function BaseFinanceira({
   const [modal, setModal] = useState<Modal>(null);
   const [page, setPage] = useState(1);
   const [fixedForm, setFixedForm] = useState({ name: '', amount: '', due_day: '5', category: CATEGORIES[0] || 'Moradia' });
-  const [dailyForm, setDailyForm] = useState({ name: '', average_amount: '', frequency: 'weekly', category: CATEGORIES[1] || 'Alimentação' });
   const [budgetForm, setBudgetForm] = useState({ category: CATEGORIES[1] || 'Alimentação', limit_amount: '' });
 
   useEffect(() => {
@@ -81,17 +78,13 @@ export default function BaseFinanceira({
   const realBase = estimatedNet + Math.max(0, Number(form.benefits || 0));
   const totalFixed = fixedBills.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const pendingFixed = fixedBills.filter((item) => item.status !== 'paid').reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const totalDailyMonthly = dailyBills.reduce((sum, item) => {
-    const amount = Number(item.average_amount || 0);
-    return sum + (item.frequency === 'weekly' ? amount * 4.33 : amount);
-  }, 0);
   const totalBudget = budgets.reduce((sum, item) => sum + Number(item.limit_amount || 0), 0);
 
   const availableTabs = initialTab === 'bills'
-    ? ([['bills', 'Contas fixas', Calendar], ['operating', 'Gastos estimados', Activity], ['budget', 'Orçamentos', LayoutGrid]] as const)
+    ? ([['bills', 'Contas fixas', Calendar], ['budget', 'Orçamentos', LayoutGrid]] as const)
     : ([['income', 'Renda e ciclo', Banknote], ['adjustments', 'Ajustes', Wallet]] as const);
 
-  const activeItems = activeTab === 'bills' ? fixedBills : activeTab === 'operating' ? dailyBills : activeTab === 'budget' ? budgets : [];
+  const activeItems = activeTab === 'bills' ? fixedBills : activeTab === 'budget' ? budgets : [];
   const pageSize = activeTab === 'bills' ? 5 : 6;
   const pages = Math.max(1, Math.ceil(activeItems.length / pageSize));
   const visibleItems = activeItems.slice((page - 1) * pageSize, page * pageSize);
@@ -168,32 +161,6 @@ export default function BaseFinanceira({
     } finally { setSaving(false); }
   }
 
-  async function addDaily(event: React.FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      const amount = Number(dailyForm.average_amount);
-      if (!dailyForm.name.trim()) throw new Error('Informe o nome do gasto estimado.');
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Informe um valor válido.');
-
-      const { error: insertError } = await supabase.from('mf_daily_bills').insert({
-        user_id: settings.user_id,
-        name: dailyForm.name.trim(),
-        average_amount: amount,
-        frequency: dailyForm.frequency,
-        category: dailyForm.category,
-      });
-      if (insertError) throw insertError;
-      setDailyForm({ name: '', average_amount: '', frequency: 'weekly', category: CATEGORIES[1] || 'Alimentação' });
-      setModal(null);
-      setMessage('Gasto estimado adicionado.');
-      onRefresh();
-    } catch (saveError: any) {
-      setError(saveError?.message || 'Não foi possível adicionar o gasto estimado.');
-    } finally { setSaving(false); }
-  }
-
   async function addBudget(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -216,7 +183,7 @@ export default function BaseFinanceira({
     } finally { setSaving(false); }
   }
 
-  async function remove(table: string, id: string) {
+  async function remove(table: 'mf_fixed_bills' | 'mf_budgets', id: string) {
     setError(null);
     const { error: deleteError } = await supabase
       .from(table)
@@ -262,12 +229,12 @@ export default function BaseFinanceira({
         </section>
       )}
 
-      {(activeTab === 'bills' || activeTab === 'operating' || activeTab === 'budget') && (
+      {(activeTab === 'bills' || activeTab === 'budget') && (
         <section className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
-          <div className="grid shrink-0 grid-cols-2 lg:grid-cols-4 gap-3"><Metric label="Contas fixas" value={money(totalFixed)} /><Metric label="Pendentes" value={money(pendingFixed)} danger={pendingFixed > Number(form.current_balance || 0)} /><Metric label="Estimados/mês" value={money(totalDailyMonthly)} /><Metric label="Orçamentos" value={money(totalBudget)} /></div>
+          <div className="grid shrink-0 grid-cols-1 sm:grid-cols-3 gap-3"><Metric label="Contas fixas" value={money(totalFixed)} /><Metric label="Pendentes" value={money(pendingFixed)} danger={pendingFixed > Number(form.current_balance || 0)} /><Metric label="Orçamentos" value={money(totalBudget)} /></div>
           <div className="glass-card !p-4 flex flex-1 min-h-0 flex-col overflow-hidden">
-            <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">{activeTab === 'bills' ? 'Contas fixas' : activeTab === 'operating' ? 'Gastos estimados' : 'Limites por categoria'}</h3><p className="text-[9px] uppercase text-white/30">{activeItems.length} registro(s)</p></div><button onClick={() => setModal(activeTab === 'bills' ? 'fixed' : activeTab === 'operating' ? 'daily' : 'budget')} className="flex items-center gap-2 rounded-xl bg-brand-primary px-3 py-2 text-xs font-bold text-black"><Plus size={14} /> Adicionar</button></div>
-            {visibleItems.length === 0 ? <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-white/30">Nenhum registro cadastrado.</div> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 content-start">{visibleItems.map((item: any) => activeTab === 'bills' ? <BillCard key={item.id} item={item} onToggle={onToggleBillStatus} onDelete={() => remove('mf_fixed_bills', item.id)} /> : activeTab === 'operating' ? <DailyCard key={item.id} item={item} onDelete={() => remove('mf_daily_bills', item.id)} /> : <BudgetCard key={item.id} item={item} onDelete={() => remove('mf_budgets', item.id)} />)}</div>}
+            <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">{activeTab === 'bills' ? 'Contas fixas' : 'Limites por categoria'}</h3><p className="text-[9px] uppercase text-white/30">{activeItems.length} registro(s)</p></div><button onClick={() => setModal(activeTab === 'bills' ? 'fixed' : 'budget')} className="flex items-center gap-2 rounded-xl bg-brand-primary px-3 py-2 text-xs font-bold text-black"><Plus size={14} /> Adicionar</button></div>
+            {visibleItems.length === 0 ? <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-white/30">Nenhum registro cadastrado.</div> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 content-start">{visibleItems.map((item: any) => activeTab === 'bills' ? <BillCard key={item.id} item={item} onToggle={onToggleBillStatus} onDelete={() => remove('mf_fixed_bills', item.id)} /> : <BudgetCard key={item.id} item={item} onDelete={() => remove('mf_budgets', item.id)} />)}</div>}
             {pages > 1 && <Pager page={page} pages={pages} onChange={setPage} />}
           </div>
           {summary && <div className="shrink-0 text-[10px] text-white/30">Limite diário atual: {formatCurrency(Number(summary.dailyLimit || 0), false)} • Saldo: {formatCurrency(Number(form.current_balance || 0), false)}</div>}
@@ -275,7 +242,6 @@ export default function BaseFinanceira({
       )}
 
       {modal === 'fixed' && <Modal title="Nova conta fixa" onClose={() => setModal(null)}><form onSubmit={addFixed} className="grid grid-cols-2 gap-4"><Field label="Nome"><input required value={fixedForm.name} onChange={(e) => setFixedForm({ ...fixedForm, name: e.target.value })} /></Field><Field label="Valor"><input required type="number" min="0.01" step="0.01" value={fixedForm.amount} onChange={(e) => setFixedForm({ ...fixedForm, amount: e.target.value })} /></Field><Field label="Vencimento"><input required type="number" min="1" max="31" value={fixedForm.due_day} onChange={(e) => setFixedForm({ ...fixedForm, due_day: e.target.value })} /></Field><Field label="Categoria"><select value={fixedForm.category} onChange={(e) => setFixedForm({ ...fixedForm, category: e.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></Field><Submit saving={saving} /></form></Modal>}
-      {modal === 'daily' && <Modal title="Novo gasto estimado" onClose={() => setModal(null)}><form onSubmit={addDaily} className="grid grid-cols-2 gap-4"><Field label="Nome"><input required value={dailyForm.name} onChange={(e) => setDailyForm({ ...dailyForm, name: e.target.value })} /></Field><Field label="Valor médio"><input required type="number" min="0.01" step="0.01" value={dailyForm.average_amount} onChange={(e) => setDailyForm({ ...dailyForm, average_amount: e.target.value })} /></Field><Field label="Frequência"><select value={dailyForm.frequency} onChange={(e) => setDailyForm({ ...dailyForm, frequency: e.target.value })}><option value="weekly">Semanal</option><option value="monthly">Mensal</option></select></Field><Field label="Categoria"><select value={dailyForm.category} onChange={(e) => setDailyForm({ ...dailyForm, category: e.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></Field><Submit saving={saving} /></form></Modal>}
       {modal === 'budget' && <Modal title="Limite por categoria" onClose={() => setModal(null)}><form onSubmit={addBudget} className="grid grid-cols-2 gap-4"><Field label="Categoria"><select value={budgetForm.category} onChange={(e) => setBudgetForm({ ...budgetForm, category: e.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></Field><Field label="Limite"><input required type="number" min="0.01" step="0.01" value={budgetForm.limit_amount} onChange={(e) => setBudgetForm({ ...budgetForm, limit_amount: e.target.value })} /></Field><Submit saving={saving} /></form></Modal>}
     </div>
   );
@@ -286,7 +252,6 @@ function ReadOnly({ label, value }: { label: string; value: string }) { return <
 function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) { return <div className="flex items-center justify-between border-b border-white/5 pb-2 text-xs"><span className="text-white/40">{label}</span><strong className={highlight ? 'text-brand-primary' : ''}>{value}</strong></div>; }
 function Metric({ label, value, danger }: { label: string; value: string; danger?: boolean }) { return <div className="glass-card !p-3"><div className="text-[9px] font-bold uppercase text-white/35">{label}</div><div className={`mt-1 truncate text-sm font-black ${danger ? 'text-red-400' : ''}`}>{value}</div></div>; }
 function BillCard({ item, onToggle, onDelete }: { item: any; onToggle: (id: string) => void; onDelete: () => void }) { const paid = item.status === 'paid'; return <article className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><div className="flex justify-between gap-2"><div className="min-w-0"><h4 className={`truncate text-xs font-bold ${paid ? 'line-through text-white/30' : ''}`}>{item.name}</h4><p className="text-[9px] text-white/30">{item.category || 'Conta'} • dia {item.due_day}</p></div><button onClick={onDelete} className="text-white/20 hover:text-red-400"><Trash2 size={13} /></button></div><div className="mt-2 flex items-center justify-between"><strong>{money(item.amount)}</strong><button onClick={() => onToggle(item.id)} className={`rounded-lg px-2 py-1 text-[9px] font-bold ${paid ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'}`}>{paid ? 'Pago' : 'Marcar pago'}</button></div></article>; }
-function DailyCard({ item, onDelete }: { item: any; onDelete: () => void }) { return <article className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><div className="flex justify-between"><div><h4 className="text-xs font-bold">{item.name}</h4><p className="text-[9px] text-white/30">{item.category || 'Geral'} • {item.frequency === 'weekly' ? 'semanal' : 'mensal'}</p></div><button onClick={onDelete} className="text-white/20 hover:text-red-400"><Trash2 size={13} /></button></div><strong className="mt-2 block">{money(item.average_amount)}</strong></article>; }
 function BudgetCard({ item, onDelete }: { item: any; onDelete: () => void }) { return <article className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><div className="flex justify-between"><div><h4 className="text-xs font-bold">{item.category}</h4><p className="text-[9px] text-white/30">Limite mensal</p></div><button onClick={onDelete} className="text-white/20 hover:text-red-400"><Trash2 size={13} /></button></div><strong className="mt-2 block text-brand-primary">{money(item.limit_amount)}</strong></article>; }
 function Pager({ page, pages, onChange }: { page: number; pages: number; onChange: (page: number) => void }) { return <div className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px]"><button onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1} className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30">Anterior</button><span className="text-white/40">{page} de {pages}</span><button onClick={() => onChange(Math.min(pages, page + 1))} disabled={page === pages} className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30">Próxima</button></div>; }
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><div className="glass-card w-full max-w-lg !p-6"><div className="mb-5 flex items-center justify-between"><h3 className="text-lg font-bold">{title}</h3><button onClick={onClose}><X size={18} /></button></div>{children}</div></div>; }
