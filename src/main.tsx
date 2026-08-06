@@ -7,7 +7,7 @@ import './lib/bank-excel-parser-guard';
 import './lib/bank-csv-parser-guard';
 import './lib/installment-manager-mount';
 import './lib/payroll-statement-mount';
-import './lib/preferences-center-mount';
+import './lib/income-payroll-center-mount';
 import './lib/payroll-cycle-display-guard';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
