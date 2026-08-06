@@ -21,6 +21,10 @@ type ImportResult = {
 };
 
 const PANEL_ID = 'mf-historical-import-review';
+let selectedMode: BalanceMode = 'keep';
+let reviewedState = false;
+let activeSnapshotIdentity = '';
+
 const normalize = (value: string | null | undefined) =>
   String(value || '')
     .normalize('NFD')
@@ -153,17 +157,26 @@ function setCalibration(root: HTMLElement, active: boolean) {
 
 function currentMode(panel: HTMLElement): BalanceMode {
   const selected = panel.querySelector<HTMLInputElement>('input[name="mf-import-balance-mode"]:checked');
-  return (selected?.value as BalanceMode) || 'keep';
+  return (selected?.value as BalanceMode) || selectedMode || 'keep';
+}
+
+function clearReviewed(panel?: HTMLElement | null) {
+  reviewedState = false;
+  panel?.querySelector<HTMLInputElement>('[data-role="reviewed"]')?.removeAttribute('checked');
+  const checkbox = panel?.querySelector<HTMLInputElement>('[data-role="reviewed"]');
+  if (checkbox) checkbox.checked = false;
 }
 
 function setMode(panel: HTMLElement, root: HTMLElement, mode: BalanceMode) {
+  selectedMode = mode;
   const input = panel.querySelector<HTMLInputElement>(`input[name="mf-import-balance-mode"][value="${mode}"]`);
   if (input) input.checked = true;
   setCalibration(root, mode === 'statement');
   panel.dataset.mode = mode;
+  clearReviewed(panel);
 }
 
-function modeCard(mode: BalanceMode, title: string, description: string, disabled = false) {
+function modeCard(mode: BalanceMode, title: string, description: string, selected: boolean, disabled = false) {
   const label = document.createElement('label');
   label.className = `block rounded-xl border px-3 py-2.5 transition ${disabled ? 'cursor-not-allowed border-white/5 bg-white/[0.015] opacity-40' : 'cursor-pointer border-white/10 bg-black/20 hover:border-white/20'}`;
 
@@ -176,7 +189,7 @@ function modeCard(mode: BalanceMode, title: string, description: string, disable
   input.value = mode;
   input.disabled = disabled;
   input.className = 'mt-0.5 accent-cyan-400';
-  if (mode === 'keep') input.checked = true;
+  input.checked = selected && !disabled;
 
   const copy = document.createElement('div');
   const strong = document.createElement('strong');
@@ -224,7 +237,6 @@ function buildPanel(root: HTMLElement, snapshot: ReturnType<typeof reviewSnapsho
   panel.className = 'shrink-0 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.055] p-3';
   panel.dataset.periodStart = snapshot.periodStart ? toDateKey(snapshot.periodStart) : '';
   panel.dataset.periodEnd = snapshot.periodEnd ? toDateKey(snapshot.periodEnd) : '';
-  panel.dataset.mode = 'keep';
 
   const today = toDateKey(new Date());
   const isHistorical = Boolean(panel.dataset.periodEnd && panel.dataset.periodEnd < today);
@@ -233,6 +245,8 @@ function buildPanel(root: HTMLElement, snapshot: ReturnType<typeof reviewSnapsho
     : 'não identificado';
   const months = snapshot.months.length ? snapshot.months.map(monthLabel).join(', ') : 'não identificado';
   const hasStatementBalance = Boolean(calibrationButton(root));
+  if (!hasStatementBalance && selectedMode === 'statement') selectedMode = 'keep';
+  panel.dataset.mode = selectedMode;
 
   const header = document.createElement('div');
   header.className = 'flex flex-wrap items-start justify-between gap-3';
@@ -281,11 +295,11 @@ function buildPanel(root: HTMLElement, snapshot: ReturnType<typeof reviewSnapsho
   const modes = document.createElement('div');
   modes.className = 'mt-3 grid gap-2 lg:grid-cols-3';
   modes.append(
-    modeCard('keep', 'Manter o saldo atual', 'Recomendado para extratos antigos ou períodos que já estão refletidos no saldo do banco.'),
-    modeCard('apply_new', 'Aplicar somente lançamentos novos', 'Após remover duplicados, soma apenas a diferença líquida realmente nova ao saldo atual.'),
+    modeCard('keep', 'Manter o saldo atual', 'Recomendado para extratos antigos ou períodos que já estão refletidos no saldo do banco.', selectedMode === 'keep'),
+    modeCard('apply_new', 'Aplicar somente lançamentos novos', 'Após remover duplicados, soma apenas a diferença líquida realmente nova ao saldo atual.', selectedMode === 'apply_new'),
     modeCard('statement', 'Substituir pelo saldo final do extrato', hasStatementBalance
       ? 'Usa exatamente o saldo final informado no arquivo. A substituição só acontece após esta confirmação.'
-      : 'Este arquivo não trouxe um saldo final confiável. A opção permanece indisponível.', !hasStatementBalance),
+      : 'Este arquivo não trouxe um saldo final confiável. A opção permanece indisponível.', selectedMode === 'statement', !hasStatementBalance),
   );
 
   modes.addEventListener('change', (event) => {
@@ -300,6 +314,10 @@ function buildPanel(root: HTMLElement, snapshot: ReturnType<typeof reviewSnapsho
   checkbox.type = 'checkbox';
   checkbox.dataset.role = 'reviewed';
   checkbox.className = 'mt-0.5 accent-cyan-400';
+  checkbox.checked = reviewedState;
+  checkbox.addEventListener('change', () => {
+    reviewedState = checkbox.checked;
+  });
   const authorizationText = document.createElement('span');
   authorizationText.className = 'text-[10px] leading-relaxed text-white/65';
   authorizationText.textContent = 'Revisei o período, os totais e a opção de saldo. Autorizo a importação conforme a seleção acima.';
@@ -312,6 +330,7 @@ function buildPanel(root: HTMLElement, snapshot: ReturnType<typeof reviewSnapsho
 
   panel.append(header, metrics, overlap, modes, authorization, error);
   void loadOverlap(panel, panel.dataset.periodStart || null, panel.dataset.periodEnd || null);
+  window.setTimeout(() => setCalibration(root, selectedMode === 'statement'), 0);
   return panel;
 }
 
@@ -326,10 +345,17 @@ function renderReviewPanel() {
   if (!root) return;
 
   const snapshot = reviewSnapshot(root);
-  const nextKey = `${snapshot.count}:${snapshot.periodStart?.getTime() || 0}:${snapshot.periodEnd?.getTime() || 0}:${snapshot.incomes}:${snapshot.expenses}:${Boolean(calibrationButton(root))}`;
+  const nextIdentity = `${snapshot.count}:${snapshot.periodStart?.getTime() || 0}:${snapshot.periodEnd?.getTime() || 0}:${snapshot.incomes}:${snapshot.expenses}`;
+  const nextKey = `${nextIdentity}:${Boolean(calibrationButton(root))}`;
+  if (activeSnapshotIdentity && activeSnapshotIdentity !== nextIdentity) reviewedState = false;
+  activeSnapshotIdentity = nextIdentity;
+
   const existing = root.querySelector<HTMLElement>(`#${PANEL_ID}`);
   if (existing && snapshotKey === nextKey) {
+    const checkbox = existing.querySelector<HTMLInputElement>('[data-role="reviewed"]');
+    if (checkbox) checkbox.checked = reviewedState;
     const mode = currentMode(existing);
+    selectedMode = mode;
     setCalibration(root, mode === 'statement');
     return;
   }
@@ -348,6 +374,7 @@ function queueRender() {
 
 function setApproval(root: HTMLElement, panel: HTMLElement) {
   const mode = currentMode(panel);
+  selectedMode = mode;
   const approval: ImportApproval = {
     reviewedAt: Date.now(),
     mode,
@@ -372,33 +399,48 @@ function applyResultToSuccess(result: ImportResult) {
   paragraph.textContent = `${result.insertedCount} lançamento(s) novo(s) foram adicionados. ${result.duplicateCount} duplicado(s) foram ignorados.${balanceText}`;
 }
 
+function resetReviewState() {
+  selectedMode = 'keep';
+  reviewedState = false;
+  activeSnapshotIdentity = '';
+  snapshotKey = '';
+  delete (window as any).__mfStatementImportApproval;
+}
+
 function installHistoricalImportReview() {
   document.addEventListener('click', (event) => {
-    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>('button');
-    if (!button) return;
-    const label = normalize(button.textContent);
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest<HTMLButtonElement>('button');
+    const label = normalize(button?.textContent);
 
     if (label.includes('novo arquivo') || label.includes('voltar ao dashboard')) {
-      delete (window as any).__mfStatementImportApproval;
+      resetReviewState();
       return;
     }
 
-    if (!label.includes('confirmar importacao')) return;
+    const confirmButton = findConfirmButton();
+    const reviewRoot = confirmButton ? findReviewRoot(confirmButton) : null;
+    const panel = reviewRoot?.querySelector<HTMLElement>(`#${PANEL_ID}`) || null;
+    if (reviewRoot && target && transactionRows(reviewRoot).some((row) => row.contains(target)) && !label.includes('confirmar importacao')) {
+      clearReviewed(panel);
+    }
+
+    if (!button || !label.includes('confirmar importacao')) return;
     const root = findReviewRoot(button);
-    const panel = root?.querySelector<HTMLElement>(`#${PANEL_ID}`) || null;
-    const reviewed = panel?.querySelector<HTMLInputElement>('[data-role="reviewed"]');
-    if (!root || !panel || !reviewed?.checked) {
+    const activePanel = root?.querySelector<HTMLElement>(`#${PANEL_ID}`) || null;
+    const reviewed = activePanel?.querySelector<HTMLInputElement>('[data-role="reviewed"]');
+    if (!root || !activePanel || !reviewed?.checked || !reviewedState) {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      const error = panel?.querySelector<HTMLElement>('[data-role="error"]');
+      const error = activePanel?.querySelector<HTMLElement>('[data-role="error"]');
       error?.classList.remove('hidden');
       reviewed?.focus();
       return;
     }
 
-    panel.querySelector<HTMLElement>('[data-role="error"]')?.classList.add('hidden');
-    setApproval(root, panel);
+    activePanel.querySelector<HTMLElement>('[data-role="error"]')?.classList.add('hidden');
+    setApproval(root, activePanel);
   }, true);
 
   window.addEventListener('mf:statement-import-result', (event) => {
@@ -409,6 +451,7 @@ function installHistoricalImportReview() {
     } catch {
       // The success view can still be patched from the in-memory event.
     }
+    reviewedState = false;
     window.setTimeout(() => applyResultToSuccess(result), 50);
     window.setTimeout(() => applyResultToSuccess(result), 500);
   });
