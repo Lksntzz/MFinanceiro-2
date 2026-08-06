@@ -5,6 +5,7 @@ import Auth from './components/Auth';
 import DashboardBootstrap from './components/DashboardBootstrap';
 import ConfigRequired from './components/ConfigRequired';
 import MaintenanceScreen from './components/MaintenanceScreen';
+import MaintenanceAdminPanel from './components/MaintenanceAdminPanel';
 import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
 
 export default function App() {
@@ -38,8 +39,6 @@ export default function App() {
 
         let currentSession = sessionData.session;
         if (currentSession) {
-          // Refresh only once at application startup. Never refresh again from
-          // TOKEN_REFRESHED, otherwise the auth listener creates an infinite loop.
           const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
           if (!refreshError && refreshed.session) currentSession = refreshed.session;
         }
@@ -63,8 +62,6 @@ export default function App() {
         return;
       }
 
-      // The session delivered by Supabase is already current. Setting it directly
-      // avoids refresh storms and lets the Dashboard load financial records.
       setSession(nextSession);
     });
 
@@ -101,7 +98,7 @@ export default function App() {
       if (!next.maintenance_mode) setForceAdminAuth(false);
     };
 
-    const intervalId = window.setInterval(() => void refreshMaintenance(), 10000);
+    const intervalId = window.setInterval(() => void refreshMaintenance(), 5000);
     window.addEventListener('focus', onFocus);
     window.addEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -128,13 +125,31 @@ export default function App() {
   const isAdmin = isMaintenanceAdmin(session);
   const maintenanceEnabled = Boolean(maintenance?.maintenance_mode);
 
-  if (maintenanceEnabled && !isAdmin) {
+  if (maintenanceEnabled) {
     if (!session && forceAdminAuth) return <Auth />;
+
+    if (session && isAdmin && forceAdminAuth && maintenance) {
+      return (
+        <MaintenanceAdminPanel
+          config={maintenance}
+          onBack={() => setForceAdminAuth(false)}
+          onChanged={(next) => {
+            setMaintenance(next);
+            if (!next.maintenance_mode) setForceAdminAuth(false);
+          }}
+        />
+      );
+    }
 
     return (
       <MaintenanceScreen
         message={maintenance?.maintenance_message}
         onAdminLogin={async () => {
+          if (session && isAdmin) {
+            setForceAdminAuth(true);
+            return;
+          }
+
           if (session) {
             await supabase.auth.signOut();
             setSession(null);
@@ -147,10 +162,5 @@ export default function App() {
 
   if (!session) return <Auth />;
 
-  return (
-    <DashboardBootstrap
-      user={session.user}
-      isMaintenanceBypass={isAdmin && maintenanceEnabled}
-    />
-  );
+  return <DashboardBootstrap user={session.user} isMaintenanceBypass={false} />;
 }
