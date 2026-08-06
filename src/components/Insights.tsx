@@ -120,7 +120,7 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
     const expensesByDay = new Map<string, number>();
 
     transactions
-      .filter((transaction) => transaction.type === 'expense')
+      .filter((transaction) => transaction.type === 'expense' && transaction.status !== 'pending')
       .forEach((transaction) => {
         const key = dateKey(transaction.date);
         if (!key) return;
@@ -153,13 +153,15 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
   const scenarioBalance = useMemo(() => {
     if (!summary) return 0;
 
-    const pendingFixed = fixedBills
-      .filter((bill) => String(bill.status || 'pending').toLowerCase() !== 'paid')
+    const pendingFixedInCycle = (summary.processedFixedBills || [])
+      .filter((bill) => bill.reconciledStatus === 'pending' || bill.reconciledStatus === 'overdue')
       .reduce((sum, bill) => sum + Math.abs(Number(bill.amount) || 0), 0);
     const projectedVariableSpending = Number(summary.averageDailySpent || 0) * Number(summary.daysRemaining || 0);
 
-    return balanceForAnalysis - pendingFixed - projectedVariableSpending;
-  }, [summary, fixedBills, balanceForAnalysis]);
+    return balanceForAnalysis - pendingFixedInCycle - projectedVariableSpending;
+  }, [summary, balanceForAnalysis]);
+
+  const priorities = summary?.priorities || [];
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
@@ -196,36 +198,43 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
         <div className="lg:col-span-7 flex flex-col gap-4 min-h-0">
-          <section className="space-y-3 min-h-0">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <AlertTriangle size={16} /> Riscos e alertas
-            </h3>
-            <div className="grid gap-3">
-              {summary?.priorities?.slice(0, 3).map((priority) => (
+          <section className="flex min-h-0 flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
+                <AlertTriangle size={16} /> Prioridades do ciclo
+              </h3>
+              {summary?.cyclePeriodLabel && (
+                <span className="rounded-full border border-brand-primary/20 bg-brand-primary/10 px-2.5 py-1 text-[9px] font-bold text-brand-primary">
+                  {summary.cyclePeriodLabel}
+                </span>
+              )}
+            </div>
+            <div className="grid min-h-0 gap-3 overflow-y-auto pr-1">
+              {priorities.map((priority, index) => (
                 <div key={priority.id} className="glass-card !p-4 flex items-center gap-4 border-white/5">
                   <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${priority.type === 'urgent' ? 'bg-red-500/20 text-red-400' : priority.type === 'warning' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-brand-primary/15 text-brand-primary'}`}>
-                    <AlertTriangle size={18} />
+                    <span className="text-xs font-black">{index + 1}</span>
                   </div>
                   <div className="min-w-0">
                     <h4 className="font-bold text-sm">{priority.title}</h4>
-                    <p className="text-xs text-white/60 line-clamp-2">{priority.message}</p>
+                    <p className="text-xs text-white/60">{priority.message}</p>
                   </div>
                 </div>
               ))}
-              {(summary?.priorities?.length ?? 0) === 0 && (
+              {priorities.length === 0 && (
                 <div className="glass-card !p-4 flex items-center gap-3 text-xs text-white/50">
-                  <CheckCircle2 className="text-green-400" size={18} /> Nenhum alerta crítico no momento.
+                  <CheckCircle2 className="text-green-400" size={18} /> Nenhum compromisso pendente no ciclo atual.
                 </div>
               )}
             </div>
           </section>
 
-          <section className="glass-card !p-4 bg-brand-secondary/5 border-brand-secondary/20">
+          <section className="glass-card !p-4 bg-brand-secondary/5 border-brand-secondary/20 shrink-0">
             <h3 className="font-bold text-sm mb-1 flex items-center gap-2">
               <TrendingDown size={16} /> Cenário até o próximo pagamento
             </h3>
             <p className="text-xs text-white/70">
-              Mantendo a média diária registrada, sem novas entradas e considerando contas fixas pendentes, o saldo estimado é de{' '}
+              Mantendo a média diária registrada e considerando as contas fixas do ciclo atual, o saldo estimado é de{' '}
               <strong className={scenarioBalance >= 0 ? 'text-green-400' : 'text-red-400'}>
                 R$ {scenarioBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </strong>.
