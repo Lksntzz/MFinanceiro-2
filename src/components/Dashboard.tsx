@@ -33,7 +33,6 @@ import { useApp } from '../context/AppContext';
 import {
   CardInstallment,
   CreditCard,
-  DailyBill,
   FinanceSummary,
   FixedBill,
   ImportedTransaction,
@@ -108,7 +107,6 @@ export default function Dashboard({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
-  const [dailyBills, setDailyBills] = useState<DailyBill[]>([]);
   const [cards, setCards] = useState<CreditCard[]>([]);
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
@@ -155,19 +153,18 @@ export default function Dashboard({
     setError(null);
 
     try {
-      const [settingsResult, transactionsResult, cardsResult, installmentsResult, dailyResult, fixedResult, investmentResult] =
+      const [settingsResult, transactionsResult, cardsResult, installmentsResult, fixedResult, investmentResult] =
         await Promise.all([
           db.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
           db.from('mf_finance_ledger_entries').select('*').eq('user_id', user.id).order('date', { ascending: false }),
           db.from('mf_credit_cards').select('*').eq('user_id', user.id),
           db.from('mf_card_installments').select('*').eq('user_id', user.id),
-          db.from('mf_daily_bills').select('*').eq('user_id', user.id),
           db.from('mf_fixed_bills').select('*').eq('user_id', user.id),
           db.from('mf_investments').select('*').eq('user_id', user.id),
         ]);
 
-      if (settingsResult.error) throw settingsResult.error;
-      if (transactionsResult.error) throw transactionsResult.error;
+      const firstError = settingsResult.error || transactionsResult.error || cardsResult.error || installmentsResult.error || fixedResult.error || investmentResult.error;
+      if (firstError) throw firstError;
 
       let nextSettings = settingsResult.data as UserSettings | null;
       if (!nextSettings) {
@@ -195,7 +192,6 @@ export default function Dashboard({
           due_day: Number(item.due_day ?? 1),
         })) as CardInstallment[],
       );
-      setDailyBills((dailyResult.data || []) as DailyBill[]);
       setFixedBills((fixedResult.data || []) as FixedBill[]);
       setInvestments(
         (investmentResult.data || []).map((item: any) => ({ ...item, amount: Number(item.amount ?? item.valor ?? 0) })) as Investment[],
@@ -227,12 +223,12 @@ export default function Dashboard({
     }
 
     try {
-      setSummary(calculateFinanceSummary(transactions, settings, fixedBills, cards, dailyBills, installments));
+      setSummary(calculateFinanceSummary(transactions, settings, fixedBills, cards, installments));
     } catch (err) {
       console.error('Summary calculation failed:', err);
       setSummary(null);
     }
-  }, [transactions, settings, fixedBills, cards, dailyBills, installments]);
+  }, [transactions, settings, fixedBills, cards, installments]);
 
   const isAdmin = useMemo(() => {
     const role = String(user.app_metadata?.role || '').toLowerCase();
@@ -471,10 +467,9 @@ export default function Dashboard({
       if (insertion.error) throw insertion.error;
     }
 
-    if (settings) {
-      const fallbackBalance = Number(settings.current_balance || 0) + entries.reduce((sum, item) => sum + item.amount, 0);
-      const targetBalance = typeof newBalance === 'number' ? newBalance : fallbackBalance;
-      await db.from('mf_user_settings').update({ current_balance: targetBalance }).eq('user_id', user.id);
+    if (typeof newBalance === 'number' && Number.isFinite(newBalance)) {
+      const balanceUpdate = await db.from('mf_user_settings').update({ current_balance: newBalance }).eq('user_id', user.id);
+      if (balanceUpdate.error) throw balanceUpdate.error;
     }
     await fetchData();
   }
@@ -537,8 +532,9 @@ export default function Dashboard({
 
   async function handleDeleteCard(card: CreditCard) {
     if (!window.confirm(`Excluir o cartão ${card.name}?`)) return;
-    await db.from('mf_credit_cards').delete().eq('id', card.id);
-    await fetchData();
+    const result = await db.from('mf_credit_cards').delete().eq('id', card.id).eq('user_id', user.id);
+    if (result.error) setError(result.error.message);
+    else await fetchData();
   }
 
   function openAddInstallmentModal() {
@@ -592,30 +588,21 @@ export default function Dashboard({
   }
 
   async function handleDeleteInstallment(item: CardInstallment) {
-    await db.from('mf_card_installments').delete().eq('id', item.id);
-    await fetchData();
+    const result = await db.from('mf_card_installments').delete().eq('id', item.id).eq('user_id', user.id);
+    if (result.error) setError(result.error.message);
+    else await fetchData();
   }
 
   async function handlePayInstallment(item: CardInstallment) {
-    if (!settings) return;
-    const amount = -Math.abs(Number(item.monthly_amount || 0));
-    await insertLedger({ amount, type: 'expense', category: 'Parcelamentos', description: `Parcela: ${item.description}` });
-    await db
-      .from('mf_card_installments')
-      .update({ current_installment: Number(item.current_installment || 1) + 1, last_paid_month: format(new Date(), 'yyyy-MM') })
-      .eq('id', item.id);
-    await db.from('mf_user_settings').update({ current_balance: Number(settings.current_balance || 0) + amount }).eq('user_id', user.id);
-    await fetchData();
+    const { error: rpcError } = await db.rpc('mf_pay_card_installment', { p_installment_id: item.id });
+    if (rpcError) setError(rpcError.message);
+    else await fetchData();
   }
 
   async function handlePayCardBill(card: CreditCard) {
-    if (!settings) return;
-    const amount = -Math.abs(Number(card.used || 0));
-    if (!amount) return;
-    await insertLedger({ amount, type: 'expense', category: 'Cartão de Crédito', description: `Pagamento da fatura: ${card.name}` });
-    await db.from('mf_credit_cards').update({ used: 0 }).eq('id', card.id);
-    await db.from('mf_user_settings').update({ current_balance: Number(settings.current_balance || 0) + amount }).eq('user_id', user.id);
-    await fetchData();
+    const { error: rpcError } = await db.rpc('mf_pay_credit_card_bill_v2', { p_card_id: card.id });
+    if (rpcError) setError(rpcError.message);
+    else await fetchData();
   }
 
   const toolGroups = [
@@ -771,7 +758,7 @@ export default function Dashboard({
               <button className={accountsSubTab === 'subscriptions' ? 'active' : ''} onClick={() => setAccountsSubTab('subscriptions')}>Assinaturas</button>
               <button className={accountsSubTab === 'investments' ? 'active' : ''} onClick={() => setAccountsSubTab('investments')}>Investimentos</button>
             </div>
-            {accountsSubTab === 'bills' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="bills" />}
+            {accountsSubTab === 'bills' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="bills" />}
             {accountsSubTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
             {accountsSubTab === 'subscriptions' && <SubscriptionManager />}
             {accountsSubTab === 'investments' && <Investments user={user} settings={settings} onRefresh={fetchData} />}
@@ -780,7 +767,7 @@ export default function Dashboard({
 
         {activeTab === 'cards' && <Cartoes cards={cards} installments={installments} onAddCard={openAddCardModal} onEditCard={openEditCardModal} onDeleteCard={handleDeleteCard} onAddInstallment={openAddInstallmentModal} onEditInstallment={openEditInstallmentModal} onDeleteInstallment={handleDeleteInstallment} onPayInstallment={handlePayInstallment} onPayCardBill={handlePayCardBill} />}
 
-        {activeTab === 'settings' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="income" />}
+        {activeTab === 'settings' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="income" />}
         {activeTab === 'admin_requests' && <AdminAccessRequests user={user} />}
 
         {loading && activeTab === 'overview' && <div className="mf-loading">Atualizando dados...</div>}
