@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FileDown, Search, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Transaction } from '../types';
+
 import { ReportService } from '../services/reportService';
+import { Transaction } from '../types';
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -49,11 +50,10 @@ export default function History({
   const filteredTransactions = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     return transactions.filter((transaction) => {
-      const matchesType = filterType === 'all' || transaction.type === filterType;
-      if (!matchesType) return false;
+      if (filterType !== 'all' && transaction.type !== filterType) return false;
       if (!search) return true;
 
-      const searchable = [
+      return [
         transaction.description,
         transaction.category,
         transaction.source,
@@ -61,21 +61,18 @@ export default function History({
       ]
         .filter(Boolean)
         .join(' ')
-        .toLowerCase();
-
-      return searchable.includes(search);
+        .toLowerCase()
+        .includes(search);
     });
   }, [transactions, searchTerm, filterType]);
 
   const groups = useMemo<DayGroup[]>(() => {
     const grouped = new Map<string, Transaction[]>();
 
-    for (const transaction of filteredTransactions) {
+    filteredTransactions.forEach((transaction) => {
       const key = safeDateKey(transaction.date);
-      const current = grouped.get(key) ?? [];
-      current.push(transaction);
-      grouped.set(key, current);
-    }
+      grouped.set(key, [...(grouped.get(key) || []), transaction]);
+    });
 
     return [...grouped.entries()]
       .sort(([a], [b]) => b.localeCompare(a))
@@ -84,13 +81,12 @@ export default function History({
           (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime(),
         );
         const parsed = key === 'sem-data' ? null : new Date(`${key}T12:00:00`);
-        const label = parsed
-          ? format(parsed, "EEEE, dd 'de' MMMM", { locale: ptBR })
-          : 'Sem data';
 
         return {
           key,
-          label,
+          label: parsed
+            ? format(parsed, "EEEE, dd 'de' MMMM", { locale: ptBR })
+            : 'Sem data',
           items: sortedItems,
           income: sortedItems
             .filter((item) => item.type === 'income')
@@ -149,7 +145,8 @@ export default function History({
           <button
             type="button"
             onClick={() => ReportService.exportTransactionsToExcel(filteredTransactions)}
-            className="flex items-center gap-2 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary"
+            disabled={filteredTransactions.length === 0}
+            className="flex items-center gap-2 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary disabled:opacity-40"
           >
             <FileDown size={14} /> Excel
           </button>
@@ -209,16 +206,9 @@ export default function History({
 
                 {expanded && (
                   <div className="border-t border-white/10">
-                    {group.items.map((transaction) => (
-                      <div
-                        key={transaction.id}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-white/5 px-4 py-2 last:border-b-0 hover:bg-white/[0.03]"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => onEdit?.(transaction)}
-                          className="min-w-0 text-left"
-                        >
+                    {group.items.map((transaction) => {
+                      const content = (
+                        <>
                           <div className="truncate text-xs font-semibold">
                             {transaction.description || transaction.category || 'Lançamento'}
                           </div>
@@ -226,35 +216,58 @@ export default function History({
                             {transaction.category || 'Geral'}
                             {transaction.source ? ` • ${transaction.source}` : ''}
                           </div>
-                        </button>
+                        </>
+                      );
 
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => onToggleStatus?.(
-                              transaction.id,
-                              transaction.status === 'paid' ? 'pending' : 'paid',
-                            )}
-                            className="text-[10px] text-white/40 hover:text-brand-primary"
-                          >
-                            {transaction.status === 'pending' ? 'Pendente' : 'Pago'}
-                          </button>
-                          <div className={`min-w-[96px] text-right text-xs font-bold ${transaction.type === 'income' ? 'text-green-400' : ''}`}>
-                            {transaction.type === 'income' ? '+' : '-'} {formatMoney(Math.abs(Number(transaction.amount) || 0))}
-                          </div>
-                          {onDelete && (
-                            <button
-                              type="button"
-                              onClick={() => onDelete(transaction.id)}
-                              className="text-white/20 hover:text-red-400"
-                              aria-label="Excluir lançamento"
-                            >
-                              <Trash2 size={14} />
+                      return (
+                        <div
+                          key={transaction.id}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-white/5 px-4 py-2 last:border-b-0 hover:bg-white/[0.03]"
+                        >
+                          {onEdit ? (
+                            <button type="button" onClick={() => onEdit(transaction)} className="min-w-0 text-left">
+                              {content}
                             </button>
+                          ) : (
+                            <div className="min-w-0">{content}</div>
                           )}
+
+                          <div className="flex items-center gap-3">
+                            {onToggleStatus ? (
+                              <button
+                                type="button"
+                                onClick={() => onToggleStatus(
+                                  transaction.id,
+                                  transaction.status === 'paid' ? 'pending' : 'paid',
+                                )}
+                                className="text-[10px] text-white/40 hover:text-brand-primary"
+                              >
+                                {transaction.status === 'pending' ? 'Pendente' : 'Pago'}
+                              </button>
+                            ) : transaction.status ? (
+                              <span className="text-[10px] text-white/30">
+                                {transaction.status === 'pending' ? 'Pendente' : 'Pago'}
+                              </span>
+                            ) : null}
+
+                            <div className={`min-w-[96px] text-right text-xs font-bold ${transaction.type === 'income' ? 'text-green-400' : ''}`}>
+                              {transaction.type === 'income' ? '+' : '-'} {formatMoney(Math.abs(Number(transaction.amount) || 0))}
+                            </div>
+
+                            {onDelete && (
+                              <button
+                                type="button"
+                                onClick={() => onDelete(transaction.id)}
+                                className="text-white/20 hover:text-red-400"
+                                aria-label="Excluir lançamento"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </article>
