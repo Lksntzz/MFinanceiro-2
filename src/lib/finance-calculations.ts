@@ -1,7 +1,6 @@
 import {
   CardInstallment,
   CreditCard,
-  DailyBill,
   FinanceSummary,
   FixedBill,
   PriorityItem,
@@ -19,7 +18,6 @@ import {
   getDaysInMonth,
   isAfter,
   isBefore,
-  isSameMonth,
   isWithinInterval,
   parseISO,
   startOfDay,
@@ -150,7 +148,6 @@ export function calculateFinanceSummary(
   settings: UserSettings,
   fixedBills: FixedBill[] = [],
   cards: CreditCard[] = [],
-  dailyBills: DailyBill[] = [],
   installments: CardInstallment[] = [],
   currentDate: Date = new Date(),
 ): FinanceSummary {
@@ -209,8 +206,7 @@ export function calculateFinanceSummary(
       if (!textMatch) {
         const identified = identifyCompany(transaction.description || '');
         if (identified && identified.confidence >= 0.7) {
-          textMatch = normalizedBillName.includes(normalizeText(identified.company)) ||
-            knownCategoryKey === identified.category;
+          textMatch = normalizedBillName.includes(normalizeText(identified.company)) || knownCategoryKey === identified.category;
         }
       }
 
@@ -263,13 +259,7 @@ export function calculateFinanceSummary(
     .sort((a, b) => a.cycleDueDate.getTime() - b.cycleDueDate.getTime());
   const installmentsTotal = cycleInstallments.reduce((sum, installment) => sum + Math.abs(asNumber(installment.monthly_amount)), 0);
 
-  const dailyBillsCommitment = dailyBills.reduce((sum, bill) => {
-    const amount = Math.abs(asNumber(bill.average_amount));
-    if (bill.frequency === 'weekly') return sum + amount * Math.max(1, Math.ceil(divisorDays / 7));
-    return getRecurringDateInCycle(28, cycle) ? sum + amount : sum;
-  }, 0);
-
-  const totalCommitments = pendingBillsTotal + cardsTotal + installmentsTotal + dailyBillsCommitment;
+  const totalCommitments = pendingBillsTotal + cardsTotal + installmentsTotal;
   const availableForDaily = currentBalance - totalCommitments;
   const projectedBalance = currentBalance - totalCommitments;
   const cyclePeriodLabel = `${format(lastPayday, 'dd/MM')} a ${format(nextPayday, 'dd/MM')}`;
@@ -326,7 +316,6 @@ export function calculateFinanceSummary(
   }
   if (cardsTotal > 0) insights.push(`Faturas de cartão no ciclo: R$ ${formatMoney(cardsTotal)}.`);
   if (installmentsTotal > 0) insights.push(`Parcelas ainda pendentes no ciclo: R$ ${formatMoney(installmentsTotal)}.`);
-  if (dailyBillsCommitment > 0) insights.push(`Gastos cotidianos estimados até o próximo pagamento: R$ ${formatMoney(dailyBillsCommitment)}.`);
   if (dominantCategory !== 'Nenhuma' && (sortedCategories[0]?.percentage || 0) > 40) {
     insights.push(`${dominantCategory} representa ${(sortedCategories[0]?.percentage || 0).toFixed(0)}% dos gastos do ciclo.`);
   }
@@ -336,7 +325,6 @@ export function calculateFinanceSummary(
 
   const priorities: PriorityItem[] = [];
 
-  // 1. Contas fixas: primeira prioridade operacional do ciclo.
   pendingFixedBills.forEach((bill) => {
     const dueDate = parseISO(String(bill.dueDate));
     const daysUntilDue = differenceInCalendarDays(dueDate, today);
@@ -350,7 +338,6 @@ export function calculateFinanceSummary(
     });
   });
 
-  // 2. Faturas de cartão: segunda prioridade do ciclo.
   cycleCards.forEach((card) => {
     const overdue = isBefore(card.cycleDueDate, today);
     const daysUntilDue = differenceInCalendarDays(card.cycleDueDate, today);
@@ -362,7 +349,6 @@ export function calculateFinanceSummary(
     });
   });
 
-  // 3. Parcelas ativas que ainda não foram pagas no mês.
   cycleInstallments.forEach((installment) => {
     const overdue = isBefore(installment.cycleDueDate, today);
     priorities.push({
@@ -373,15 +359,6 @@ export function calculateFinanceSummary(
     });
   });
 
-  // 4. Gastos essenciais estimados e alertas gerais ficam depois dos compromissos datados.
-  if (dailyBillsCommitment > 0) {
-    priorities.push({
-      id: 'daily-cycle-estimate',
-      title: 'Gastos cotidianos previstos',
-      message: `Reserve R$ ${formatMoney(dailyBillsCommitment)} até ${format(nextPayday, 'dd/MM')}.`,
-      type: 'info',
-    });
-  }
   if (currentBalance < 100 && !isBrandNewCycle) {
     priorities.push({ id: 'p-balance', title: 'Saldo crítico', message: 'Evite gastos não essenciais até o próximo pagamento.', type: 'urgent' });
   }
