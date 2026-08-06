@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import ConfigRequired from './components/ConfigRequired';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
-import { Session } from '@supabase/supabase-js';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -19,39 +19,70 @@ export default function App() {
       return;
     }
 
-    // Check for maintenance mode
-    fetchMaintenanceConfig(supabase).then(config => {
-      setMaintenance(config);
-    }).catch(err => {
-      console.warn('Falha na verificação de manutenção:', err);
-    });
+    let active = true;
 
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('Error getting session:', error);
-        supabase.auth.signOut();
-        setSession(null);
-      } else {
-        setSession(session);
+    const loadFreshSession = async (incoming?: Session | null) => {
+      try {
+        if (!incoming) {
+          const { data, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          incoming = data.session;
+        }
+
+        if (!incoming) {
+          if (active) setSession(null);
+          return;
+        }
+
+        // Force a new JWT so recently changed app_metadata roles are reflected.
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) throw refreshError;
+
+        const currentSession = refreshed.session ?? incoming;
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+
+        if (active) {
+          setSession({
+            ...currentSession,
+            user: userData.user ?? currentSession.user,
+          });
+        }
+      } catch (err) {
+        console.error('Falha ao atualizar sessão:', err);
+        if (active) setSession(incoming ?? null);
       }
-      setLoading(false);
-    }).catch(err => {
-      console.error('Crítico: Falha ao buscar sessão (Erro de Rede):', err);
-      // Em caso de erro de rede total, não travamos o usuário no loader eterno
-      setLoading(false);
+    };
+
+    fetchMaintenanceConfig(supabase)
+      .then((config) => active && setMaintenance(config))
+      .catch((err) => console.warn('Falha na verificação de manutenção:', err));
+
+    loadFreshSession()
+      .finally(() => active && setLoading(false));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'SIGNED_OUT' || !nextSession) {
+        setSession(null);
+        return;
+      }
+
+      // Avoid doing network work synchronously inside the auth callback.
+      window.setTimeout(() => {
+        loadFreshSession(nextSession);
+      }, 0);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#050505]">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent"></div>
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" />
       </div>
     );
   }
@@ -63,12 +94,10 @@ export default function App() {
   const isAdmin = isMaintenanceAdmin(session);
   const isMaintenanceActive = maintenance?.maintenance_mode && !isAdmin;
 
-  // Se estiver em manutenção e NÃO for admin, mostra tela de manutenção
-  // Caso o usuário clique em "Entrar como adm", liberamos o Auth mesmo em manutenção
   if (isMaintenanceActive && !forceAdminAuth) {
     return (
-      <MaintenanceScreen 
-        message={maintenance?.maintenance_message} 
+      <MaintenanceScreen
+        message={maintenance?.maintenance_message}
         onAdminLogin={() => setForceAdminAuth(true)}
       />
     );
@@ -78,5 +107,10 @@ export default function App() {
     return <Auth />;
   }
 
-  return <Dashboard user={session.user} isMaintenanceBypass={isAdmin && (maintenance?.maintenance_mode || false)} />;
+  return (
+    <Dashboard
+      user={session.user}
+      isMaintenanceBypass={isAdmin && Boolean(maintenance?.maintenance_mode)}
+    />
+  );
 }
