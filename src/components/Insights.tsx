@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { FinanceSummary, FixedBill, Transaction } from '../types';
+import { supabase } from '../lib/supabase';
 import { getPredictiveAnalysis } from '../services/investmentIntelligence';
 
 interface InsightsProps {
@@ -26,6 +27,56 @@ function dateKey(raw: string): string {
 export default function Insights({ summary, transactions, fixedBills }: InsightsProps) {
   const [prediction, setPrediction] = useState('');
   const [loadingPrediction, setLoadingPrediction] = useState(false);
+  const [actualBalance, setActualBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function loadActualBalance() {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      if (!userId || !active) return;
+
+      const refreshBalance = async () => {
+        const { data, error } = await supabase
+          .from('mf_user_settings')
+          .select('current_balance')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!error && active) {
+          const value = Number(data?.current_balance ?? 0);
+          setActualBalance(Number.isFinite(value) ? value : 0);
+        }
+      };
+
+      await refreshBalance();
+
+      channel = supabase
+        .channel(`financial-insights-balance-${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'mf_user_settings',
+            filter: `user_id=eq.${userId}`,
+          },
+          refreshBalance,
+        )
+        .subscribe();
+    }
+
+    void loadActualBalance();
+
+    return () => {
+      active = false;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const balanceForAnalysis = actualBalance ?? Number(summary?.currentBalance || 0);
 
   useEffect(() => {
     let active = true;
@@ -40,7 +91,7 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
       try {
         const text = await getPredictiveAnalysis(
           transactions,
-          summary.currentBalance,
+          balanceForAnalysis,
           fixedBills,
         );
         if (active) setPrediction(text);
@@ -56,7 +107,7 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
     return () => {
       active = false;
     };
-  }, [summary, transactions, fixedBills]);
+  }, [summary, transactions, fixedBills, balanceForAnalysis]);
 
   const recentControl = useMemo(() => {
     const dailyLimit = Number(summary?.dailyLimit || 0);
@@ -83,24 +134,32 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
       date.setDate(anchor.getDate() - offset);
       const key = dateKey(date.toISOString());
       const spent = expensesByDay.get(key) || 0;
-      if (spent > 0) observedDays += 1;
-      if (dailyLimit > 0 && spent <= dailyLimit) controlledDays += 1;
+
+      if (spent > 0) {
+        observedDays += 1;
+        if (dailyLimit > 0 && spent <= dailyLimit) controlledDays += 1;
+      }
     }
 
     if (dailyLimit <= 0) {
-      return 'Defina renda, compromissos e saldo para calcular o controle diário.';
+      return 'O saldo livre está zerado ou negativo; não há limite diário seguro disponível.';
     }
     if (observedDays === 0) {
       return 'Não há gastos recentes suficientes para avaliar os últimos sete dias.';
     }
-    return `${controlledDays} dos últimos 7 dias ficaram dentro do limite diário calculado.`;
+    return `${controlledDays} dos ${observedDays} dias com gastos ficaram dentro do limite diário calculado.`;
   }, [transactions, summary?.dailyLimit]);
 
   const scenarioBalance = useMemo(() => {
     if (!summary) return 0;
-    const projectedDailyFlow = Number(summary.dailyLimit || 0) - Number(summary.averageDailySpent || 0);
-    return Number(summary.currentBalance || 0) + projectedDailyFlow * Number(summary.daysRemaining || 0);
-  }, [summary]);
+
+    const pendingFixed = fixedBills
+      .filter((bill) => String(bill.status || 'pending').toLowerCase() !== 'paid')
+      .reduce((sum, bill) => sum + Math.abs(Number(bill.amount) || 0), 0);
+    const projectedVariableSpending = Number(summary.averageDailySpent || 0) * Number(summary.daysRemaining || 0);
+
+    return balanceForAnalysis - pendingFixed - projectedVariableSpending;
+  }, [summary, fixedBills, balanceForAnalysis]);
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
@@ -166,7 +225,7 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
               <TrendingDown size={16} /> Cenário até o próximo pagamento
             </h3>
             <p className="text-xs text-white/70">
-              Mantendo a diferença atual entre limite diário e média de gastos, o saldo estimado é de{' '}
+              Mantendo a média diária registrada, sem novas entradas e considerando contas fixas pendentes, o saldo estimado é de{' '}
               <strong className={scenarioBalance >= 0 ? 'text-green-400' : 'text-red-400'}>
                 R$ {scenarioBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </strong>.
