@@ -230,40 +230,108 @@ function toImportedTransactions(
   });
 }
 
+function classifyPdfOpenError(error: unknown): string {
+  const value = error as { name?: string; message?: string; code?: number } | null;
+  const name = String(value?.name || '').toLowerCase();
+  const message = String(value?.message || '').toLowerCase();
+
+  if (name.includes('password') || message.includes('password') || message.includes('senha')) {
+    return 'PDF protegido por senha. Remova a senha no banco ou exporte o extrato em CSV/OFX antes de importar.';
+  }
+  if (name.includes('invalidpdf') || message.includes('invalid pdf') || message.includes('pdf structure')) {
+    return 'PDF inválido ou com estrutura não compatível. Baixe novamente o extrato original no banco; não use impressão em PDF.';
+  }
+  if (name.includes('missingpdf') || message.includes('missing pdf')) {
+    return 'O arquivo PDF não pôde ser carregado completamente. Selecione o arquivo novamente.';
+  }
+  if (name.includes('unexpectedresponse') || message.includes('unexpected response')) {
+    return 'Falha ao carregar o PDF no navegador. Tente baixar o extrato novamente e importar o arquivo local.';
+  }
+  return 'Não foi possível abrir este PDF. Baixe o extrato original novamente ou use CSV/OFX.';
+}
+
+function emptyPdfResult(selectedBank: string, reason: string, scanned = false): PdfParseResult {
+  const bank = selectedBank && selectedBank !== 'auto' ? selectedBank : 'generic';
+  return {
+    transactions: [],
+    debug: {
+      isScannedPdf: scanned,
+      isLikelyBankStatement: false,
+      hasTransactionPattern: false,
+      totalPages: 0,
+      totalTextItems: 0,
+      linesExtracted: 0,
+      ignoredLines: 0,
+      extractedTransactions: 0,
+      rejectedLineReasons: [],
+      parserBank: bank,
+      parserBankLabel: normalizeBankLabel(bank),
+      usedGenericFallback: false,
+      reason,
+      textPreview: '',
+    }
+  };
+}
+
 export async function parsePdfStatementWithDebug(
   file: File,
   selectedBank: string,
   options?: PdfClassificationOptions
 ): Promise<PdfParseResult> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await getDocument({ data: bytes }).promise;
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch {
+    return emptyPdfResult(selectedBank, 'Não foi possível ler os bytes do arquivo. Selecione o PDF novamente.');
+  }
+
+  let pdf: Awaited<ReturnType<typeof getDocument>['promise']>;
+  try {
+    pdf = await getDocument({ data: bytes }).promise;
+  } catch (error) {
+    return emptyPdfResult(selectedBank, classifyPdfOpenError(error));
+  }
+
   const lines: string[] = [];
   let fullText = '';
   let totalTextItems = 0;
 
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent();
-    const rows = new Map<number, { x: number; text: string }[]>();
-    totalTextItems += content.items.length;
+  try {
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      const rows = new Map<number, { x: number; text: string }[]>();
+      totalTextItems += content.items.length;
 
-    for (const item of content.items as Array<{ str: string; transform: number[] }>) {
-      const y = Math.round(item.transform[5]);
-      if (!rows.has(y)) rows.set(y, []);
-      rows.get(y)!.push({ x: item.transform[4], text: item.str });
-      fullText += ` ${item.str}`;
-    }
+      for (const item of content.items as Array<{ str: string; transform: number[] }>) {
+        const y = Math.round(item.transform[5]);
+        if (!rows.has(y)) rows.set(y, []);
+        rows.get(y)!.push({ x: item.transform[4], text: item.str });
+        fullText += ` ${item.str}`;
+      }
 
-    const ys = [...rows.keys()].sort((a, b) => b - a);
-    for (const y of ys) {
-      const line = rows.get(y)!
-        .sort((a, b) => a.x - b.x)
-        .map(part => part.text)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (line) lines.push(line);
+      const ys = [...rows.keys()].sort((a, b) => b - a);
+      for (const y of ys) {
+        const line = rows.get(y)!
+          .sort((a, b) => a.x - b.x)
+          .map(part => part.text)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (line) lines.push(line);
+      }
     }
+  } catch {
+    return {
+      ...emptyPdfResult(selectedBank, 'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.'),
+      debug: {
+        ...emptyPdfResult(selectedBank, '').debug,
+        totalPages: pdf.numPages,
+        totalTextItems,
+        linesExtracted: lines.length,
+        reason: 'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.',
+      }
+    };
   }
 
   const bank = resolvePdfBank(selectedBank, fullText);
@@ -297,13 +365,13 @@ export async function parsePdfStatementWithDebug(
   let reason: string | undefined;
   if (transactions.length === 0) {
     if (isScannedPdf) {
-      reason = 'PDF sem texto selecionavel (provavel escaneado/imagem). Use OCR ou exporte em CSV/OFX.';
+      reason = 'PDF sem texto selecionável, provavelmente escaneado ou gerado como imagem. Use o PDF original do banco ou exporte em CSV/OFX.';
     } else if (!isLikelyBankStatement) {
-      reason = 'arquivo nao e um extrato bancario';
+      reason = 'O PDF abriu, mas não apresenta estrutura reconhecível de extrato bancário.';
     } else if (cleanedText.length < 120) {
-      reason = 'Texto extraido insuficiente para mapear movimentacoes financeiras.';
+      reason = 'Texto extraído insuficiente para mapear movimentações financeiras.';
     } else {
-      reason = 'nenhum registro de transacao encontrado';
+      reason = 'Extrato reconhecido, mas nenhuma movimentação pôde ser mapeada com segurança. O layout pode ter mudado.';
     }
   }
 
@@ -320,11 +388,11 @@ export async function parsePdfStatementWithDebug(
     if (looksLikeNoiseLine(line)) continue;
     if (rejectedLineReasons.length >= 8) continue;
     if (hasDate && !hasAmount) {
-      rejectedLineReasons.push(`Linha ignorada sem valor monetario: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(`Linha ignorada sem valor monetário: "${line.slice(0, 120)}"`);
     } else if (!hasDate && hasAmount) {
-      rejectedLineReasons.push(`Linha ignorada sem data: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(`Linha sem data própria; o leitor universal tentará associá-la à data anterior: "${line.slice(0, 120)}"`);
     } else {
-      rejectedLineReasons.push(`Linha sem padrao de transacao: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(`Linha sem padrão de transação: "${line.slice(0, 120)}"`);
     }
   }
 
