@@ -1,68 +1,101 @@
-import React from 'react';
-import { Hammer, CloudOff, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { Clock3, Loader2, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface MaintenanceScreenProps {
   message?: string;
-  onAdminLogin?: () => void;
+  onAdminLogin?: () => void | Promise<void>;
 }
 
-export default function MaintenanceScreen({ 
-  message = 'Estamos em manutenção para melhorias. Tente novamente em alguns minutos.',
-  onAdminLogin 
+export default function MaintenanceScreen({
+  message = 'Estamos realizando melhorias importantes. O MFinanceiro estará disponível novamente em breve.',
+  onAdminLogin,
 }: MaintenanceScreenProps) {
+  const [openingAdmin, setOpeningAdmin] = useState(false);
+
+  const handleAdminLogin = async () => {
+    if (!onAdminLogin || openingAdmin) return;
+    setOpeningAdmin(true);
+    try {
+      await onAdminLogin();
+    } finally {
+      setOpeningAdmin(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[9999] bg-[#050505] flex items-center justify-center p-6 overflow-hidden">
-      {/* Background ambient light */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-brand-primary/10 rounded-full blur-[120px] pointer-events-none" />
-      
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full text-center relative z-10"
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden bg-[#050505] p-6">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-primary/10 blur-[130px]" />
+      <div className="pointer-events-none absolute -left-24 top-16 h-72 w-72 rounded-full bg-brand-secondary/10 blur-[110px]" />
+
+      <motion.main
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+        className="relative z-10 w-full max-w-lg overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl"
       >
-        <div className="flex justify-center mb-8">
-          <div className="relative">
-            <div className="h-24 w-24 rounded-3xl bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 flex items-center justify-center border border-white/10">
-              <CloudOff size={40} className="text-brand-primary" />
+        <div className="border-b border-white/10 px-7 py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-primary/20 bg-brand-primary/10 text-brand-primary">
+                <Wrench size={21} />
+              </div>
+              <div>
+                <span className="block text-[10px] font-black uppercase tracking-[0.22em] text-brand-primary">
+                  MFinanceiro
+                </span>
+                <span className="text-xs text-white/40">Ambiente temporariamente restrito</span>
+              </div>
             </div>
-            <motion.div 
-              animate={{ rotate: [0, 10, 0, -10, 0] }}
-              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-              className="absolute -top-2 -right-2 h-10 w-10 rounded-xl bg-[#0a0a0a] border border-white/10 flex items-center justify-center shadow-xl"
-            >
-              <Hammer size={20} className="text-brand-secondary" />
-            </motion.div>
+            <span className="flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-amber-300">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+              Manutenção
+            </span>
           </div>
         </div>
 
-        <h1 className="text-3xl font-bold tracking-tight mb-4">Sitema em Manutenção</h1>
-        <p className="text-white/60 leading-relaxed mb-10">
-          {message}
-        </p>
+        <div className="px-7 py-9 text-center">
+          <motion.div
+            animate={{ rotate: [0, 4, 0, -4, 0] }}
+            transition={{ repeat: Infinity, duration: 5, ease: 'easeInOut' }}
+            className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white/10 bg-gradient-to-br from-brand-primary/15 to-brand-secondary/10 shadow-[0_0_60px_rgba(0,242,255,0.08)]"
+          >
+            <Sparkles size={39} className="text-brand-primary" />
+          </motion.div>
 
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent mb-10" />
+          <h1 className="text-3xl font-black tracking-tight text-white">Sistema em manutenção</h1>
+          <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-white/60">{message}</p>
 
-        <div className="flex flex-col gap-4 items-center">
-          <div className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">
-            Acesso Restrito
+          <div className="mx-auto mt-7 flex max-w-sm items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/40">
+            <Clock3 size={15} className="text-brand-primary" />
+            Seus dados permanecem protegidos durante a atualização.
           </div>
-          
-          {onAdminLogin && (
-            <button
-              onClick={onAdminLogin}
-              className="group flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-brand-primary/30 transition-all"
-            >
-              <ShieldCheck size={18} className="text-brand-primary group-hover:scale-110 transition-transform" />
-              <span className="text-sm font-bold text-white/80">Entrar como Administrador</span>
-            </button>
-          )}
-          
-          <p className="text-[10px] text-white/20 mt-4 italic">
-            MFinanceiro v2.1.0 • Todos os backups salvos com sucesso
-          </p>
         </div>
-      </motion.div>
+
+        <div className="border-t border-white/10 bg-black/20 px-7 py-5">
+          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+            <p className="text-center text-[10px] font-bold uppercase tracking-[0.16em] text-white/25 sm:text-left">
+              O acesso será liberado automaticamente após a manutenção
+            </p>
+
+            {onAdminLogin && (
+              <button
+                type="button"
+                onClick={() => void handleAdminLogin()}
+                disabled={openingAdmin}
+                className="group flex shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-black text-white/70 transition-all hover:border-brand-primary/30 hover:bg-brand-primary/10 hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {openingAdmin ? (
+                  <Loader2 size={17} className="animate-spin" />
+                ) : (
+                  <ShieldCheck size={17} className="transition-transform group-hover:scale-110" />
+                )}
+                Acesso administrativo
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.main>
     </div>
   );
 }
