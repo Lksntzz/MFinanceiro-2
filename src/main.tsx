@@ -6,7 +6,6 @@ import './lib/historical-import-review-guard';
 import './lib/installment-manager-mount';
 import './lib/income-payroll-center-mount';
 import './lib/payroll-advance-correction-guard';
-import './lib/income-payroll-layer-guard';
 import './lib/simple-navigation-mount';
 import './lib/profile-onboarding-mount';
 import './lib/guided-tutorial-mount';
