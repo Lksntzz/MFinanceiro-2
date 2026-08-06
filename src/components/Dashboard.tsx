@@ -205,14 +205,20 @@ export default function Dashboard({
   }
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
+    const filter = `user_id=eq.${user.id}`;
     const channel = db
       .channel(`dashboard-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries', filter }, () => void fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_user_settings', filter }, () => void fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_credit_cards', filter }, () => void fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_card_installments', filter }, () => void fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_fixed_bills', filter }, () => void fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_investments', filter }, () => void fetchData())
       .subscribe();
 
     return () => {
-      db.removeChannel(channel);
+      void db.removeChannel(channel);
     };
   }, [user.id]);
 
@@ -322,12 +328,13 @@ export default function Dashboard({
     ],
   };
 
+  const selectedRhythm = summary?.rhythm?.[rhythmFilter];
   const rhythmChartData = {
-    labels: historicalWindow.labels,
+    labels: selectedRhythm?.labels || historicalWindow.labels,
     datasets: [
       {
         label: 'Saídas',
-        data: historicalWindow.expenses,
+        data: selectedRhythm?.data || historicalWindow.expenses,
         borderColor: '#ef4444',
         backgroundColor: 'rgba(239,68,68,.06)',
         fill: true,
@@ -337,7 +344,7 @@ export default function Dashboard({
       },
       {
         label: 'Entradas',
-        data: historicalWindow.incomes,
+        data: selectedRhythm?.incomeData || historicalWindow.incomes,
         borderColor: '#22c55e',
         backgroundColor: 'rgba(34,197,94,.06)',
         fill: true,
@@ -739,7 +746,7 @@ export default function Dashboard({
           <div className="mf-tab-shell">
             <div className="mf-subnav">
               <button className={analysisSubTab === 'stats' ? 'active' : ''} onClick={() => setAnalysisSubTab('stats')}>Estatísticas</button>
-              <button className={analysisSubTab === 'insights' ? 'active' : ''} onClick={() => setAnalysisSubTab('insights')}>Insights AI</button>
+              <button className={analysisSubTab === 'insights' ? 'active' : ''} onClick={() => setAnalysisSubTab('insights')}>Insights</button>
               <button className={analysisSubTab === 'health' ? 'active' : ''} onClick={() => setAnalysisSubTab('health')}>Saúde financeira</button>
               <button className={analysisSubTab === 'goals' ? 'active' : ''} onClick={() => setAnalysisSubTab('goals')}>Metas</button>
             </div>
