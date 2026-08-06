@@ -1,17 +1,15 @@
-
-import React, { useState, useEffect } from 'react';
-import { FinanceSummary, Transaction, FixedBill } from '../types';
-import { 
-  Lightbulb, 
-  AlertTriangle, 
-  TrendingDown, 
-  Zap, 
-  CheckCircle2,
-  ArrowRight,
-  BrainCircuit
-} from 'lucide-react';
-import { getPredictiveAnalysis } from '../services/investmentIntelligence';
+import React, { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import {
+  AlertTriangle,
+  BrainCircuit,
+  CheckCircle2,
+  Lightbulb,
+  TrendingDown,
+} from 'lucide-react';
+
+import { FinanceSummary, FixedBill, Transaction } from '../types';
+import { getPredictiveAnalysis } from '../services/investmentIntelligence';
 
 interface InsightsProps {
   summary: FinanceSummary | null;
@@ -19,51 +17,117 @@ interface InsightsProps {
   fixedBills: FixedBill[];
 }
 
+function dateKey(raw: string): string {
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export default function Insights({ summary, transactions, fixedBills }: InsightsProps) {
-  const [prediction, setPrediction] = useState<string>('');
+  const [prediction, setPrediction] = useState('');
   const [loadingPrediction, setLoadingPrediction] = useState(false);
 
   useEffect(() => {
-    async function fetchPrediction() {
-      if (!summary || transactions.length === 0) return;
+    let active = true;
+
+    async function calculatePrediction() {
+      if (!summary || transactions.length === 0) {
+        setPrediction('Cadastre ou importe lançamentos para gerar uma projeção financeira local.');
+        return;
+      }
+
       setLoadingPrediction(true);
       try {
-        const text = await getPredictiveAnalysis(transactions, summary.currentBalance, fixedBills);
-        setPrediction(text);
-      } catch (err) {
-        console.error('Error fetching prediction:', err);
+        const text = await getPredictiveAnalysis(
+          transactions,
+          summary.currentBalance,
+          fixedBills,
+        );
+        if (active) setPrediction(text);
+      } catch (error) {
+        console.error('Falha na projeção local:', error);
+        if (active) setPrediction('Não foi possível calcular a projeção com os dados disponíveis.');
       } finally {
-        setLoadingPrediction(false);
+        if (active) setLoadingPrediction(false);
       }
     }
-    fetchPrediction();
-  }, [summary, transactions.length, fixedBills.length]);
+
+    void calculatePrediction();
+    return () => {
+      active = false;
+    };
+  }, [summary, transactions, fixedBills]);
+
+  const recentControl = useMemo(() => {
+    const dailyLimit = Number(summary?.dailyLimit || 0);
+    const validDates = transactions
+      .map((transaction) => new Date(transaction.date))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime());
+
+    const anchor = validDates[0] || new Date();
+    const expensesByDay = new Map<string, number>();
+
+    transactions
+      .filter((transaction) => transaction.type === 'expense')
+      .forEach((transaction) => {
+        const key = dateKey(transaction.date);
+        if (!key) return;
+        expensesByDay.set(key, (expensesByDay.get(key) || 0) + Math.abs(Number(transaction.amount) || 0));
+      });
+
+    let controlledDays = 0;
+    let observedDays = 0;
+    for (let offset = 0; offset < 7; offset += 1) {
+      const date = new Date(anchor);
+      date.setDate(anchor.getDate() - offset);
+      const key = dateKey(date.toISOString());
+      const spent = expensesByDay.get(key) || 0;
+      if (spent > 0) observedDays += 1;
+      if (dailyLimit > 0 && spent <= dailyLimit) controlledDays += 1;
+    }
+
+    if (dailyLimit <= 0) {
+      return 'Defina renda, compromissos e saldo para calcular o controle diário.';
+    }
+    if (observedDays === 0) {
+      return 'Não há gastos recentes suficientes para avaliar os últimos sete dias.';
+    }
+    return `${controlledDays} dos últimos 7 dias ficaram dentro do limite diário calculado.`;
+  }, [transactions, summary?.dailyLimit]);
+
+  const scenarioBalance = useMemo(() => {
+    if (!summary) return 0;
+    const projectedDailyFlow = Number(summary.dailyLimit || 0) - Number(summary.averageDailySpent || 0);
+    return Number(summary.currentBalance || 0) + projectedDailyFlow * Number(summary.daysRemaining || 0);
+  }, [summary]);
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden animate-fade-in">
-      {/* Predictive AI Banner */}
-      <div className="glass-card !p-6 border-brand-primary/20 bg-brand-primary/5 relative overflow-hidden group">
+      <div className="glass-card !p-5 border-brand-primary/20 bg-brand-primary/5 relative overflow-hidden group shrink-0">
         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-          <BrainCircuit size={80} />
+          <BrainCircuit size={72} />
         </div>
         <div className="flex items-start gap-4 relative z-10">
           <div className="p-3 rounded-2xl bg-brand-primary/20 text-brand-primary">
-            <BrainCircuit size={24} />
+            <BrainCircuit size={22} />
           </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-black mb-2 flex items-center gap-2">
-              Previsão Inteligente 
-              <span className="text-[8px] bg-brand-primary text-black px-1.5 py-0.5 rounded uppercase font-black">AI Powered</span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-black mb-2 flex flex-wrap items-center gap-2">
+              Projeção financeira
+              <span className="text-[8px] bg-brand-primary/15 text-brand-primary border border-brand-primary/20 px-1.5 py-0.5 rounded uppercase font-black">
+                cálculo local
+              </span>
             </h2>
             <div className="text-white/80 prose prose-invert prose-sm max-w-none">
               {loadingPrediction ? (
                 <div className="flex items-center gap-2 text-white/40">
                   <div className="h-4 w-4 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
-                  <span>Analisando padrões e calculando fluxos futuros...</span>
+                  <span>Calculando fluxo, compromissos e concentração de gastos...</span>
                 </div>
               ) : (
-                <div className="text-sm leading-relaxed">
-                  <ReactMarkdown>{prediction || "Processando seus dados financeiros para gerar insights preditivos..."}</ReactMarkdown>
+                <div className="text-xs leading-relaxed">
+                  <ReactMarkdown>{prediction}</ReactMarkdown>
                 </div>
               )}
             </div>
@@ -71,40 +135,46 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-12 gap-4 overflow-hidden">
-        <div className="col-span-7 flex flex-col gap-4 overflow-y-auto no-scrollbar">
-          <section className="space-y-3">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
+        <div className="lg:col-span-7 flex flex-col gap-4 min-h-0">
+          <section className="space-y-3 min-h-0">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <AlertTriangle size={16} /> Riscos e Alertas
+              <AlertTriangle size={16} /> Riscos e alertas
             </h3>
-            {summary?.priorities?.map(p => (
-              <div key={p.id} className="glass-card !p-4 flex items-center gap-4 border-white/5">
-                <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${p.type === 'urgent' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                  <AlertTriangle size={20} />
+            <div className="grid gap-3">
+              {summary?.priorities?.slice(0, 3).map((priority) => (
+                <div key={priority.id} className="glass-card !p-4 flex items-center gap-4 border-white/5">
+                  <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${priority.type === 'urgent' ? 'bg-red-500/20 text-red-400' : priority.type === 'warning' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-brand-primary/15 text-brand-primary'}`}>
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-sm">{priority.title}</h4>
+                    <p className="text-xs text-white/60 line-clamp-2">{priority.message}</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-sm">{p.title}</h4>
-                  <p className="text-xs text-white/60">{p.message}</p>
+              ))}
+              {(summary?.priorities?.length ?? 0) === 0 && (
+                <div className="glass-card !p-4 flex items-center gap-3 text-xs text-white/50">
+                  <CheckCircle2 className="text-green-400" size={18} /> Nenhum alerta crítico no momento.
                 </div>
-              </div>
-            ))}
-            {(summary?.priorities?.length ?? 0) === 0 && <div className="text-xs text-white/40 text-center py-4">Nenhum alerta crítico no momento.</div>}
+              )}
+            </div>
           </section>
 
-          <section className="space-y-3">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <TrendingDown size={16} /> Previsões
+          <section className="glass-card !p-4 bg-brand-secondary/5 border-brand-secondary/20">
+            <h3 className="font-bold text-sm mb-1 flex items-center gap-2">
+              <TrendingDown size={16} /> Cenário até o próximo pagamento
             </h3>
-            <div className="glass-card !p-4 bg-brand-secondary/5 border-brand-secondary/20">
-              <h4 className="font-bold text-sm mb-1">Cenário de Fechamento</h4>
-              <p className="text-xs text-white/70">
-                Mantendo a média de **R$ {(summary?.averageDailySpent ?? 0).toFixed(2)}/dia**, você deve chegar ao dia do pagamento com um saldo de aproximadamente **R$ {(summary?.currentBalance ?? 0).toFixed(2)}**.
-              </p>
-            </div>
+            <p className="text-xs text-white/70">
+              Mantendo a diferença atual entre limite diário e média de gastos, o saldo estimado é de{' '}
+              <strong className={scenarioBalance >= 0 ? 'text-green-400' : 'text-red-400'}>
+                R$ {scenarioBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </strong>.
+            </p>
           </section>
         </div>
 
-        <div className="col-span-5 flex flex-col gap-4 overflow-y-auto no-scrollbar">
+        <div className="lg:col-span-5 flex flex-col gap-4 min-h-0">
           <section className="space-y-3">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
               <Lightbulb size={16} /> Comportamento
@@ -112,14 +182,14 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
             <div className="glass-card !p-4">
               <h4 className="font-bold text-sm mb-1">Concentração</h4>
               <p className="text-xs text-white/60">
-                Sua categoria **{summary?.dominantCategory ?? '...'}** representa **{(summary?.topCategories?.[0]?.percentage ?? 0).toFixed(0)}%** de tudo o que você gastou até agora.
+                {summary?.dominantCategory && summary.dominantCategory !== 'Nenhuma'
+                  ? `A categoria ${summary.dominantCategory} representa ${(summary.topCategories?.[0]?.percentage ?? 0).toFixed(0)}% dos gastos do ciclo.`
+                  : 'Ainda não há gastos suficientes para identificar uma categoria dominante.'}
               </p>
             </div>
             <div className="glass-card !p-4 border-green-500/20">
-              <h4 className="font-bold text-sm mb-1 text-green-400">Progresso</h4>
-              <p className="text-xs text-white/60">
-                Você ficou abaixo do limite diário em 4 dos últimos 7 dias. Excelente progresso!
-              </p>
+              <h4 className="font-bold text-sm mb-1 text-green-400">Controle recente</h4>
+              <p className="text-xs text-white/60">{recentControl}</p>
             </div>
           </section>
         </div>
