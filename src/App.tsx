@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Auth from './components/Auth';
-import Dashboard from './components/Dashboard';
+import DashboardBootstrap from './components/DashboardBootstrap';
 import ConfigRequired from './components/ConfigRequired';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
@@ -99,7 +99,7 @@ export default function App() {
   if (!session) return <Auth />;
 
   return (
-    <Dashboard
+    <DashboardBootstrap
       user={session.user}
       isMaintenanceBypass={isAdmin && Boolean(maintenance?.maintenance_mode)}
     />
