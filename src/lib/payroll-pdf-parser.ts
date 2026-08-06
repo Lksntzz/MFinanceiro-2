@@ -74,8 +74,8 @@ const BENEFIT_TERMS = [
 const SUMMARY_TERMS = [
   'total de vencimentos', 'total vencimentos', 'total de proventos', 'total proventos',
   'total de descontos', 'total descontos', 'liquido a receber', 'valor liquido',
-  'salario liquido', 'liquido de ferias', 'base inss', 'base irrf', 'base fgts',
-  'fgts do mes', 'salario base', 'total bruto', 'total liquido', 'valor a receber',
+  'salario liquido', 'base inss', 'base irrf', 'base fgts', 'fgts do mes',
+  'salario base', 'total bruto', 'total liquido', 'valor a receber',
 ];
 
 function normalize(value: string): string {
@@ -213,7 +213,7 @@ function summaries(rows: Row[]) {
       if (earningsLabel) earnings = values[values.length - 1];
       if (deductionsLabel) deductions = values[values.length - 1];
     }
-    if (/(liquido a receber|valor liquido|salario liquido|total liquido|liquido de ferias)/.test(text)) net = values[values.length - 1];
+    if (/(liquido a receber|valor liquido|salario liquido|total liquido)/.test(text)) net = values[values.length - 1];
     if (/(salario base|base salarial)/.test(text)) salaryBase = values[values.length - 1];
   });
 
@@ -255,7 +255,7 @@ function classify(textValue: string, amountX: number, earningX: number | null, d
 
 function isMetadataDescription(description: string): boolean {
   const text = normalize(description);
-  if (!text || /^\*+$/.test(text.replace(/\s/g, ''))) return true;
+  if (!text) return true;
   if (SUMMARY_TERMS.some((term) => text.includes(term))) return true;
   if (/cpf|cnpj|matricula|admissao|banco|agencia|conta|cargo|funcao|empresa|empregador/.test(text)) return true;
   if (/\b\d{1,3}\/\d{4}-\d{2}\b/.test(text)) return true;
@@ -287,6 +287,7 @@ function itemRows(rows: Row[], grossHint: number): PayrollItem[] {
     const code = codeMatch?.[1];
     if (codeMatch) description = codeMatch[2];
     description = description.replace(/^[-–—.:\s]+|[-–—.:\s]+$/g, '').trim();
+    if (/^\*+$/.test(description.replace(/\s/g, ''))) description = 'Rubrica não identificada';
 
     if (description.length < 2 || isMetadataDescription(description)) return;
     const amount = round(amountCell.amount);
@@ -306,7 +307,7 @@ function itemRows(rows: Row[], grossHint: number): PayrollItem[] {
       percentage: grossHint > 0 ? round((amount / grossHint) * 100) : 0,
       reference: row.text.match(/\b\d{1,3}(?:[.,]\d{1,4})?\s*%\b/)?.[0],
       source: 'pdf',
-      confidence: inferred.confidence,
+      confidence: description === 'Rubrica não identificada' ? 0.35 : inferred.confidence,
     });
   });
 
