@@ -1,105 +1,110 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Transaction, UserSettings, FinanceSummary, FixedBill, DailyBill, CreditCard, CardInstallment, ImportedTransaction, Investment } from '../types';
-import { calculateFinanceSummary } from '../lib/finance-calculations';
-import { DEFAULT_USER_SETTINGS, CATEGORIES } from '../lib/constants';
+import React, { useEffect, useMemo, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { 
-  Wallet, 
-  TrendingUp, 
-  Calendar, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  Plus, 
-  Settings, 
-  LogOut,
+import {
+  Activity,
   AlertCircle,
-  ShieldAlert,
-  PieChart as PieChartIcon,
-  History as HistoryIcon,
-  CreditCard as CreditCardIcon,
-  Database,
-  X,
-  Info,
-  Check,
-  CheckCircle2,
-  Circle,
+  BarChart2,
   Bell,
-  Pencil,
+  CreditCard as CreditCardIcon,
   Eye,
   EyeOff,
-  Sun,
-  Moon,
-  Crown,
-  FileDown,
-  FileText,
-  PlayCircle,
-  Heart,
-  Calendar as CalendarIcon,
-  Activity,
-  Briefcase,
-  Target,
-  Brain,
-  Layout,
-  List,
+  History as HistoryIcon,
   LayoutDashboard,
-  BarChart2,
-  Lightbulb,
+  LogOut,
+  Pencil,
+  PieChart as PieChartIcon,
+  Plus,
+  Settings,
+  ShieldAlert,
+  TrendingUp,
+  Wallet,
+  X,
 } from 'lucide-react';
-import { ReportService } from '../services/reportService';
-import { useApp } from '../context/AppContext';
-import { formatCurrency, formatPercent, formatCompact } from '../lib/formatters';
-import {
-  Chart as ChartJS,
-  registerables
-} from 'chart.js';
-import { Line, Doughnut, Bar } from 'react-chartjs-2';
-import { format, subDays, isAfter, isBefore, addDays, getDaysInMonth, isSameDay, addMonths } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, registerables } from 'chart.js';
+import { addDays, format, isAfter, subDays } from 'date-fns';
+
+import { supabase } from '../lib/supabase';
+import { calculateFinanceSummary } from '../lib/finance-calculations';
+import { DEFAULT_USER_SETTINGS, CATEGORIES } from '../lib/constants';
 import { clearLegacyCache } from '../lib/clearCache';
+import { formatCurrency } from '../lib/formatters';
+import { useApp } from '../context/AppContext';
+import {
+  CardInstallment,
+  CreditCard,
+  DailyBill,
+  FinanceSummary,
+  FixedBill,
+  ImportedTransaction,
+  Investment,
+  Transaction,
+  UserSettings,
+} from '../types';
+
+import AdminAccessRequests from './AdminAccessRequests';
+import BaseFinanceira from './BaseFinanceira';
+import Cartoes from './Cartoes';
+import Details from './Details';
+import FinancialCalendar from './FinancialCalendar';
+import FinancialGoals from './FinancialGoals';
+import FinancialHealth from './FinancialHealth';
+import History from './History';
+import ImportarExtratos from './ImportarExtratos';
+import Insights from './Insights';
+import Investments from './Investments';
 import NotificationCenter from './NotificationCenter';
-import AppUpdateNotification from './AppUpdateNotification';
-import { AppUpdateInfo, fetchLatestAppUpdate } from '../lib/app-updates';
-import { fetchMaintenanceConfig } from '../lib/maintenance';
+import SubscriptionManager from './SubscriptionManager';
 
 ChartJS.register(...registerables);
 
-import History from './History';
-import Details from './Details';
-import Insights from './Insights';
-import BaseFinanceira from './BaseFinanceira';
-import Cartoes from './Cartoes';
-import ImportarExtratos from './ImportarExtratos';
-import Investments from './Investments';
-import FinancialGoals from './FinancialGoals';
-import SubscriptionManager from './SubscriptionManager';
-import FinancialHealth from './FinancialHealth';
-import FinancialCalendar from './FinancialCalendar';
-import AdminAccessRequests from './AdminAccessRequests';
+type ActiveTab = 'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests';
+type AnalysisTab = 'stats' | 'insights' | 'health' | 'goals';
+type AccountsTab = 'bills' | 'calendar' | 'subscriptions' | 'investments';
 
-export default function Dashboard({ user, isMaintenanceBypass }: { user: User, isMaintenanceBypass?: boolean }) {
-  const { isPrivate, setIsPrivate, theme, setTheme } = useApp();
-  
-  useEffect(() => {
-    clearLegacyCache();
-  }, []);
+function normalizeTransaction(row: any): Transaction | null {
+  const rawDate = row.date || row.data || row.created_at;
+  if (!rawDate) return null;
 
-  if (!supabase) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
-          Supabase não está configurado.
-        </div>
-      </div>
-    );
-  }
+  const amount = Number(row.amount ?? row.valor ?? 0);
+  const rawType = String(row.type || row.tipo || '').toLowerCase();
+  const type: 'income' | 'expense' =
+    rawType === 'income' || rawType === 'entrada' || rawType === 'receita' || amount > 0
+      ? 'income'
+      : 'expense';
 
+  return {
+    ...row,
+    amount,
+    type,
+    date: rawDate,
+    description: row.description || row.descricao || 'Lançamento importado',
+    category: row.category || row.categoria || 'Geral',
+    status: row.status || 'paid',
+  } as Transaction;
+}
+
+function transactionDay(rawDate: string): string {
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return format(parsed, 'yyyy-MM-dd');
+}
+
+export default function Dashboard({
+  user,
+  isMaintenanceBypass: _isMaintenanceBypass,
+}: {
+  user: User;
+  isMaintenanceBypass?: boolean;
+}) {
+  const { isPrivate, setIsPrivate } = useApp();
   const db = supabase;
-  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests'>('overview');
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [historySubTab, setHistorySubTab] = useState<'list' | 'import'>('list');
-  const [historyImportNonce, setHistoryImportNonce] = useState(0);
-  const [analysisSubTab, setAnalysisSubTab] = useState<'stats' | 'insights' | 'health' | 'goals'>('stats');
-  const [accountsSubTab, setAccountsSubTab] = useState<'bills' | 'calendar' | 'subscriptions' | 'investments'>('bills');
+  const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisTab>('stats');
+  const [accountsSubTab, setAccountsSubTab] = useState<AccountsTab>('bills');
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
@@ -107,51 +112,30 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
   const [cards, setCards] = useState<CreditCard[]>([]);
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
-  const [missingTables, setMissingTables] = useState<string[]>([]);
-  const [showSetupHelper, setShowSetupHelper] = useState(false);
-  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
+  const [rhythmFilter, setRhythmFilter] = useState<'day' | 'week' | 'month'>('day');
+
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [tempBalance, setTempBalance] = useState('');
   const [newTransaction, setNewTransaction] = useState({
     amount: '',
     category: 'Geral',
     description: '',
     type: 'expense' as 'expense' | 'income',
-    status: 'paid' as 'paid' | 'pending'
   });
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showBalanceModal, setShowBalanceModal] = useState(false);
-  const [tempBalance, setTempBalance] = useState('');
-  const [editSettings, setEditSettings] = useState<Partial<UserSettings>>({});
-  const [rhythmFilter, setRhythmFilter] = useState<'day' | 'week' | 'month'>('day');
-  const [showSalaryConfirmModal, setShowSalaryConfirmModal] = useState(false);
-  const [salaryPromptKey, setSalaryPromptKey] = useState<string | null>(null);
-  const [salaryPromptSlot, setSalaryPromptSlot] = useState<'payday_1' | 'payday_2' | null>(null);
-  const [salaryPromptAmount, setSalaryPromptAmount] = useState(0);
-  const [salaryPromptDayLabel, setSalaryPromptDayLabel] = useState('');
-  const [salaryPromptProcessing, setSalaryPromptProcessing] = useState(false);
+
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
-  const [cardForm, setCardForm] = useState({
-    name: '',
-    brand: 'Visa',
-    limit: '',
-    used: '',
-    closing_day: '1',
-    due_day: '10',
-  });
+  const [cardForm, setCardForm] = useState({ name: '', limit: '', used: '0', due_day: '10', closing_day: '1' });
+
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [editingInstallment, setEditingInstallment] = useState<CardInstallment | null>(null);
-  const [latestUpdate, setLatestUpdate] = useState<AppUpdateInfo | null>(null);
-  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
-  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
-  const [confirmConfig, setConfirmConfig] = useState<{
-    title: string;
-    message: string;
-    onConfirmed: () => void;
-  } | null>(null);
   const [installmentForm, setInstallmentForm] = useState({
     card_id: '',
     description: '',
@@ -159,1818 +143,681 @@ export default function Dashboard({ user, isMaintenanceBypass }: { user: User, i
     monthly_amount: '',
     current_installment: '1',
     total_installments: '1',
-    due_day: '1'
+    due_day: '1',
   });
-  const currentUserIdRef = useRef(user.id);
-  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
-    let active = true;
-
-    const loadLatestAppUpdate = async () => {
-      try {
-        const update = await fetchLatestAppUpdate(db);
-        if (active && update) {
-          const lastDismissed = localStorage.getItem(`mfinanceiro-update-dismissed:${user.id}`);
-          if (lastDismissed !== update.version) {
-            setLatestUpdate(update);
-            setIsUpdateOpen(true);
-          }
-        }
-      } catch (err) {
-        console.warn('Silent update check failure:', err);
-      }
-    };
-
-    const enforceMaintenanceLock = async () => {
-      if (isMaintenanceBypass) return;
-      try {
-        const config = await fetchMaintenanceConfig(db);
-        if (active && config?.maintenance_mode) {
-          // If maintenance starts while user is inside, reload to trigger App.tsx maintenance check
-          window.location.reload();
-        }
-      } catch (err) {
-        console.warn('Maintenance check failure on interval:', err);
-      }
-    };
-
-    loadLatestAppUpdate();
-    const updateTimer = window.setInterval(loadLatestAppUpdate, 60000); // 1 minute
-    const maintenanceTimer = window.setInterval(enforceMaintenanceLock, 30000); // 30 seconds
-
-    return () => {
-      active = false;
-      window.clearInterval(updateTimer);
-      window.clearInterval(maintenanceTimer);
-    };
-  }, [user.id, isMaintenanceBypass]);
-
-  useEffect(() => {
-    currentUserIdRef.current = user.id;
-  }, [user.id]);
-
-  const parseTransactionDate = (raw: string): Date | null => {
-    if (!raw) return null;
-
-    if (raw.includes('T')) {
-      const parsed = new Date(raw);
-      if (!isNaN(parsed.getTime())) {
-        return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
-      }
-    }
-
-    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (iso) {
-      return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12, 0, 0, 0);
-    }
-
-    const br = raw.match(/^(\d{2})[/-](\d{2})[/-](\d{2,4})/);
-    if (br) {
-      const day = Number(br[1]);
-      const month = Number(br[2]);
-      const year = Number(br[3].length === 2 ? `20${br[3]}` : br[3]);
-      return new Date(year, month - 1, day, 12, 0, 0, 0);
-    }
-
-    const parsed = new Date(raw);
-    if (isNaN(parsed.getTime())) return null;
-    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
-  };
-
-  const getPaydaySplitStorageKey = (userId: string): string => `mfinanceiro-payday-split:${userId}`;
-
-  const getSalaryAmountForSlot = (slot: 'payday_1' | 'payday_2', currentSettings: UserSettings): number => {
-    const netSalary = Math.max(0, Number(currentSettings.net_salary_estimated) || 0);
-    if (currentSettings.payday_cycle !== 'biweekly') return netSalary;
-    if (typeof window === 'undefined') return netSalary / 2;
-
-    const raw = window.localStorage.getItem(getPaydaySplitStorageKey(user.id));
-    let payday1Percent = 50;
-
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        payday1Percent = Math.min(100, Math.max(0, Number(parsed?.payday1Percent) || 50));
-      } catch {
-        payday1Percent = 50;
-      }
-    }
-
-    const payday2Percent = Math.max(0, 100 - payday1Percent);
-    const slotPercent = slot === 'payday_1' ? payday1Percent : payday2Percent;
-    return Math.round(((netSalary * slotPercent) / 100) * 100) / 100;
-  };
-
-  useEffect(() => {
-    if (settings) {
-      setEditSettings(settings);
-    }
-  }, [settings]);
-
-  async function resilientLedgerInsert(entries: any | any[]) {
-    const data = Array.isArray(entries) ? entries : [entries];
-    const strategies: ((d: any) => any)[] = [
-      (d: any) => ({
-        user_id: d.user_id,
-        date: d.date || new Date().toISOString(),
-        description: d.description || 'Lançamento',
-        amount: d.amount || 0,
-        type: d.type || 'expense',
-        category: d.category || 'Geral',
-        source: d.source || 'Importado',
-        status: d.status || 'paid'
-      }),
-      (d: any) => ({
-        user_id: d.user_id,
-        data: d.date || new Date().toISOString(),
-        descricao: d.description || 'Lançamento',
-        valor: d.amount || 0,
-        tipo: d.type || 'expense',
-        categoria: d.category || 'Geral',
-        status: d.status || 'paid'
-      }),
-      (d: any) => ({
-        user_id: d.user_id,
-        date: d.date || new Date().toISOString(),
-        data: d.date || new Date().toISOString(),
-        description: d.description || 'Lançamento',
-        descricao: d.description || 'Lançamento',
-        amount: d.amount || 0,
-        valor: d.amount || 0,
-        type: d.type || 'expense',
-        tipo: d.type || 'expense',
-        category: d.category || 'Geral',
-        categoria: d.category || 'Geral'
-      }),
-      (d: any) => ({
-        user_id: d.user_id,
-        amount: d.amount || 0
-      })
-    ];
-
-    let lastError = null;
-    for (let i = 0; i < strategies.length; i++) {
-      try {
-        const payload = data.map(strategies[i]);
-        const { error } = await db.from('mf_finance_ledger_entries').insert(payload);
-        if (!error) return { success: true };
-        if (error.code === 'PGRST204' || error.code === '23502') {
-          lastError = error;
-          continue;
-        }
-        throw error;
-      } catch (err: any) {
-        lastError = err;
-        if (i === strategies.length - 1) break;
-      }
-    }
-    return { success: false, error: lastError?.message };
-  }
-
-  async function handleUpdateSettings(newSettings: UserSettings) {
-    try {
-      const { id, ...settingsToUpdate } = newSettings;
-      const { error } = await db.from('mf_user_settings').update(settingsToUpdate).eq('user_id', user.id);
-      if (error) {
-        if (error.code === 'PGRST205' || error.code === 'PGRST204') {
-          setSettings(newSettings);
-          setShowSettingsModal(false);
-          return;
-        }
-        throw error;
-      }
-      setSettings(newSettings);
-      setShowSettingsModal(false);
-    } catch (err: any) {
-      console.error('Error updating settings:', err);
-      // Fallback
-      setSettings(newSettings);
-      setShowSettingsModal(false);
-    }
-  }
-
-  async function handleImportTransactions(imported: ImportedTransaction[], newBalance?: number) {
-    try {
-      const validImported = imported.filter(item => item.amount > 0 && item.description && item.description !== 'Sem descricao');
-      const seenSourceIds = new Set<string>();
-      const uniqueImported = validImported.filter(item => {
-        if (!item.source_id) return true;
-        if (seenSourceIds.has(item.source_id)) return false;
-        seenSourceIds.add(item.source_id);
-        return true;
-      });
-
-      const newEntries = uniqueImported.map(item => ({
-        user_id: user.id,
-        date: item.date,
-        description: item.description,
-        amount: item.type === 'expense' ? -Math.abs(item.amount) : Math.abs(item.amount),
-        type: item.type,
-        category: item.category,
-        source: item.bank_source || 'Importado'
-      }));
-
-      if (newEntries.length === 0 && newBalance === undefined) return;
-
-      if (newEntries.length > 0) {
-        const result = await resilientLedgerInsert(newEntries);
-        if (!result.success) throw new Error(result.error);
-      }
-
-      // Sincronização Inteligente de Saldo
-      let nextBalance = settings?.current_balance || 0;
-      
-      if (newBalance !== undefined) {
-        // Calibragem explícita solicitada pelo usuário
-        nextBalance = newBalance;
-      } else {
-        // Tenta inferir pelo running_balance do extrato ou soma incremental
-        const latestRunningBalanceItem = [...uniqueImported]
-          .reverse()
-          .find(item => typeof item.running_balance === 'number' && Number.isFinite(item.running_balance));
-        
-        const netImported = newEntries.reduce((sum, entry) => sum + entry.amount, 0);
-        nextBalance = latestRunningBalanceItem?.running_balance ?? (settings ? settings.current_balance + netImported : nextBalance);
-      }
-
-      if (settings) {
-        await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-        setSettings({ ...settings, current_balance: nextBalance });
-      }
-
-      fetchData();
-    } catch (err) {
-      console.error('Error importing transactions:', err);
-    }
-  }
-
-  useEffect(() => {
-    setSummary(null);
-    fetchData();
-    const channel = db.channel(`ledger_changes_${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries' }, () => { fetchData(); }).subscribe();
-    return () => { db.removeChannel(channel); };
-  }, [user.id]);
-
-  useEffect(() => {
-    if (settings) {
-      const sum = calculateFinanceSummary(transactions, settings, fixedBills, cards, dailyBills, installments);
-      setSummary(sum);
-    }
-  }, [transactions, settings, fixedBills, cards, dailyBills, installments]);
-
-  useEffect(() => {
-    if (!settings || loading) return;
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
-    const normalizedTodayDay = now.getDate();
-    const paydayCandidates = [
-      { slot: 'payday_1', day: settings.payday_1 || 1 },
-      ...(settings.payday_cycle === 'biweekly' && settings.payday_2 ? [{ slot: 'payday_2', day: settings.payday_2 }] : [])
-    ];
-    const matchingCandidate = paydayCandidates.find(candidate => {
-      const effectiveDay = Math.min(Math.max(1, candidate.day), getDaysInMonth(now));
-      return effectiveDay === normalizedTodayDay;
-    });
-    if (!matchingCandidate) return;
-    const promptKey = `salary-confirm:${user.id}:${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}:${matchingCandidate.slot}`;
-    if (localStorage.getItem(promptKey) === 'confirmed') return;
-    const hasSalaryToday = transactions.some(t => {
-      const parsed = parseTransactionDate(t.date);
-      if (!parsed) return false;
-      return parsed.getFullYear() === today.getFullYear() && parsed.getMonth() === today.getMonth() && parsed.getDate() === today.getDate() && (t.type === 'income' || t.amount > 0) && /(sal[aá]rio|pagamento|folha|remunera[cç][aã]o)/i.test(`${t.description || ''} ${t.category || ''}`);
-    });
-    if (hasSalaryToday) {
-      localStorage.setItem(promptKey, 'confirmed');
-      return;
-    }
-    setSalaryPromptKey(promptKey);
-    setSalaryPromptSlot(matchingCandidate.slot as 'payday_1' | 'payday_2');
-    setSalaryPromptAmount(getSalaryAmountForSlot(matchingCandidate.slot as 'payday_1' | 'payday_2', settings));
-    setSalaryPromptDayLabel(format(now, 'dd/MM'));
-    setShowSalaryConfirmModal(true);
-  }, [settings, transactions, loading, user.id]);
+    clearLegacyCache();
+  }, []);
 
   async function fetchData() {
-    if (!user) return;
-    const fetchVersion = ++fetchVersionRef.current;
-    const isStale = () => fetchVersionRef.current !== fetchVersion;
     setLoading(true);
-    let detectedMissing: string[] = [];
+    setError(null);
+
     try {
-      // 1. Fetch settings
-      const { data: settingsData, error: settingsError } = await db.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle();
-      
-      if (settingsError) {
-        if (settingsError.code !== 'PGRST116' && settingsError.code !== 'PGRST205' && settingsError.code !== 'PGRST204') {
-          throw settingsError;
-        }
+      const [settingsResult, transactionsResult, cardsResult, installmentsResult, dailyResult, fixedResult, investmentResult] =
+        await Promise.all([
+          db.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
+          db.from('mf_finance_ledger_entries').select('*').eq('user_id', user.id).order('date', { ascending: false }),
+          db.from('mf_credit_cards').select('*').eq('user_id', user.id),
+          db.from('mf_card_installments').select('*').eq('user_id', user.id),
+          db.from('mf_daily_bills').select('*').eq('user_id', user.id),
+          db.from('mf_fixed_bills').select('*').eq('user_id', user.id),
+          db.from('mf_investments').select('*').eq('user_id', user.id),
+        ]);
+
+      if (settingsResult.error) throw settingsResult.error;
+      if (transactionsResult.error) throw transactionsResult.error;
+
+      let nextSettings = settingsResult.data as UserSettings | null;
+      if (!nextSettings) {
+        const defaults = DEFAULT_USER_SETTINGS(user.id);
+        const inserted = await db.from('mf_user_settings').insert(defaults).select('*').single();
+        if (inserted.error) throw inserted.error;
+        nextSettings = inserted.data as UserSettings;
       }
 
-      let currentSettings = settingsData;
-      let isFirstLogin = false;
+      const normalizedTransactions = (transactionsResult.data || [])
+        .map(normalizeTransaction)
+        .filter((item): item is Transaction => Boolean(item));
 
-      if (!settingsData) {
-        // Bootstrap new user
-        const def = DEFAULT_USER_SETTINGS(user.id);
-        const { data: inserted, error: insertError } = await db.from('mf_user_settings').insert(def).select().maybeSingle();
-        
-        if (insertError) {
-          console.error('Error bootstrapping user settings:', insertError);
-          // Fallback to local state if DB insert fails (e.g. table not ready)
-          currentSettings = { id: 'temp', ...def } as UserSettings;
-        } else {
-          currentSettings = inserted;
-        }
-        isFirstLogin = true;
-      }
-
-      if (!isStale()) setSettings(currentSettings);
-      setLoading(false); // Liberar UI o quanto antes
-
-      // 2. Health check for tables (Parallel)
-      const tablesToCheck = ['mf_finance_ledger_entries', 'mf_credit_cards', 'mf_card_installments', 'mf_daily_bills', 'mf_fixed_bills', 'mf_investments'];
-      const healthResults = await Promise.all(tablesToCheck.map(t => db.from(t).select('id').limit(1)));
-      healthResults.forEach((res, idx) => {
-        if (res.error && (res.error.code === 'PGRST205' || res.error.code === 'PGRST204')) {
-          detectedMissing.push(tablesToCheck[idx]);
-        }
-      });
-
-      // 3. Fetch data
-      const { data: transData, error: transError } = await db.from('mf_finance_ledger_entries').select('*').eq('user_id', user.id).order('date', { ascending: false });
-      if (transError && transError.code !== 'PGRST204' && transError.code !== 'PGRST205') throw transError;
-      
-      const ledgerEntries = (transData || []).map((t: any) => ({ 
-        ...t, 
-        amount: Number(t.amount) || Number(t.valor) || 0, 
-        type: t.type || t.tipo || (t.amount >= 0 ? 'income' : 'expense'), 
-        description: t.description || t.descricao || 'Sem descrição', 
-        category: t.category || t.categoria || 'Geral', 
-        date: t.date || t.data 
-      }));
-
-      if (!isStale()) setTransactions(ledgerEntries);
-
-      // Redirect if first login and no transactions
-      if (isFirstLogin && ledgerEntries.length === 0 && !isStale()) {
-        setActiveTab('settings');
-      }
-
-      const { data: cardsData } = await db.from('mf_credit_cards').select('*').eq('user_id', user.id);
-      if (!isStale()) setCards(cardsData || []);
-
-      const { data: instData } = await db.from('mf_card_installments').select('*').eq('user_id', user.id);
-      const normalizedInst = (instData || []).map((inst: any) => ({
-        ...inst,
-        description: inst.description || inst.descricao || 'Sem descrição',
-        total_amount: Number(inst.total_amount) || Number(inst.valor_total) || 0,
-        monthly_amount: Number(inst.monthly_amount) || Number(inst.valor_mensal) || 0,
-        current_installment: Number(inst.current_installment) || Number(inst.parcela_atual) || 1,
-        total_installments: Number(inst.total_installments) || Number(inst.total_parcelas) || 1,
-        due_day: Number(inst.due_day) || 1,
-        last_paid_month: inst.last_paid_month,
-        card_id: inst.card_id
-      }));
-      if (!isStale()) setInstallments(normalizedInst);
-
-      const { data: daily } = await db.from('mf_daily_bills').select('*').eq('user_id', user.id);
-      if (!isStale()) setDailyBills(daily || []);
-
-      const { data: fixedData } = await db.from('mf_fixed_bills').select('*').eq('user_id', user.id);
-      if (!isStale()) setFixedBills(fixedData || []);
-
-      const { data: invData } = await db.from('mf_investments').select('*').eq('user_id', user.id);
-      if (!isStale()) {
-        const normalizedInv = (invData || []).map((inv: any) => ({
-          ...inv,
-          amount: Number(inv.amount || inv.valor || 0)
-        }));
-        setInvestments(normalizedInv);
-      }
-      
-      if (!isStale()) setError(null);
-    } catch (e: any) {
-      console.error('Fetch error:', e);
-      if (e.message?.includes('fetch') || e.name === 'TypeError') {
-        if (!isStale()) setError('Erro de conexão com o banco de dados. Verifique seu sinal de internet.');
-      } else if (e.code === 'PGRST205' || e.code === 'PGRST204') {
-        detectedMissing.push('database structure');
-      }
-    }
-    if (!isStale()) {
-      setMissingTables(detectedMissing);
-      setLoading(false);
-    }
-  }
-
-  async function handleToggleBillStatus(id: string) {
-    const bill = fixedBills.find(b => b.id === id);
-    if (!bill || !settings || !user) return;
-    
-    const today = new Date();
-    const currentMonth = format(today, 'yyyy-MM');
-    const isAlreadyPaidThisMonth = bill.last_paid_month === currentMonth;
-
-    let targetMonth = currentMonth;
-    let message = `Deseja baixar o pagamento da conta "${bill.name}"?\n\nValor: R$ ${Math.abs(bill.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nEste valor será deduzido do seu saldo atual.`;
-
-    if (isAlreadyPaidThisMonth) {
-      const nextMonthDate = addMonths(today, 1);
-      targetMonth = format(nextMonthDate, 'yyyy-MM');
-      message = `Você já pagou esta conta este mês (${format(today, 'MMMM', { locale: ptBR })}).\n\nDeseja antecipar o pagamento do próximo mês (${format(nextMonthDate, 'MMMM', { locale: ptBR })})?\n\nValor: R$ ${Math.abs(bill.amount).toLocaleString('pt-BR')}`;
-    }
-
-    // Trava de saldo insuficiente
-    if ((Number(settings.current_balance) || 0) < Math.abs(bill.amount)) {
-      alert(`Saldo Insuficiente!\n\nVocê precisa de R$ ${Math.abs(bill.amount).toLocaleString('pt-BR')} para pagar esta conta, mas seu saldo atual é de R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}.`);
-      return;
-    }
-
-    setConfirmConfig({
-      title: isAlreadyPaidThisMonth ? 'Antecipar Pagamento' : 'Confirmar Pagamento',
-      message: message,
-      onConfirmed: async () => {
-        try {
-          setLoading(true);
-          const balanceDelta = -Math.abs(bill.amount);
-          
-          // 1. Registro no Histórico
-          await resilientLedgerInsert({ 
-            user_id: user.id, 
-            amount: balanceDelta, 
-            category: bill.category || 'Contas Fixas', 
-            description: `Pagam.: ${bill.name} (${targetMonth})`, 
-            type: 'expense', 
-            date: today.toISOString() 
-          });
-
-          // 2. Atualiza a conta fixa
-          await db.from('mf_fixed_bills').update({ 
-            status: 'paid',
-            last_paid_month: targetMonth 
-          }).eq('id', id);
-
-          // 3. Atualiza saldo
-          const nextBalance = (Number(settings.current_balance) || 0) + balanceDelta;
-          await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-          
-          if (settings) setSettings({ ...settings, current_balance: nextBalance });
-          fetchData();
-        } catch (err) { 
-          console.error('[ERROR] handleToggleBillStatus:', err);
-          alert('Erro ao processar pagamento.');
-        } finally {
-          setLoading(false);
-          setConfirmConfig(null);
-        }
-      }
-    });
-  }
-
-  async function handleAddTransaction(e: React.FormEvent) {
-    e.preventDefault();
-    try {
-      const amt = parseFloat(newTransaction.amount);
-      if (isNaN(amt)) return;
-
-      const finalAmt = newTransaction.type === 'expense' ? -Math.abs(amt) : Math.abs(amt);
-      
-      // Trava de saldo insuficiente para despesas manuais pagas
-      if (newTransaction.type === 'expense' && newTransaction.status === 'paid' && (Number(settings.current_balance) || 0) < Math.abs(amt)) {
-        alert(`Saldo Insuficiente!\n\nSeu saldo atual é R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}, insuficiente para este lançamento de R$ ${Math.abs(amt).toLocaleString('pt-BR')}.`);
-        return;
-      }
-
-      const { success } = await resilientLedgerInsert({ user_id: user.id, amount: finalAmt, category: newTransaction.category, description: newTransaction.description, type: newTransaction.type, date: new Date().toISOString() });
-      if (success && settings) {
-        const next = settings.current_balance + finalAmt;
-        await db.from('mf_user_settings').update({ current_balance: next }).eq('user_id', user.id);
-        setSettings({ ...settings, current_balance: next });
-      }
-      setShowAddModal(false);
-      setNewTransaction({ amount: '', category: 'Geral', description: '', type: 'expense', status: 'paid' });
-      fetchData();
-    } catch (err) { console.error(err); }
-  }
-
-  async function handleDeleteTransaction(id: string) {
-    const transaction = transactions.find(t => t.id === id);
-    if (!transaction || !settings || !user) return;
-
-    setConfirmConfig({
-      title: 'Excluir Lançamento',
-      message: `Deseja realmente excluir "${transaction.description}"?\n\nO valor de R$ ${Math.abs(transaction.amount).toLocaleString('pt-BR')} será ${transaction.amount < 0 ? 'devolvido ao' : 'removido do'} seu saldo.`,
-      onConfirmed: async () => {
-        try {
-          // 1. Reverte o saldo
-          const reverseAmount = -transaction.amount; // Se era -100 (despesa), vira +100
-          const nextBalance = (Number(settings.current_balance) || 0) + reverseAmount;
-          
-          await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-          
-          // 2. Deleta a transação
-          await db.from('mf_finance_ledger_entries').delete().eq('id', id);
-          
-          setSettings({ ...settings, current_balance: nextBalance });
-          fetchData();
-        } catch (err) { 
-          console.error('Erro ao excluir transação:', err);
-          alert('Falha ao processar a exclusão.');
-        } finally {
-          setConfirmConfig(null);
-        }
-      }
-    });
-  }
-
-  async function handleDeleteAllTransactions() {
-    setConfirmConfig({
-      title: 'Limpar Histórico e Zerar Saldo',
-      message: 'Tem certeza que deseja apagar TODOS os lançamentos do histórico? Isso também zerará seu saldo disponível para R$ 0,00.',
-      onConfirmed: async () => {
-        try {
-          // 1. Zerar saldo no banco
-          await db.from('mf_user_settings').update({ current_balance: 0 }).eq('user_id', user.id);
-          
-          // 2. Apagar todas as transações
-          await db.from('mf_finance_ledger_entries').delete().eq('user_id', user.id);
-          
-          // 3. Atualizar estado local
-          if (settings) setSettings({ ...settings, current_balance: 0 });
-          fetchData();
-        } catch (err) { 
-          console.error('[ERROR] Falha ao limpar histórico:', err);
-          alert('Erro ao processar limpeza total.');
-        } finally {
-          setConfirmConfig(null);
-        }
-      }
-    });
-  }
-
-  const openAddCardModal = () => { setEditingCard(null); setCardForm({ name: '', brand: '', limit: '', used: '0', closing_day: '1', due_day: '10' }); setShowCardModal(true); };
-  const openEditCardModal = (card: CreditCard) => { setEditingCard(card); setCardForm({ name: card.name, brand: card.brand, limit: card.limit.toString(), used: card.used.toString(), closing_day: card.closing_day.toString(), due_day: card.due_day.toString() }); setShowCardModal(true); };
-  const handleDeleteCard = async (card: CreditCard) => { 
-    setConfirmConfig({
-      title: 'Excluir Cartão',
-      message: `Deseja realmente excluir o cartão "${card.name}"?\n\nOs parcelamentos vinculados a este cartão não serão apagados, mas ficarão sem cartão associado.`,
-      onConfirmed: async () => {
-        try {
-          await db.from('mf_credit_cards').delete().eq('id', card.id); 
-          fetchData(); 
-        } catch (err) { console.error(err); }
-        setConfirmConfig(null);
-      }
-    });
-  };
-  
-  const handleSaveCard = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const payload = { 
-      user_id: user.id, 
-      name: cardForm.name, 
-      brand: cardForm.brand || 'Visa', 
-      limit: Number(cardForm.limit), 
-      used: Number(cardForm.used), 
-      closing_day: Number(cardForm.closing_day), 
-      due_day: Number(cardForm.due_day) 
-    };
-    
-    try {
-      if (editingCard) {
-        const { error } = await db.from('mf_credit_cards').update(payload).eq('id', editingCard.id);
-        if (error) throw error;
-      } else {
-        const { error } = await db.from('mf_credit_cards').insert(payload);
-        if (error) throw error;
-      }
-      setShowCardModal(false); 
-      fetchData();
+      setSettings(nextSettings);
+      setTransactions(normalizedTransactions);
+      setCards((cardsResult.data || []) as CreditCard[]);
+      setInstallments(
+        (installmentsResult.data || []).map((item: any) => ({
+          ...item,
+          description: item.description || item.descricao || 'Parcelamento',
+          total_amount: Number(item.total_amount ?? item.valor_total ?? 0),
+          monthly_amount: Number(item.monthly_amount ?? item.valor_mensal ?? 0),
+          current_installment: Number(item.current_installment ?? item.parcela_atual ?? 1),
+          total_installments: Number(item.total_installments ?? item.total_parcelas ?? 1),
+          due_day: Number(item.due_day ?? 1),
+        })) as CardInstallment[],
+      );
+      setDailyBills((dailyResult.data || []) as DailyBill[]);
+      setFixedBills((fixedResult.data || []) as FixedBill[]);
+      setInvestments(
+        (investmentResult.data || []).map((item: any) => ({ ...item, amount: Number(item.amount ?? item.valor ?? 0) })) as Investment[],
+      );
     } catch (err: any) {
-      console.error('Error saving card:', err);
-      setError('Falha ao salvar cartão. Verifique sua conexão.');
-    }
-  };
-
-  const openAddInstallmentModal = () => { 
-    setEditingInstallment(null); 
-    setInstallmentForm({ 
-      card_id: cards[0]?.id || '', 
-      description: '', 
-      total_amount: '', 
-      monthly_amount: '', 
-      total_installments: '1', 
-      current_installment: '1',
-      due_day: '1'
-    }); 
-    setShowInstallmentModal(true); 
-  };
-  
-  const openEditInstallmentModal = (inst: CardInstallment) => { 
-    setEditingInstallment(inst); 
-    setInstallmentForm({ 
-      card_id: inst.card_id || 'boleto', 
-      description: inst.description, 
-      total_amount: inst.total_amount.toString(), 
-      monthly_amount: inst.monthly_amount.toString(), 
-      total_installments: inst.total_installments.toString(), 
-      current_installment: inst.current_installment.toString(),
-      due_day: (inst.due_day || 1).toString()
-    }); 
-    setShowInstallmentModal(true); 
-  };
-
-  const handlePayInstallment = async (inst: CardInstallment) => {
-    if (!settings || !user) {
-      alert('Sessão ou configurações não carregadas. Tente atualizar a página.');
-      return;
-    }
-
-    const today = new Date();
-    const currentMonth = format(today, 'yyyy-MM');
-    const isAlreadyPaidThisMonth = inst.last_paid_month === currentMonth;
-    
-    let targetMonth = currentMonth;
-    const monthlyAmount = Number(inst.monthly_amount) || 0;
-    let message = `Deseja baixar o pagamento da parcela ${inst.current_installment}/${inst.total_installments} de "${inst.description}"?\n\nValor: R$ ${monthlyAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nEste valor será deduzido do seu saldo atual.`;
-
-    if (isAlreadyPaidThisMonth) {
-      const nextMonthDate = addMonths(today, 1);
-      targetMonth = format(nextMonthDate, 'yyyy-MM');
-      message = `Você já pagou a parcela deste mês (${format(today, 'MMMM', { locale: ptBR })}).\n\nDeseja antecipar o pagamento da próxima parcela (${format(nextMonthDate, 'MMMM', { locale: ptBR })})?\n\nValor: R$ ${monthlyAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    }
-    
-    // Trava de saldo insuficiente
-    if ((Number(settings.current_balance) || 0) < monthlyAmount) {
-      alert(`Saldo Insuficiente!\n\nO valor da parcela é R$ ${monthlyAmount.toLocaleString('pt-BR')}, mas seu saldo atual é de R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}.`);
-      return;
-    }
-
-    setConfirmConfig({
-      title: isAlreadyPaidThisMonth ? 'Antecipar Pagamento' : 'Confirmar Pagamento',
-      message: message,
-      onConfirmed: async () => {
-        try {
-          setLoading(true);
-          const amount = -Math.abs(monthlyAmount);
-          
-          // 1. Registro no Histórico
-          await resilientLedgerInsert({
-            user_id: user.id,
-            amount: amount,
-            category: 'Parcelamentos',
-            description: `Pagam. Parcela ${inst.current_installment}/${inst.total_installments}: ${inst.description} (${targetMonth})`,
-            type: 'expense',
-            date: today.toISOString()
-          });
-
-          // 2. Atualiza Saldo
-          const nextBalance = (Number(settings.current_balance) || 0) + amount;
-          await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-          
-          // 3. Atualiza o Parcelamento
-          const nextInstallmentNum = inst.current_installment + 1;
-          const { error: instError } = await db.from('mf_card_installments').update({
-            last_paid_month: targetMonth,
-            current_installment: nextInstallmentNum
-          }).eq('id', inst.id).eq('user_id', user.id);
-
-          if (instError) throw instError;
-
-          setSettings(prev => prev ? { ...prev, current_balance: nextBalance } : null);
-          fetchData();
-        } catch (err: any) {
-          console.error('[ERROR] handlePayInstallment:', err);
-          alert(`Erro: ${err.message || 'Falha ao processar pagamento.'}`);
-        } finally {
-          setLoading(false);
-          setConfirmConfig(null);
-        }
-      }
-    });
-  };
-  
-  const handleDeleteInstallment = async (inst: CardInstallment) => { 
-    setConfirmConfig({
-      title: 'Excluir Parcelamento',
-      message: `Deseja realmente excluir o parcelamento "${inst.description}"?`,
-      onConfirmed: async () => {
-        try {
-          const { error } = await db.from('mf_card_installments').delete().eq('id', inst.id); 
-          if (error) throw error;
-          fetchData(); 
-        } catch (err: any) {
-          console.error('Error deleting installment:', err);
-          setError('Falha ao excluir parcelamento.');
-        } finally {
-          setConfirmConfig(null);
-        }
-      }
-    });
-  };
-
-  const handleSaveInstallment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const payload = { 
-      user_id: user.id,
-      card_id: (installmentForm.card_id === 'boleto' || !installmentForm.card_id) ? null : installmentForm.card_id, 
-      description: installmentForm.description, 
-      total_amount: Number(installmentForm.total_amount), 
-      monthly_amount: Number(installmentForm.monthly_amount), 
-      current_installment: Number(installmentForm.current_installment), 
-      total_installments: Number(installmentForm.total_installments),
-      due_day: Number(installmentForm.due_day) 
-    };
-
-    try {
-      if (editingInstallment) {
-        const { error } = await db.from('mf_card_installments').update(payload).eq('id', editingInstallment.id);
-        if (error) throw error;
-      } else {
-        const { error } = await db.from('mf_card_installments').insert(payload);
-        if (error) throw error;
-      }
-      
-      setShowInstallmentModal(false); 
-      fetchData();
-    } catch (err: any) {
-      console.error('Error saving installment:', err);
-      // Extrai a mensagem de erro real ou fornece uma alternativa clara
-      const errorMessage = err.message || JSON.stringify(err) || 'Falha ao conectar com o banco de dados.';
-      setError(`Erro ao salvar: ${errorMessage}`);
-    }
-  };
-
-  async function handleConfirmSalaryReceived() {
-    if (!settings || !salaryPromptSlot) return;
-    setSalaryPromptProcessing(true);
-    try {
-      const amt = getSalaryAmountForSlot(salaryPromptSlot, settings);
-      await resilientLedgerInsert({ user_id: user.id, amount: amt, category: 'Salário', description: 'Salário Recebido', type: 'income', date: new Date().toISOString() });
-      const next = settings.current_balance + amt;
-      await db.from('mf_user_settings').update({ current_balance: next }).eq('user_id', user.id);
-      if (salaryPromptKey) localStorage.setItem(salaryPromptKey, 'confirmed');
-      setShowSalaryConfirmModal(false); fetchData();
-    } catch (err) { console.error(err); } finally { setSalaryPromptProcessing(false); }
-  }
-
-  const notifications = useMemo(() => {
-    const alerts: any[] = [];
-    const today = new Date();
-    const todayDay = today.getDate();
-    const currentMonthStr = format(today, 'yyyy-MM');
-
-    // Helper para calcular próximo vencimento
-    const getNextDueDate = (dueDay: number, lastPaidMonth?: string) => {
-      const d = new Date(today.getFullYear(), today.getMonth(), dueDay, 12, 0, 0, 0);
-      if (lastPaidMonth === currentMonthStr) {
-        return addMonths(d, 1);
-      }
-      return d;
-    };
-
-    // 1. Contas Fixas
-    fixedBills.forEach(bill => {
-      const nextDate = getNextDueDate(bill.due_day || 1, bill.last_paid_month);
-      const isOverdue = isBefore(nextDate, today) && !isSameDay(nextDate, today) && bill.last_paid_month !== currentMonthStr;
-      const isDueToday = isSameDay(nextDate, today);
-      
-      // Mostra todas as contas fixas para que o usuário veja o "próximo boleto"
-      alerts.push({
-        id: `fixed-${bill.id}`,
-        type: 'fixed',
-        title: bill.name,
-        amount: bill.amount,
-        dueDate: bill.due_day,
-        nextDueDateLabel: format(nextDate, "dd 'de' MMMM", { locale: ptBR }),
-        status: isDueToday ? 'due_today' : (isOverdue ? 'overdue' : 'pending'),
-        originalData: bill
-      });
-    });
-
-    // 2. Parcelamentos
-    installments.forEach(inst => {
-      const isFinished = inst.current_installment > inst.total_installments;
-      if (!isFinished) {
-        const nextDate = getNextDueDate(inst.due_day || 1, inst.last_paid_month);
-        const isOverdue = isBefore(nextDate, today) && !isSameDay(nextDate, today) && inst.last_paid_month !== currentMonthStr;
-        const isDueToday = isSameDay(nextDate, today);
-
-        alerts.push({
-          id: `inst-${inst.id}`,
-          type: 'installment',
-          title: inst.description,
-          amount: inst.monthly_amount,
-          dueDate: inst.due_day,
-          nextDueDateLabel: format(nextDate, "dd 'de' MMMM", { locale: ptBR }),
-          status: isDueToday ? 'due_today' : (isOverdue ? 'overdue' : 'pending'),
-          originalData: inst
-        });
-      }
-    });
-
-    // 3. Cartões
-    cards.forEach(card => {
-      if (card.used > 0) {
-        const nextDate = new Date(today.getFullYear(), today.getMonth(), card.due_day, 12, 0, 0, 0);
-        const isOverdue = isBefore(nextDate, today) && !isSameDay(nextDate, today);
-        const isDueToday = isSameDay(nextDate, today);
-
-        alerts.push({
-          id: `card-${card.id}`,
-          type: 'card',
-          title: `Fatura: ${card.name}`,
-          amount: card.used,
-          dueDate: card.due_day,
-          nextDueDateLabel: format(nextDate, "dd 'de' MMMM", { locale: ptBR }),
-          status: isDueToday ? 'due_today' : (isOverdue ? 'overdue' : 'pending'),
-          originalData: card
-        });
-      }
-    });
-
-    return alerts.filter(a => !dismissedAlerts.includes(a.id)).sort((a, b) => {
-        // Ordena por urgência primário
-        const priority = { overdue: 0, due_today: 1, pending: 2 };
-        if (priority[a.status] !== priority[b.status]) return priority[a.status] - priority[b.status];
-        return a.dueDate - b.dueDate;
-    });
-  }, [fixedBills, installments, cards, dismissedAlerts]);
-
-  const handlePayCardBill = async (card: CreditCard) => {
-    if (!settings || !user) return;
-    
-    const amountToPay = Number(card.used) || 0;
-    if (amountToPay <= 0) {
-      alert('Não há saldo devedor neste cartão.');
-      return;
-    }
-
-    // Trava de saldo insuficiente
-    if ((Number(settings.current_balance) || 0) < amountToPay) {
-      alert(`Saldo Insuficiente!\n\nA fatura deste cartão é R$ ${amountToPay.toLocaleString('pt-BR')}, mas seu saldo atual é de R$ ${(Number(settings.current_balance) || 0).toLocaleString('pt-BR')}.`);
-      return;
-    }
-
-    const confirmMsg = `Deseja baixar o pagamento total da fatura do cartão "${card.name}"?\n\nValor: R$ ${amountToPay.toLocaleString('pt-BR')}\nEste valor será deduzido do seu saldo atual.`;
-
-    setConfirmConfig({
-      title: 'Confirmar Pagamento de Fatura',
-      message: confirmMsg,
-      onConfirmed: async () => {
-        try {
-          setLoading(true);
-          const today = new Date();
-          
-          // 1. Registro no Histórico
-          const ledgerResult = await resilientLedgerInsert({
-            user_id: user.id,
-            amount: -amountToPay,
-            category: 'Cartão de Crédito',
-            description: `Pagamento Fatura: ${card.name}`,
-            type: 'expense',
-            date: today.toISOString()
-          });
-
-          if (ledgerResult.error) throw new Error(ledgerResult.error);
-
-          // 2. Abate do Saldo
-          const nextBalance = (Number(settings.current_balance) || 0) - amountToPay;
-          const { error: settingsError } = await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-          if (settingsError) throw settingsError;
-
-          // 3. Zera o uso do cartão
-          const { error: cardError } = await db.from('mf_credit_cards').update({ used: 0 }).eq('id', card.id);
-          if (cardError) throw cardError;
-
-          setSettings(prev => prev ? { ...prev, current_balance: nextBalance } : null);
-          alert('Pagamento da fatura realizado com sucesso!');
-          fetchData();
-        } catch (err: any) {
-          console.error('Erro pagando fatura:', err);
-          alert(`Falha ao processar pagamento: ${err.message || 'Erro interno.'}`);
-        } finally {
-          setLoading(false);
-          setConfirmConfig(null);
-        }
-      }
-    });
-  };
-
-  const handleNotificationPay = async (item: any) => {
-    try {
-      if (item.type === 'installment') {
-        await handlePayInstallment(item.originalData);
-      } else if (item.type === 'fixed') {
-        await handleToggleBillStatus(item.originalData.id);
-      } else if (item.type === 'card') {
-        await handlePayCardBill(item.originalData);
-      }
-      
-      // Remove imediatamente da visão ignorando o fetch (reatividade instantânea)
-      setDismissedAlerts(prev => [...prev, item.id]);
-    } catch (err) {
-      console.error('Erro ao processar pagamento via notificação:', err);
-    }
-  };
-
-  const urgentNotifications = useMemo(() => notifications.filter(n => n.status === 'due_today' || n.status === 'overdue'), [notifications]);
-
-  const overviewTopCategories = useMemo(() => {
-    const last30Days = subDays(new Date(), 30);
-    let expenses = transactions.filter(t => t.type === 'expense' && new Date(t.date) >= last30Days);
-    
-    // Se não houver despesas nos últimos 30 dias, mostra as do mês atual
-    if (expenses.length === 0) {
-      expenses = transactions.filter(t => t.type === 'expense');
-    }
-    
-    const totals: Record<string, number> = {};
-    let totalSpent = 0;
-    
-    expenses.forEach(t => {
-      const amt = Math.abs(t.amount || 0);
-      totals[t.category] = (totals[t.category] || 0) + amt;
-      totalSpent += amt;
-    });
-
-    return Object.entries(totals)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name, amount]) => ({
-        name,
-        amount,
-        percentage: totalSpent > 0 ? (amount / totalSpent) * 100 : 0
-      }));
-  }, [transactions]);
-
-  const latestOverviewTransactions = useMemo(() => 
-    [...transactions]
-      .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 5),
-  [transactions]);
-  const overviewCardsUsed = cards.reduce((s, c) => s + Number(c.used), 0);
-  const overviewCardsLimit = cards.reduce((s, c) => s + Number(c.limit), 0);
-  const overviewCardsAvailable = overviewCardsLimit - overviewCardsUsed;
-  const overviewCardsUsagePercent = overviewCardsLimit > 0 ? (overviewCardsUsed / overviewCardsLimit) * 100 : 0;
-
-  const timelineDays = 30;
-  const dailyMap = new Map();
-  const today = new Date();
-  const todayKey = format(today, 'yyyy-MM-dd');
-  const startDate = subDays(today, timelineDays - 1);
-  
-  // Inicializa o mapa com os últimos 30 dias
-  for (let d = startDate; !isAfter(d, today); d = addDays(d, 1)) {
-    dailyMap.set(format(d, 'yyyy-MM-dd'), { net: 0, inflow: 0 });
-  }
-
-  // Preenche com as transações
-  transactions.forEach(t => {
-    const k = t.date.includes('T') ? t.date.split('T')[0] : t.date;
-    if (dailyMap.has(k)) {
-      dailyMap.get(k).net += t.amount;
-      if (t.amount > 0) dailyMap.get(k).inflow += t.amount;
-    }
-  });
-
-  // Calcula a série de saldo real de forma progressiva respeitando o saldo atual
-  const dailyKeys = Array.from(dailyMap.keys());
-  let firstActivityIdx = -1;
-  
-  // Encontra o dia da primeira transação no período
-  for (let i = 0; i < dailyKeys.length; i++) {
-    const dayData = dailyMap.get(dailyKeys[i]);
-    if (dayData.net !== 0 || dayData.inflow !== 0) {
-      firstActivityIdx = i;
-      break;
-    }
-  }
-
-  // Se não houve transação, a "atividade" é o ajuste manual de hoje
-  if (firstActivityIdx === -1) {
-    firstActivityIdx = dailyKeys.length - 1;
-  }
-
-  const balanceSeries: number[] = new Array(dailyKeys.length).fill(0);
-  let movingBalance = settings?.current_balance || 0;
-
-  // Preenche de trás para frente, do dia atual até a primeira atividade encontrada
-  // Isso garante que o ponto final (hoje) seja exatamente o saldo atual configurado
-  for (let i = dailyKeys.length - 1; i >= firstActivityIdx; i--) {
-    balanceSeries[i] = Number(Math.max(0, movingBalance).toFixed(2));
-    movingBalance -= dailyMap.get(dailyKeys[i]).net;
-  }
-
-  const lineChartData = {
-    labels: dailyKeys.map(k => format(new Date(k + 'T12:00:00'), 'dd/MM')),
-    datasets: [{ 
-      label: 'Saldo', 
-      data: balanceSeries, 
-      borderColor: '#00f2ff', 
-      backgroundColor: 'rgba(0, 242, 255, 0.1)', 
-      fill: true, 
-      tension: 0.35,
-      pointRadius: 2,
-      pointHoverRadius: 6,
-      borderWidth: 2
-    }]
-  };
-
-  const rhythmChartData = {
-    labels: summary?.rhythm?.[rhythmFilter]?.labels || [],
-    datasets: [
-      { 
-        label: 'Saídas', 
-        data: summary?.rhythm?.[rhythmFilter]?.data || [], 
-        borderColor: '#ef4444', 
-        backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-        borderWidth: 2, 
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        pointHoverRadius: 4
-      },
-      { 
-        label: 'Entradas', 
-        data: summary?.rhythm?.[rhythmFilter]?.incomeData || [], 
-        borderColor: '#22c55e', 
-        backgroundColor: 'rgba(34, 197, 94, 0.1)', 
-        borderWidth: 2, 
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        pointHoverRadius: 4
-      }
-    ]
-  };
-
-  const handleUpdateBalance = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !settings) return;
-    
-    try {
-      setLoading(true);
-      const newAmount = parseFloat(tempBalance) || 0;
-      const { error } = await db.from('mf_user_settings').update({ current_balance: newAmount }).eq('user_id', user.id);
-      if (error) throw error;
-      
-      setSettings({ ...settings, current_balance: newAmount });
-      setShowBalanceModal(false);
-      fetchData();
-    } catch (err: any) {
-      console.error('Erro ao atualizar saldo:', err);
-      alert('Falha ao atualizar saldo.');
+      console.error('Dashboard fetch error:', err);
+      setError(err?.message || 'Não foi possível carregar seus dados financeiros.');
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    fetchData();
+    const channel = db
+      .channel(`dashboard-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries' }, fetchData)
+      .subscribe();
+
+    return () => {
+      db.removeChannel(channel);
+    };
+  }, [user.id]);
+
+  useEffect(() => {
+    if (!settings) {
+      setSummary(null);
+      return;
+    }
+
+    try {
+      setSummary(calculateFinanceSummary(transactions, settings, fixedBills, cards, dailyBills, installments));
+    } catch (err) {
+      console.error('Summary calculation failed:', err);
+      setSummary(null);
+    }
+  }, [transactions, settings, fixedBills, cards, dailyBills, installments]);
 
   const isAdmin = useMemo(() => {
-    if (!user) return false;
-    const role = String(user.app_metadata?.role || "").toLowerCase();
-    return role === "admin" || role === "owner" || user.user_metadata?.is_admin === true;
+    const role = String(user.app_metadata?.role || '').toLowerCase();
+    return role === 'admin' || role === 'owner' || user.user_metadata?.is_admin === true;
   }, [user]);
 
-  const importAccountHolderName = useMemo(() => {
-    const maybeName = String(
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      user.user_metadata?.display_name ||
-      ''
-    ).trim();
-    return maybeName || undefined;
-  }, [user]);
+  const overviewTopCategories = useMemo(() => {
+    const totals: Record<string, number> = {};
+    let total = 0;
 
-  const importInternalAliases = useMemo(() => {
-    const aliases = new Set<string>();
-    if (user.email) aliases.add(user.email.split('@')[0]);
-    for (const card of cards) {
-      if (card.name?.trim()) aliases.add(card.name.trim());
-    }
-    return [...aliases].filter(Boolean);
-  }, [user, cards]);
-
-  const toolGroups = useMemo(() => {
-    const groups = [
-      {
-        id: 'main',
-        label: 'Principal',
-        icon: LayoutDashboard,
-        tabs: [
-          { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'history', label: 'Histórico', icon: HistoryIcon },
-          { id: 'cards', label: 'Cartões', icon: CreditCardIcon },
-        ]
-      },
-      {
-        id: 'intel',
-        label: 'Inteligência',
-        icon: Activity,
-        tabs: [
-          { id: 'analysis', label: 'Análises', icon: BarChart2 },
-          { id: 'accounts', label: 'Contas', icon: Wallet },
-        ]
-      },
-      {
-        id: 'sys',
-        label: 'Sistema',
-        icon: Settings,
-        tabs: [
-          { id: 'settings', label: 'Preferências', icon: Settings },
-        ]
-      }
-    ];
-
-    if (isAdmin) {
-      groups.push({
-        id: 'admin',
-        label: 'Admin',
-        icon: ShieldAlert,
-        tabs: [
-          { id: 'admin_requests', label: 'Admin', icon: ShieldAlert }
-        ]
+    transactions
+      .filter((transaction) => transaction.type === 'expense')
+      .forEach((transaction) => {
+        const amount = Math.abs(Number(transaction.amount) || 0);
+        totals[transaction.category || 'Geral'] = (totals[transaction.category || 'Geral'] || 0) + amount;
+        total += amount;
       });
+
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([name, amount]) => ({ name, amount, percentage: total > 0 ? (amount / total) * 100 : 0 }));
+  }, [transactions]);
+
+  const latestOverviewTransactions = useMemo(
+    () =>
+      [...transactions]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 4),
+    [transactions],
+  );
+
+  const historicalWindow = useMemo(() => {
+    const validDates = transactions
+      .map((transaction) => new Date(transaction.date))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime());
+
+    const latestTransaction = validDates[0];
+    const now = new Date();
+    const anchor = latestTransaction && now.getTime() - latestTransaction.getTime() > 7 * 86400000 ? latestTransaction : now;
+    const start = subDays(anchor, 29);
+
+    const keys: string[] = [];
+    for (let day = start; !isAfter(day, anchor); day = addDays(day, 1)) {
+      keys.push(format(day, 'yyyy-MM-dd'));
     }
 
-    return groups;
-  }, [isAdmin]);
+    const dailyNet = new Map(keys.map((key) => [key, 0]));
+    const dailyIncome = new Map(keys.map((key) => [key, 0]));
+    const dailyExpense = new Map(keys.map((key) => [key, 0]));
+
+    transactions.forEach((transaction) => {
+      const key = transactionDay(transaction.date);
+      if (!dailyNet.has(key)) return;
+      const amount = Number(transaction.amount) || 0;
+      dailyNet.set(key, (dailyNet.get(key) || 0) + amount);
+      if (amount >= 0) dailyIncome.set(key, (dailyIncome.get(key) || 0) + amount);
+      else dailyExpense.set(key, (dailyExpense.get(key) || 0) + Math.abs(amount));
+    });
+
+    const balances = new Array(keys.length).fill(0);
+    let balance = Number(settings?.current_balance) || 0;
+    for (let index = keys.length - 1; index >= 0; index -= 1) {
+      balances[index] = Number(balance.toFixed(2));
+      balance -= dailyNet.get(keys[index]) || 0;
+    }
+
+    return {
+      labels: keys.map((key) => format(new Date(`${key}T12:00:00`), 'dd/MM')),
+      balances,
+      incomes: keys.map((key) => Number((dailyIncome.get(key) || 0).toFixed(2))),
+      expenses: keys.map((key) => Number((dailyExpense.get(key) || 0).toFixed(2))),
+    };
+  }, [transactions, settings?.current_balance]);
+
+  const lineChartData = {
+    labels: historicalWindow.labels,
+    datasets: [
+      {
+        label: 'Saldo',
+        data: historicalWindow.balances,
+        borderColor: '#00f2ff',
+        backgroundColor: 'rgba(0,242,255,.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  const rhythmChartData = {
+    labels: historicalWindow.labels,
+    datasets: [
+      {
+        label: 'Saídas',
+        data: historicalWindow.expenses,
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239,68,68,.06)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+      {
+        label: 'Entradas',
+        data: historicalWindow.incomes,
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34,197,94,.06)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  const chartOptions: any = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 350 },
+    plugins: { legend: { display: false } },
+    scales: {
+      y: {
+        grid: { color: 'rgba(255,255,255,.055)' },
+        ticks: { color: 'rgba(255,255,255,.35)', font: { size: 9 }, maxTicksLimit: 5 },
+      },
+      x: {
+        grid: { display: false },
+        ticks: { color: 'rgba(255,255,255,.35)', font: { size: 9 }, maxTicksLimit: 12 },
+      },
+    },
+  };
+
+  const overviewCardsUsed = cards.reduce((sum, card) => sum + Number(card.used || 0), 0);
+  const overviewCardsLimit = cards.reduce((sum, card) => sum + Number(card.limit || 0), 0);
+  const overviewCardsAvailable = overviewCardsLimit - overviewCardsUsed;
+  const overviewCardsUsagePercent = overviewCardsLimit > 0 ? Math.min(100, (overviewCardsUsed / overviewCardsLimit) * 100) : 0;
+
+  const notifications = useMemo(() => {
+    return fixedBills
+      .filter((bill: any) => bill.status !== 'paid')
+      .filter((bill) => !dismissedAlerts.includes(`fixed-${bill.id}`))
+      .map((bill) => ({
+        id: `fixed-${bill.id}`,
+        type: 'fixed',
+        title: bill.name,
+        amount: Number(bill.amount || 0),
+        status: 'pending',
+        originalData: bill,
+      }));
+  }, [fixedBills, dismissedAlerts]);
+
+  async function insertLedger(entry: Partial<Transaction>) {
+    const result = await db.from('mf_finance_ledger_entries').insert({
+      user_id: user.id,
+      date: entry.date || new Date().toISOString(),
+      amount: entry.amount || 0,
+      type: entry.type || 'expense',
+      description: entry.description || 'Lançamento',
+      category: entry.category || 'Geral',
+      source: (entry as any).source || 'Manual',
+      status: (entry as any).status || 'paid',
+    });
+    if (result.error) throw result.error;
+  }
+
+  async function handleAddTransaction(event: React.FormEvent) {
+    event.preventDefault();
+    if (!settings) return;
+
+    try {
+      const entered = Number(newTransaction.amount);
+      if (!Number.isFinite(entered) || entered <= 0) return;
+      const amount = newTransaction.type === 'expense' ? -Math.abs(entered) : Math.abs(entered);
+      await insertLedger({ ...newTransaction, amount });
+      const nextBalance = Number(settings.current_balance || 0) + amount;
+      const update = await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
+      if (update.error) throw update.error;
+      setShowAddModal(false);
+      setNewTransaction({ amount: '', category: 'Geral', description: '', type: 'expense' });
+      await fetchData();
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível salvar o lançamento.');
+    }
+  }
+
+  async function handleUpdateBalance(event: React.FormEvent) {
+    event.preventDefault();
+    const value = Number(tempBalance);
+    if (!Number.isFinite(value)) return;
+    const result = await db.from('mf_user_settings').update({ current_balance: value }).eq('user_id', user.id);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setShowBalanceModal(false);
+    await fetchData();
+  }
+
+  async function handleDeleteTransaction(id: string) {
+    const result = await db.from('mf_finance_ledger_entries').delete().eq('id', id).eq('user_id', user.id);
+    if (result.error) setError(result.error.message);
+    else await fetchData();
+  }
+
+  async function handleDeleteAllTransactions() {
+    if (!window.confirm('Apagar definitivamente todos os lançamentos e zerar o saldo?')) return;
+    const deletion = await db.from('mf_finance_ledger_entries').delete().eq('user_id', user.id);
+    if (deletion.error) {
+      setError(deletion.error.message);
+      return;
+    }
+    await db.from('mf_user_settings').update({ current_balance: 0 }).eq('user_id', user.id);
+    await fetchData();
+  }
+
+  async function handleImportTransactions(imported: ImportedTransaction[], newBalance?: number) {
+    const entries = imported
+      .filter((item) => item.description && Number(item.amount) > 0)
+      .map((item) => ({
+        user_id: user.id,
+        date: item.date,
+        description: item.description,
+        category: item.category || 'Geral',
+        amount: item.type === 'expense' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount)),
+        type: item.type,
+        source: item.bank_source || 'Importado',
+        status: 'paid',
+      }));
+
+    if (entries.length) {
+      const insertion = await db.from('mf_finance_ledger_entries').insert(entries);
+      if (insertion.error) throw insertion.error;
+    }
+
+    if (settings) {
+      const fallbackBalance = Number(settings.current_balance || 0) + entries.reduce((sum, item) => sum + item.amount, 0);
+      const targetBalance = typeof newBalance === 'number' ? newBalance : fallbackBalance;
+      await db.from('mf_user_settings').update({ current_balance: targetBalance }).eq('user_id', user.id);
+    }
+    await fetchData();
+  }
+
+  async function handleUpdateSettings(nextSettings: UserSettings) {
+    const { id: _id, ...payload } = nextSettings as any;
+    const result = await db.from('mf_user_settings').update(payload).eq('user_id', user.id);
+    if (result.error) setError(result.error.message);
+    else await fetchData();
+  }
+
+  async function handleToggleBillStatus(id: string) {
+    const bill = fixedBills.find((item) => item.id === id);
+    if (!bill || !settings) return;
+    const amount = -Math.abs(Number(bill.amount || 0));
+    await insertLedger({ amount, type: 'expense', category: bill.category || 'Contas Fixas', description: `Pagamento: ${bill.name}` });
+    await db.from('mf_fixed_bills').update({ status: 'paid', last_paid_month: format(new Date(), 'yyyy-MM') }).eq('id', id);
+    await db.from('mf_user_settings').update({ current_balance: Number(settings.current_balance || 0) + amount }).eq('user_id', user.id);
+    await fetchData();
+  }
+
+  function openAddCardModal() {
+    setEditingCard(null);
+    setCardForm({ name: '', limit: '', used: '0', due_day: '10', closing_day: '1' });
+    setShowCardModal(true);
+  }
+
+  function openEditCardModal(card: CreditCard) {
+    setEditingCard(card);
+    setCardForm({
+      name: card.name,
+      limit: String(card.limit || 0),
+      used: String(card.used || 0),
+      due_day: String(card.due_day || 10),
+      closing_day: String(card.closing_day || 1),
+    });
+    setShowCardModal(true);
+  }
+
+  async function handleSaveCard(event: React.FormEvent) {
+    event.preventDefault();
+    const payload = {
+      user_id: user.id,
+      name: cardForm.name,
+      brand: editingCard?.brand || 'Visa',
+      limit: Number(cardForm.limit || 0),
+      used: Number(cardForm.used || 0),
+      due_day: Number(cardForm.due_day || 10),
+      closing_day: Number(cardForm.closing_day || 1),
+    };
+    const result = editingCard
+      ? await db.from('mf_credit_cards').update(payload).eq('id', editingCard.id)
+      : await db.from('mf_credit_cards').insert(payload);
+    if (result.error) setError(result.error.message);
+    else {
+      setShowCardModal(false);
+      await fetchData();
+    }
+  }
+
+  async function handleDeleteCard(card: CreditCard) {
+    if (!window.confirm(`Excluir o cartão ${card.name}?`)) return;
+    await db.from('mf_credit_cards').delete().eq('id', card.id);
+    await fetchData();
+  }
+
+  function openAddInstallmentModal() {
+    setEditingInstallment(null);
+    setInstallmentForm({
+      card_id: cards[0]?.id || '',
+      description: '',
+      total_amount: '',
+      monthly_amount: '',
+      current_installment: '1',
+      total_installments: '1',
+      due_day: '1',
+    });
+    setShowInstallmentModal(true);
+  }
+
+  function openEditInstallmentModal(item: CardInstallment) {
+    setEditingInstallment(item);
+    setInstallmentForm({
+      card_id: item.card_id || '',
+      description: item.description,
+      total_amount: String(item.total_amount || 0),
+      monthly_amount: String(item.monthly_amount || 0),
+      current_installment: String(item.current_installment || 1),
+      total_installments: String(item.total_installments || 1),
+      due_day: String(item.due_day || 1),
+    });
+    setShowInstallmentModal(true);
+  }
+
+  async function handleSaveInstallment(event: React.FormEvent) {
+    event.preventDefault();
+    const payload = {
+      user_id: user.id,
+      card_id: installmentForm.card_id || null,
+      description: installmentForm.description,
+      total_amount: Number(installmentForm.total_amount || 0),
+      monthly_amount: Number(installmentForm.monthly_amount || 0),
+      current_installment: Number(installmentForm.current_installment || 1),
+      total_installments: Number(installmentForm.total_installments || 1),
+      due_day: Number(installmentForm.due_day || 1),
+    };
+    const result = editingInstallment
+      ? await db.from('mf_card_installments').update(payload).eq('id', editingInstallment.id)
+      : await db.from('mf_card_installments').insert(payload);
+    if (result.error) setError(result.error.message);
+    else {
+      setShowInstallmentModal(false);
+      await fetchData();
+    }
+  }
+
+  async function handleDeleteInstallment(item: CardInstallment) {
+    await db.from('mf_card_installments').delete().eq('id', item.id);
+    await fetchData();
+  }
+
+  async function handlePayInstallment(item: CardInstallment) {
+    if (!settings) return;
+    const amount = -Math.abs(Number(item.monthly_amount || 0));
+    await insertLedger({ amount, type: 'expense', category: 'Parcelamentos', description: `Parcela: ${item.description}` });
+    await db
+      .from('mf_card_installments')
+      .update({ current_installment: Number(item.current_installment || 1) + 1, last_paid_month: format(new Date(), 'yyyy-MM') })
+      .eq('id', item.id);
+    await db.from('mf_user_settings').update({ current_balance: Number(settings.current_balance || 0) + amount }).eq('user_id', user.id);
+    await fetchData();
+  }
+
+  async function handlePayCardBill(card: CreditCard) {
+    if (!settings) return;
+    const amount = -Math.abs(Number(card.used || 0));
+    if (!amount) return;
+    await insertLedger({ amount, type: 'expense', category: 'Cartão de Crédito', description: `Pagamento da fatura: ${card.name}` });
+    await db.from('mf_credit_cards').update({ used: 0 }).eq('id', card.id);
+    await db.from('mf_user_settings').update({ current_balance: Number(settings.current_balance || 0) + amount }).eq('user_id', user.id);
+    await fetchData();
+  }
+
+  const toolGroups = [
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'history', label: 'Histórico', icon: HistoryIcon },
+    { id: 'cards', label: 'Cartões', icon: CreditCardIcon },
+    { id: 'analysis', label: 'Análises', icon: BarChart2 },
+    { id: 'accounts', label: 'Contas', icon: Wallet },
+    { id: 'settings', label: 'Preferências', icon: Settings },
+    ...(isAdmin ? [{ id: 'admin_requests', label: 'Admin', icon: ShieldAlert }] : []),
+  ] as const;
+
+  const balanceValue = Number(settings?.current_balance ?? summary?.currentBalance ?? 0);
+  const dailyLimit = Number(summary?.dailyLimit || 0);
+  const todaySpent = Number(summary?.todaySpent || 0);
 
   return (
-    <div className="h-screen w-full p-2 sm:p-4 flex flex-col gap-2 sm:gap-3 overflow-hidden bg-[#050505] text-white no-scrollbar selection:bg-brand-primary/30">
-      {missingTables.length > 0 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-2 sm:p-3 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Database className="text-yellow-500" size={16} />
-            <div className="text-xs sm:text-sm font-bold text-yellow-500">Configuração Incompleta</div>
-          </div>
-          <button onClick={() => setShowSetupHelper(true)} className="px-3 py-1 bg-yellow-500 text-black rounded-lg text-[10px] font-bold">Configurar</button>
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center justify-between animate-fade-in shrink-0">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="text-red-400" size={18} />
-            <div className="text-xs font-bold text-red-400">{error}</div>
-          </div>
-          <button onClick={() => setError(null)} className="p-1 text-red-400 hover:bg-red-500/10 rounded-lg">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 shrink-0">
-        <div className="flex items-center justify-between w-full lg:w-auto">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center border border-brand-primary/20">
-              <Wallet className="text-brand-primary" size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">MFinanceiro</h1>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-white/40 uppercase font-black tracking-widest leading-none">Dashboard</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2 lg:hidden">
-            <button 
-              onClick={() => setIsPrivate(!isPrivate)}
-              className={`p-2 rounded-lg transition-all ${isPrivate ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40'}`}
-            >
-              {isPrivate ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-            <button 
-              onClick={() => setShowNotificationCenter(true)}
-              className="relative p-2 bg-white/5 text-white/40 rounded-lg"
-            >
-              <Bell size={18} />
-              {urgentNotifications.length > 0 && (
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-brand-primary rounded-full animate-pulse"></span>
-              )}
-            </button>
-            <button onClick={() => setShowAddModal(true)} className="p-2 bg-brand-primary text-black rounded-lg">
-              <Plus size={18} />
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')}
-              className={`p-2 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40 hover:text-white'}`}
-            >
-              <Settings size={18} />
-            </button>
-          </div>
+    <div className="mf-app-shell">
+      <header className="mf-topbar">
+        <div className="mf-brand">
+          <div className="mf-brand-icon"><Wallet size={20} /></div>
+          <div><h1>MFinanceiro</h1><span>Dashboard</span></div>
         </div>
 
-        <nav className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:pb-0 justify-start lg:justify-center w-full lg:w-auto">
-          {toolGroups.map(group => (
-            <div key={group.id} className="flex bg-white/5 p-1 rounded-xl border border-white/10 items-center gap-0.5 shrink-0">
-              {group.tabs.map(tab => (
-                <button 
-                  key={tab.id} 
-                  onClick={() => setActiveTab(tab.id as any)} 
-                  className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap ${
-                    activeTab === tab.id 
-                      ? 'bg-brand-primary text-black shadow-lg shadow-brand-primary/20' 
-                      : 'text-white/40 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-              <div className="w-[1px] h-3 bg-white/10 last:hidden mx-0.5" />
-            </div>
+        <nav className="mf-nav">
+          {toolGroups.map((item) => (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={activeTab === item.id ? 'active' : ''}>
+              <item.icon size={14} /><span>{item.label}</span>
+            </button>
           ))}
         </nav>
 
-        <div className="hidden lg:flex items-center gap-3">
-          <button 
-            onClick={() => setIsPrivate(!isPrivate)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              isPrivate ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40 hover:text-white'
-            }`}
-          >
-            {isPrivate ? <EyeOff size={14} /> : <Eye size={14} />}
-            <span>Privado</span>
-          </button>
-          
-          <div className="h-4 w-px bg-white/10 mx-1"></div>
-          
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`p-2 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-brand-primary text-black' : 'bg-white/5 text-white/40 hover:text-white'}`}
-            title="Configurações"
-          >
-            <Settings size={18} />
-          </button>
-
-          <button 
-            onClick={() => setShowNotificationCenter(true)}
-            className="relative p-2 bg-white/5 text-white/40 rounded-lg hover:text-brand-primary transition-colors"
-          >
-            <Bell size={18} />
-            {urgentNotifications && urgentNotifications.length > 0 && (
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-brand-primary rounded-full"></span>
-            )}
-          </button>
-
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-brand-primary text-black px-4 py-2 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity">
-            <Plus size={18} />
-            <span>Lançar</span>
-          </button>
-          <button onClick={async () => { await db.auth.signOut(); clearLegacyCache(); window.location.replace('/'); }} className="p-2 text-white/20 hover:text-white transition-colors">
-            <LogOut size={20} />
-          </button>
+        <div className="mf-top-actions">
+          <button onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+          <button onClick={() => setShowNotificationCenter(true)} title="Notificações"><Bell size={16} /></button>
+          <button className="primary" onClick={() => setShowAddModal(true)}><Plus size={16} />Lançar</button>
+          <button onClick={async () => { await db.auth.signOut(); window.location.replace('/'); }} title="Sair"><LogOut size={17} /></button>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-6 scroll-smooth px-1">
+      {error && <div className="mf-error"><AlertCircle size={16} />{error}<button onClick={() => setError(null)}><X size={14} /></button></div>}
+
+      <section className={`mf-content ${activeTab === 'history' ? 'history-active' : ''}`}>
         {activeTab === 'overview' && (
-          <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 animate-fade-in">
-            {urgentNotifications.length > 0 && (
-              <div className="col-span-full glass-card !p-5 border-brand-primary/20 bg-brand-primary/5 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-brand-primary/20 flex items-center justify-center shrink-0">
-                    <AlertCircle className="text-brand-primary" size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold">Pendências Identificadas</h3>
-                    <p className="text-xs text-white/50">Você possui pagamentos pendentes que precisam de atenção hoje.</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setShowNotificationCenter(true)} className="px-4 py-2 bg-brand-primary text-black text-xs font-bold rounded-lg uppercase">Ver</button>
-                  <button onClick={() => setDismissedAlerts(prev => [...prev, ...urgentNotifications.map(n => n.id)])} className="px-4 py-2 bg-white/5 text-white/40 text-xs font-bold rounded-lg uppercase border border-white/5">Entendi</button>
-                </div>
-              </div>
-            )}
-            
-            <div className="lg:col-span-3 glass-card !p-4 flex flex-col justify-between group h-24">
-              <div className="flex items-center justify-between">
-                <span className="text-white/40 text-xs font-bold uppercase tracking-widest leading-none">Saldo</span>
-                <Pencil size={12} className="text-white/20 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => { setTempBalance(settings?.current_balance?.toString() || '0'); setShowBalanceModal(true); }} />
-              </div>
-              <div className="text-2xl font-bold tracking-tight">{formatCurrency(Math.max(0, summary?.currentBalance ?? 0), isPrivate)}</div>
-            </div>
+          <main className="mf-dashboard-grid">
+            <section className="mf-kpi-grid">
+              <article className={`mf-card mf-kpi ${balanceValue < 0 ? 'danger' : ''}`}>
+                <div><span>Saldo</span><button onClick={() => { setTempBalance(String(balanceValue)); setShowBalanceModal(true); }}><Pencil size={12} /></button></div>
+                <strong>{formatCurrency(balanceValue, isPrivate)}</strong>
+              </article>
+              <article className="mf-card mf-kpi accent"><span>Limite</span><strong>{formatCurrency(dailyLimit, isPrivate)}</strong></article>
+              <article className="mf-card mf-kpi"><span>Ciclo atual</span><strong>{summary?.cyclePeriodLabel || '--'} <small>({summary?.daysRemaining || 0}d)</small></strong></article>
+              <article className="mf-card mf-kpi"><span>Gasto hoje</span><strong className={todaySpent > dailyLimit && dailyLimit > 0 ? 'negative' : ''}>{formatCurrency(todaySpent, isPrivate)}</strong></article>
+            </section>
 
-            <div className="lg:col-span-3 glass-card !p-4 border-brand-primary/30 flex flex-col justify-between bg-brand-primary/5 h-24">
-              <span className="text-brand-primary text-xs font-bold uppercase tracking-widest leading-none">Limite</span>
-              <div className="text-2xl font-bold tracking-tight text-brand-primary">{formatCurrency(summary?.dailyLimit ?? 0, isPrivate)}</div>
-            </div>
+            <section className="mf-alert-grid">
+              <article className={`mf-card mf-alert ${balanceValue < 0 ? 'danger' : ''}`}>
+                <AlertCircle size={18} /><div><strong>Status do ciclo</strong><p>{summary?.smartAlert?.message || 'Acompanhe seu saldo e seus compromissos.'}</p></div>
+              </article>
+              <article className="mf-card mf-alert insight">
+                <TrendingUp size={18} /><div><strong>Insight financeiro</strong><p>{summary?.dailyInsight || summary?.insights?.[0] || 'Mantenha seus registros atualizados.'}</p></div>
+              </article>
+            </section>
 
-            <div className="lg:col-span-3 glass-card !p-4 flex flex-col justify-between h-24">
-              <span className="text-white/40 text-xs font-bold uppercase tracking-widest leading-none">Ciclo Atual</span>
-              <div className="text-xl font-bold tracking-tight truncate">
-                {summary?.cyclePeriodLabel || '--'}
-                <span className="ml-2 text-xs text-white/20 font-bold">({summary?.daysRemaining ?? 0}d)</span>
-              </div>
-            </div>
+            <article className="mf-card mf-chart-card">
+              <h3><Activity size={16} />Evolução do saldo</h3>
+              <div className="mf-chart"><Line data={lineChartData} options={chartOptions} /></div>
+            </article>
 
-            <div className="lg:col-span-3 glass-card !p-4 flex flex-col justify-between h-24">
-              <span className="text-white/40 text-xs font-bold uppercase tracking-widest leading-none">Gasto Hoje</span>
-              <div className={`text-2xl font-bold tracking-tight ${summary && summary.todaySpent > summary.dailyLimit ? 'text-red-400' : 'text-white'}`}>{formatCurrency(Math.max(0, summary?.todaySpent ?? 0), isPrivate)}</div>
-            </div>
-
-            <div className={`lg:col-span-6 glass-card !p-4 flex items-center gap-4 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-brand-primary/5 border-brand-primary/20'}`}>
-              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${summary?.smartAlert?.type === 'danger' ? 'bg-red-500/20' : 'bg-brand-primary/20'}`}>
-                <AlertCircle className={summary?.smartAlert?.type === 'danger' ? 'text-red-400' : 'text-brand-primary'} size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-sm">Status do Ciclo</h3>
-                <p className="text-xs text-white/50 truncate">{summary?.smartAlert?.message || "Ciclo operando dentro da normalidade."}</p>
-              </div>
-            </div>
-
-            <div className="lg:col-span-6 glass-card !p-4 flex items-center gap-4 bg-brand-secondary/5 border-brand-secondary/20">
-              <div className="h-10 w-10 rounded-xl bg-brand-secondary/20 flex items-center justify-center shrink-0">
-                <TrendingUp className="text-brand-secondary" size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-sm">Insight Financeiro</h3>
-                <p className="text-xs text-white/50 truncate">{summary?.dailyInsight || summary?.insights?.[0] || "Mantenha o controle para atingir suas metas."}</p>
-              </div>
-            </div>
-
-            <div className="col-span-full glass-card !p-5 flex flex-col h-[220px]">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-sm flex items-center gap-2">
-                  <Activity size={18} className="text-brand-primary" />
-                  Evolução do Saldo
-                </h3>
-              </div>
-              <div className="flex-1 min-h-0">
-                <Line 
-                  data={lineChartData} 
-                  options={{ 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    plugins: { legend: { display: false } }, 
-                    scales: { 
-                      y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } }, 
-                      x: { grid: { display: false }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } } 
-                    } 
-                  }} 
-                />
-              </div>
-            </div>
-
-            <div className="col-span-full glass-card !p-5 flex flex-col h-[220px]">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-sm flex items-center gap-2">
-                  <HistoryIcon size={18} className="text-brand-primary" />
-                  Ritmo de Gastos
-                </h3>
-                <div className="flex bg-white/5 p-1 rounded-lg border border-white/10">
-                  {(['day', 'week', 'month'] as const).map(f => (
-                    <button key={f} onClick={() => setRhythmFilter(f)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${rhythmFilter === f ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>{f === 'day' ? 'Dia' : f === 'week' ? 'Semana' : 'Mês'}</button>
+            <article className="mf-card mf-chart-card">
+              <div className="mf-chart-heading">
+                <h3><HistoryIcon size={16} />Ritmo de gastos</h3>
+                <div className="mf-segmented">
+                  {(['day', 'week', 'month'] as const).map((filter) => (
+                    <button key={filter} className={rhythmFilter === filter ? 'active' : ''} onClick={() => setRhythmFilter(filter)}>
+                      {filter === 'day' ? 'Dia' : filter === 'week' ? 'Semana' : 'Mês'}
+                    </button>
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0"><Line data={rhythmChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } }, x: { grid: { display: false }, ticks: { font: { size: 10 }, color: 'rgba(255,255,255,0.3)' } } } }} /></div>
-            </div>
+              <div className="mf-chart"><Line data={rhythmChartData} options={chartOptions} /></div>
+            </article>
 
-            <div className="md:col-span-2 lg:col-span-4 glass-card !p-5 flex flex-col h-[250px]">
-              <h3 className="font-bold text-sm flex items-center gap-2 mb-4">
-                <PieChartIcon size={18} className="text-brand-primary" />
-                Categorias Principais
-              </h3>
-              <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar">
-                {overviewTopCategories.length > 0 ? (
-                  overviewTopCategories.map(cat => (
-                    <div key={cat.name} className="flex flex-col gap-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-white/60 font-medium truncate">{cat.name}</span>
-                        <span className="font-bold">R$ {cat.amount.toFixed(2)}</span>
-                      </div>
-                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-brand-primary" style={{ width: `${cat.percentage}%` }}></div>
-                      </div>
+            <section className="mf-bottom-grid">
+              <article className="mf-card mf-mini-card">
+                <h3><PieChartIcon size={16} />Categorias principais</h3>
+                <div className="mf-category-list">
+                  {overviewTopCategories.length ? overviewTopCategories.map((category) => (
+                    <div key={category.name} className="mf-category-item">
+                      <div><span>{category.name}</span><strong>R$ {category.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+                      <div className="mf-progress"><i style={{ width: `${category.percentage}%` }} /></div>
                     </div>
-                  ))
-                ) : (
-                  <div className="h-full flex items-center justify-center text-xs text-white/20 italic text-center px-4">Sem dados</div>
-                )}
-              </div>
-            </div>
+                  )) : <p className="mf-empty">Sem despesas cadastradas.</p>}
+                </div>
+              </article>
 
-            <div className="md:col-span-2 lg:col-span-4 glass-card !p-5 flex flex-col h-[250px]">
-              <h3 className="font-bold text-sm flex items-center gap-2 mb-4">
-                <HistoryIcon size={18} className="text-brand-primary" />
-                Últimos Lançamentos
-              </h3>
-              <div className="flex-1 space-y-3 overflow-y-auto no-scrollbar">
-                {latestOverviewTransactions.length > 0 ? (
-                  latestOverviewTransactions.map(t => (
-                    <div key={t.id} className="flex items-center justify-between text-xs p-3 bg-white/5 rounded-xl border border-white/5 text-center">
-                      <div className="truncate mr-3">
-                        <div className="font-bold truncate">{t.description || t.category}</div>
-                        <div className="text-white/30 text-[10px]">{t.date ? format(new Date(t.date), 'dd/MM/yyyy') : '--/--'}</div>
-                      </div>
-                      <div className={`font-bold shrink-0 ${t.type === 'income' ? 'text-green-400' : 'text-white'}`}>
-                        {t.type === 'income' ? '+' : '-'} R$ {Math.abs(t.amount).toLocaleString('pt-BR')}
-                      </div>
+              <article className="mf-card mf-mini-card">
+                <h3><HistoryIcon size={16} />Últimos lançamentos</h3>
+                <div className="mf-latest-list">
+                  {latestOverviewTransactions.length ? latestOverviewTransactions.map((transaction) => (
+                    <div key={transaction.id}>
+                      <span><strong>{transaction.description || transaction.category}</strong><small>{format(new Date(transaction.date), 'dd/MM/yyyy')}</small></span>
+                      <b className={transaction.type === 'income' ? 'positive' : 'negative'}>{transaction.type === 'income' ? '+' : '-'} R$ {Math.abs(transaction.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b>
                     </div>
-                  ))
-                ) : (
-                  <div className="h-full flex items-center justify-center text-xs text-white/20 italic">Vazio</div>
-                )}
-              </div>
-            </div>
-            
-            <div className="md:col-span-2 lg:col-span-4 glass-card !p-5 flex flex-col h-[250px] justify-center">
-              <h3 className="font-bold text-sm flex items-center gap-2 mb-6">
-                <CreditCardIcon size={18} className="text-brand-primary" />
-                Uso de Cartões
-              </h3>
-              <div className="space-y-6">
-                <div className="flex justify-between text-sm"><span className="text-white/40">Utilizado</span><span className="font-bold">R$ {overviewCardsUsed.toLocaleString('pt-BR')}</span></div>
-                <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-brand-secondary" style={{ width: `${overviewCardsUsagePercent}%` }}></div></div>
-                <div className="flex justify-between items-center pt-4 border-t border-white/10"><span className="text-xs text-white/40">Restante Disponível</span><span className="text-xl font-bold text-brand-primary leading-none">R$ {overviewCardsAvailable.toLocaleString('pt-BR')}</span></div>
-              </div>
-            </div>
+                  )) : <p className="mf-empty">Nenhum lançamento.</p>}
+                </div>
+              </article>
+
+              <article className="mf-card mf-mini-card mf-card-usage">
+                <h3><CreditCardIcon size={16} />Uso de cartões</h3>
+                <div className="mf-usage-row"><span>Utilizado</span><strong>R$ {overviewCardsUsed.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+                <div className="mf-progress large"><i style={{ width: `${overviewCardsUsagePercent}%` }} /></div>
+                <div className="mf-usage-footer"><span>Restante disponível</span><strong>R$ {overviewCardsAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+              </article>
+            </section>
           </main>
         )}
 
         {activeTab === 'history' && (
-          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit">
-              <button 
-                onClick={() => setHistorySubTab('list')} 
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${historySubTab === 'list' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
-              >
-                Movimentações
-              </button>
-              <button 
-                onClick={() => {
-                  setHistorySubTab('import');
-                  setHistoryImportNonce((prev) => prev + 1);
-                }} 
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${historySubTab === 'import' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}
-              >
-                Importar Extrato
-              </button>
+          <div className="mf-tab-shell history-shell">
+            <div className="mf-subnav">
+              <button className={historySubTab === 'list' ? 'active' : ''} onClick={() => setHistorySubTab('list')}>Movimentações</button>
+              <button className={historySubTab === 'import' ? 'active' : ''} onClick={() => setHistorySubTab('import')}>Importar extrato</button>
             </div>
             {historySubTab === 'list' ? (
               <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />
             ) : (
-              <ImportarExtratos
-                key={`history-import-${historyImportNonce}`}
-                onImport={handleImportTransactions}
-                onCancel={() => setHistorySubTab('list')}
-                accountHolderName={importAccountHolderName}
-                internalAccountAliases={importInternalAliases}
-              />
+              <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setHistorySubTab('list')} accountHolderName={user.user_metadata?.name || user.email || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} />
             )}
           </div>
         )}
 
         {activeTab === 'analysis' && (
-          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit overflow-x-auto no-scrollbar">
-              <button onClick={() => setAnalysisSubTab('stats')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'stats' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Estatísticas</button>
-              <button onClick={() => setAnalysisSubTab('insights')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'insights' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Insights AI</button>
-              <button onClick={() => setAnalysisSubTab('health')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'health' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Saúde Financeira</button>
-              <button onClick={() => setAnalysisSubTab('goals')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${analysisSubTab === 'goals' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Metas</button>
+          <div className="mf-tab-shell">
+            <div className="mf-subnav">
+              <button className={analysisSubTab === 'stats' ? 'active' : ''} onClick={() => setAnalysisSubTab('stats')}>Estatísticas</button>
+              <button className={analysisSubTab === 'insights' ? 'active' : ''} onClick={() => setAnalysisSubTab('insights')}>Insights AI</button>
+              <button className={analysisSubTab === 'health' ? 'active' : ''} onClick={() => setAnalysisSubTab('health')}>Saúde financeira</button>
+              <button className={analysisSubTab === 'goals' ? 'active' : ''} onClick={() => setAnalysisSubTab('goals')}>Metas</button>
             </div>
             {analysisSubTab === 'stats' && <Details transactions={transactions} summary={summary} />}
             {analysisSubTab === 'insights' && <Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />}
-            {analysisSubTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, i) => sum + i.amount, 0), categoryCount: new Set(transactions.map(t => t.category)).size }} />}
+            {analysisSubTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, item) => sum + Number(item.amount || 0), 0), categoryCount: new Set(transactions.map((item) => item.category)).size }} />}
             {analysisSubTab === 'goals' && <FinancialGoals />}
           </div>
         )}
 
         {activeTab === 'accounts' && (
-          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit overflow-x-auto no-scrollbar">
-              <button onClick={() => setAccountsSubTab('bills')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'bills' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Gestão de Contas</button>
-              <button onClick={() => setAccountsSubTab('calendar')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'calendar' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Calendário</button>
-              <button onClick={() => setAccountsSubTab('subscriptions')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'subscriptions' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Assinaturas</button>
-              <button onClick={() => setAccountsSubTab('investments')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${accountsSubTab === 'investments' ? 'bg-brand-primary text-black' : 'text-white/40 hover:text-white'}`}>Investimentos</button>
+          <div className="mf-tab-shell">
+            <div className="mf-subnav">
+              <button className={accountsSubTab === 'bills' ? 'active' : ''} onClick={() => setAccountsSubTab('bills')}>Gestão de contas</button>
+              <button className={accountsSubTab === 'calendar' ? 'active' : ''} onClick={() => setAccountsSubTab('calendar')}>Calendário</button>
+              <button className={accountsSubTab === 'subscriptions' ? 'active' : ''} onClick={() => setAccountsSubTab('subscriptions')}>Assinaturas</button>
+              <button className={accountsSubTab === 'investments' ? 'active' : ''} onClick={() => setAccountsSubTab('investments')}>Investimentos</button>
             </div>
-            {accountsSubTab === 'bills' && settings && (
-              <BaseFinanceira 
-                settings={settings} 
-                onSave={handleUpdateSettings} 
-                fixedBills={fixedBills} 
-                dailyBills={dailyBills} 
-                summary={summary} 
-                onToggleBillStatus={handleToggleBillStatus} 
-                onRefresh={fetchData} 
-                initialTab="bills"
-              />
-            )}
+            {accountsSubTab === 'bills' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="bills" />}
             {accountsSubTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
             {accountsSubTab === 'subscriptions' && <SubscriptionManager />}
             {accountsSubTab === 'investments' && <Investments user={user} settings={settings} onRefresh={fetchData} />}
           </div>
         )}
 
-        {activeTab === 'cards' && <Cartoes 
-          cards={cards} 
-          installments={installments} 
-          onAddCard={openAddCardModal} 
-          onEditCard={openEditCardModal} 
-          onDeleteCard={handleDeleteCard} 
-          onAddInstallment={openAddInstallmentModal} 
-          onEditInstallment={openEditInstallmentModal} 
-          onDeleteInstallment={handleDeleteInstallment} 
-          onPayInstallment={handlePayInstallment}
-          onPayCardBill={handlePayCardBill}
-        />}
+        {activeTab === 'cards' && <Cartoes cards={cards} installments={installments} onAddCard={openAddCardModal} onEditCard={openEditCardModal} onDeleteCard={handleDeleteCard} onAddInstallment={openAddInstallmentModal} onEditInstallment={openEditInstallmentModal} onDeleteInstallment={handleDeleteInstallment} onPayInstallment={handlePayInstallment} onPayCardBill={handlePayCardBill} />}
 
-        {activeTab === 'settings' && (
-          <div className="flex-1 flex flex-col gap-4 animate-fade-in">
-            <div className="flex items-center justify-between shrink-0 mb-2">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center">
-                  <Settings className="text-brand-primary" size={20} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">Configurações</h2>
-                  <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Base Estrutural do Sistema</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowSetupHelper(true)} 
-                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-white/60 transition-all border border-white/10"
-              >
-                <Database size={14} />Helper
-              </button>
-            </div>
-            
-            {settings ? (
-              <BaseFinanceira 
-                settings={settings} 
-                onSave={handleUpdateSettings} 
-                fixedBills={fixedBills} 
-                dailyBills={dailyBills} 
-                summary={summary} 
-                onToggleBillStatus={handleToggleBillStatus} 
-                onRefresh={fetchData} 
-                initialTab="income"
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-white/40 animate-pulse">Carregando...</div>
-            )}
-          </div>
-        )}
+        {activeTab === 'settings' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} dailyBills={dailyBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="income" />}
         {activeTab === 'admin_requests' && <AdminAccessRequests user={user} />}
-      </div>
+
+        {loading && activeTab === 'overview' && <div className="mf-loading">Atualizando dados...</div>}
+      </section>
+
+      <NotificationCenter isOpen={showNotificationCenter} onClose={() => setShowNotificationCenter(false)} notifications={notifications as any} onPay={(item: any) => item.type === 'fixed' && handleToggleBillStatus(item.originalData.id)} onDismiss={(id) => setDismissedAlerts((current) => [...current, id])} />
 
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-md animate-fade-in">
-            <h2 className="text-xl font-bold mb-6">Novo Lançamento</h2>
-            <form onSubmit={handleAddTransaction} className="space-y-4">
-              <div><label className="block text-sm text-white/60 mb-1">Valor</label><input type="number" step="0.01" required value={newTransaction.amount} onChange={e => setNewTransaction({...newTransaction, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none text-2xl font-bold" /></div>
-              <div className="flex gap-2"><button type="button" onClick={() => setNewTransaction({...newTransaction, type: 'expense'})} className={`flex-1 p-3 rounded-xl border ${newTransaction.type === 'expense' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Saída</button><button type="button" onClick={() => setNewTransaction({...newTransaction, type: 'income'})} className={`flex-1 p-3 rounded-xl border ${newTransaction.type === 'income' ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Entrada</button></div>
-              <div><label className="block text-sm text-white/60 mb-1">Categoria</label><select value={newTransaction.category} onChange={e => setNewTransaction({...newTransaction, category: e.target.value})} className="w-full bg-[#121212] border border-white/10 rounded-xl p-3 outline-none [&>option]:bg-[#121212] [&>option]:text-white">
-                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-              </select></div>
-              <div><label className="block text-sm text-white/60 mb-1">Descrição</label><input type="text" value={newTransaction.description} onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Ex: Almoço..." /></div>
-              <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 p-3 rounded-xl bg-white/5">Cancelar</button><button type="submit" className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold">Confirmar</button></div>
-            </form>
-          </div>
+        <div className="mf-modal-backdrop">
+          <form className="mf-modal" onSubmit={handleAddTransaction}>
+            <div className="mf-modal-title"><h2>Novo lançamento</h2><button type="button" onClick={() => setShowAddModal(false)}><X size={18} /></button></div>
+            <label>Valor<input type="number" step="0.01" required value={newTransaction.amount} onChange={(event) => setNewTransaction({ ...newTransaction, amount: event.target.value })} /></label>
+            <div className="mf-type-buttons"><button type="button" className={newTransaction.type === 'expense' ? 'expense active' : 'expense'} onClick={() => setNewTransaction({ ...newTransaction, type: 'expense' })}>Saída</button><button type="button" className={newTransaction.type === 'income' ? 'income active' : 'income'} onClick={() => setNewTransaction({ ...newTransaction, type: 'income' })}>Entrada</button></div>
+            <label>Categoria<select value={newTransaction.category} onChange={(event) => setNewTransaction({ ...newTransaction, category: event.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+            <label>Descrição<input value={newTransaction.description} onChange={(event) => setNewTransaction({ ...newTransaction, description: event.target.value })} /></label>
+            <div className="mf-modal-actions"><button type="button" onClick={() => setShowAddModal(false)}>Cancelar</button><button className="primary">Salvar</button></div>
+          </form>
         </div>
       )}
 
-      {showSalaryConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-md animate-fade-in p-6">
-            <h2 className="text-xl font-bold mb-3">Confirmação de Salário</h2>
-            <p className="text-sm text-white/70 leading-relaxed">Hoje ({salaryPromptDayLabel}) é dia de pagamento. Você já recebeu seu salário líquido de <span className="font-bold text-brand-primary">R$ {salaryPromptAmount.toLocaleString('pt-BR')}</span>?</p>
-            <div className="flex gap-3 pt-5">
-              <button onClick={() => setShowSalaryConfirmModal(false)} className="flex-1 p-3 rounded-xl bg-white/5">Ainda não</button>
-              <button onClick={handleConfirmSalaryReceived} className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold">Recebi</button>
-            </div>
-          </div>
+      {showBalanceModal && (
+        <div className="mf-modal-backdrop">
+          <form className="mf-modal compact" onSubmit={handleUpdateBalance}>
+            <div className="mf-modal-title"><h2>Saldo atual</h2><button type="button" onClick={() => setShowBalanceModal(false)}><X size={18} /></button></div>
+            <label>Valor da conta<input autoFocus type="number" step="0.01" value={tempBalance} onChange={(event) => setTempBalance(event.target.value)} /></label>
+            <div className="mf-modal-actions"><button type="button" onClick={() => setShowBalanceModal(false)}>Cancelar</button><button className="primary">Salvar</button></div>
+          </form>
         </div>
       )}
-
-
-      {showSetupHelper && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl glass-card !p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold">Configuração Manual</h2>
-              <button onClick={() => setShowSetupHelper(false)}><X size={20} /></button>
-            </div>
-            <pre className="p-4 bg-black rounded-xl border border-white/10 text-[10px] text-brand-primary overflow-auto max-h-64 select-all">
-              {`-- 1. CRIAR TABELA DE INVESTIMENTOS
-CREATE TABLE IF NOT EXISTS public.mf_investments (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,
-    institution TEXT,
-    amount NUMERIC DEFAULT 0,
-    initial_amount NUMERIC DEFAULT 0,
-    quantity NUMERIC DEFAULT 1,
-    average_price NUMERIC DEFAULT 0,
-    current_price NUMERIC DEFAULT 0,
-    dividends_received NUMERIC DEFAULT 0,
-    target_percentage NUMERIC DEFAULT 0,
-    category TEXT DEFAULT 'Investimento',
-    purchase_date TIMESTAMPTZ DEFAULT NOW(),
-    pl NUMERIC,
-    roe NUMERIC,
-    ebitda NUMERIC,
-    liquid_debt NUMERIC,
-    dividend_yield NUMERIC,
-    score NUMERIC,
-    note TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Adicionar colunas se já existir
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS quantity NUMERIC DEFAULT 1;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS average_price NUMERIC DEFAULT 0;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS current_price NUMERIC DEFAULT 0;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS dividends_received NUMERIC DEFAULT 0;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS target_percentage NUMERIC DEFAULT 0;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS pl NUMERIC;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS roe NUMERIC;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS ebitda NUMERIC;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS liquid_debt NUMERIC;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS dividend_yield NUMERIC;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS score NUMERIC;
-ALTER TABLE public.mf_investments ADD COLUMN IF NOT EXISTS note TEXT;
-
-ALTER TABLE public.mf_investments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage own investments" ON public.mf_investments FOR ALL USING (auth.uid() = user_id);
-
--- 2. AJUSTAR TABELA DE ATUALIZAÇÕES
-CREATE TABLE IF NOT EXISTS public.mf_app_updates (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    version TEXT UNIQUE NOT NULL,
-    title TEXT NOT NULL,
-    features TEXT[] DEFAULT '{}',
-    fixes TEXT[] DEFAULT '{}',
-    released_at TIMESTAMPTZ DEFAULT NOW(),
-    is_major BOOLEAN DEFAULT false
-);
-ALTER TABLE public.mf_app_updates ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ DEFAULT NOW();
-
--- 3. RECARREGAR SCHEMA
-NOTIFY pgrst, 'reload schema';`}
-            </pre>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => { setShowSetupHelper(false); fetchData(); }} className="flex-1 py-3 bg-brand-primary text-black rounded-xl font-bold">Já executei o SQL</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <NotificationCenter 
-        isOpen={showNotificationCenter}
-        onClose={() => setShowNotificationCenter(false)}
-        notifications={notifications}
-        onPay={handleNotificationPay}
-        onDismiss={(id) => setDismissedAlerts(prev => [...prev, id])}
-      />
 
       {showCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-6">{editingCard ? 'Editar Cartão' : 'Novo Cartão'}</h2>
-            <form onSubmit={handleSaveCard} className="space-y-4">
-              <input type="text" placeholder="Nome" required value={cardForm.name} onChange={e => setCardForm({...cardForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <input type="number" placeholder="Limite" required value={cardForm.limit} onChange={e => setCardForm({...cardForm, limit: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              <div className="flex gap-3"><button type="button" onClick={() => setShowCardModal(false)} className="flex-1 p-3 rounded-xl bg-white/5">Cancelar</button><button type="submit" className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold">Salvar</button></div>
-            </form>
-          </div>
-        </div>
+        <div className="mf-modal-backdrop"><form className="mf-modal compact" onSubmit={handleSaveCard}><div className="mf-modal-title"><h2>{editingCard ? 'Editar cartão' : 'Novo cartão'}</h2><button type="button" onClick={() => setShowCardModal(false)}><X size={18} /></button></div><label>Nome<input required value={cardForm.name} onChange={(event) => setCardForm({ ...cardForm, name: event.target.value })} /></label><label>Limite<input type="number" required value={cardForm.limit} onChange={(event) => setCardForm({ ...cardForm, limit: event.target.value })} /></label><div className="mf-modal-actions"><button type="button" onClick={() => setShowCardModal(false)}>Cancelar</button><button className="primary">Salvar</button></div></form></div>
       )}
 
       {showInstallmentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto no-scrollbar">
-          <div className="glass-card w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-6">{editingInstallment ? 'Editar Parcelamento' : 'Novo Parcelamento'}</h2>
-            <form onSubmit={handleSaveInstallment} className="space-y-4">
-              <div>
-                <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Fonte do Pagamento</label>
-                <select 
-                  required 
-                  value={installmentForm.card_id || 'boleto'} 
-                  onChange={e => setInstallmentForm({ ...installmentForm, card_id: e.target.value })} 
-                  className="w-full bg-[#121212] border border-white/10 rounded-xl p-3 [&>option]:bg-[#121212] [&>option]:text-white"
-                >
-                  <option value="boleto">Boleto / Outros</option>
-                  {cards.map(card => (<option key={card.id} value={card.id}>{card.name}</option>))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Descricao do Item</label>
-                <input type="text" placeholder="Ex: iPhone 15, Notebook..." required value={installmentForm.description} onChange={e => setInstallmentForm({...installmentForm, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Valor Total</label>
-                  <input type="number" step="0.01" placeholder="0.00" required value={installmentForm.total_amount} onChange={e => setInstallmentForm({...installmentForm, total_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Valor da Parcela</label>
-                  <input type="number" step="0.01" placeholder="0.00" required value={installmentForm.monthly_amount} onChange={e => setInstallmentForm({...installmentForm, monthly_amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Parcela Atual</label>
-                  <input type="number" required value={installmentForm.current_installment} onChange={e => setInstallmentForm({...installmentForm, current_installment: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Dia do Vencimento</label>
-                  <input type="number" min="1" max="31" required value={installmentForm.due_day} onChange={e => setInstallmentForm({...installmentForm, due_day: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] text-white/40 uppercase font-bold mb-1 block">Total de Parcelas</label>
-                <input type="number" required value={installmentForm.total_installments} onChange={e => setInstallmentForm({...installmentForm, total_installments: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3" />
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowInstallmentModal(false)} className="flex-1 p-3 rounded-xl bg-white/5">Cancelar</button>
-                <button type="submit" className="flex-1 p-3 rounded-xl bg-brand-primary text-black font-bold">Salvar</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <div className="mf-modal-backdrop"><form className="mf-modal" onSubmit={handleSaveInstallment}><div className="mf-modal-title"><h2>{editingInstallment ? 'Editar parcelamento' : 'Novo parcelamento'}</h2><button type="button" onClick={() => setShowInstallmentModal(false)}><X size={18} /></button></div><label>Descrição<input required value={installmentForm.description} onChange={(event) => setInstallmentForm({ ...installmentForm, description: event.target.value })} /></label><label>Valor total<input type="number" required value={installmentForm.total_amount} onChange={(event) => setInstallmentForm({ ...installmentForm, total_amount: event.target.value })} /></label><label>Valor da parcela<input type="number" required value={installmentForm.monthly_amount} onChange={(event) => setInstallmentForm({ ...installmentForm, monthly_amount: event.target.value })} /></label><div className="mf-modal-actions"><button type="button" onClick={() => setShowInstallmentModal(false)}>Cancelar</button><button className="primary">Salvar</button></div></form></div>
       )}
-
-        {showBalanceModal && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="glass-card w-full max-w-xs p-6 border-brand-primary/30">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="h-10 w-10 rounded-xl bg-brand-primary/10 flex items-center justify-center">
-                  <Wallet className="text-brand-primary" size={20} />
-                </div>
-                <h2 className="text-lg font-bold">Saldo atual de conta</h2>
-              </div>
-              <form onSubmit={handleUpdateBalance} className="space-y-6">
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold">R$</span>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    autoFocus
-                    value={tempBalance}
-                    onChange={(e) => setTempBalance(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 outline-none focus:border-brand-primary transition-all font-bold text-xl"
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <button type="button" onClick={() => setShowBalanceModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-sm font-bold">Cancelar</button>
-                  <button type="submit" className="flex-1 py-3 rounded-xl bg-brand-primary text-black text-sm font-bold">Salvar</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {confirmConfig && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="glass-card w-full max-w-sm animate-fade-in border-brand-primary/30">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 rounded-full bg-brand-primary/10 flex items-center justify-center">
-                  <Info className="text-brand-primary" size={20} />
-                </div>
-                <h2 className="text-lg font-bold">{confirmConfig.title}</h2>
-              </div>
-              <p className="text-sm text-white/70 mb-8 whitespace-pre-wrap leading-relaxed">{confirmConfig.message}</p>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setConfirmConfig(null)} 
-                  className="flex-1 py-3 rounded-xl bg-white/5 text-sm font-bold border border-white/10 hover:bg-white/10 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={() => confirmConfig.onConfirmed()} 
-                  className="flex-1 py-3 rounded-xl bg-brand-primary text-black text-sm font-bold hover:brightness-110 transition-all shadow-[0_0_20px_rgba(0,242,255,0.2)]"
-                >
-                  Confirmar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <AppUpdateNotification 
-          isOpen={isUpdateOpen}
-          updateInfo={latestUpdate}
-          onClose={() => setIsUpdateOpen(false)}
-          onAcknowledge={() => {
-            setIsUpdateOpen(false);
-            if (latestUpdate) {
-              localStorage.setItem(`mfinanceiro-update-dismissed:${user.id}`, latestUpdate.version);
-            }
-          }}
-        />
     </div>
   );
 }
