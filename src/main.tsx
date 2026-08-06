@@ -7,6 +7,7 @@ import './lib/bank-excel-parser-guard';
 import './lib/bank-csv-parser-guard';
 import './lib/installment-manager-mount';
 import './lib/income-payroll-center-mount';
+import './lib/payroll-advance-correction-guard';
 import './lib/income-payroll-layer-guard';
 import './lib/payroll-cycle-display-guard';
 import './lib/navigation-profile-onboarding-mount';
