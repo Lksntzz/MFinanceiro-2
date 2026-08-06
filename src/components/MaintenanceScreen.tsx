@@ -1,28 +1,14 @@
-import React, { useState } from 'react';
-import { Clock3, Loader2, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
+import React from 'react';
+import { Clock3, Sparkles, Wrench } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface MaintenanceScreenProps {
   message?: string;
-  onAdminLogin?: () => void | Promise<void>;
 }
 
 export default function MaintenanceScreen({
   message = 'Estamos realizando melhorias importantes. O MFinanceiro estará disponível novamente em breve.',
-  onAdminLogin,
 }: MaintenanceScreenProps) {
-  const [openingAdmin, setOpeningAdmin] = useState(false);
-
-  const handleAdminLogin = async () => {
-    if (!onAdminLogin || openingAdmin) return;
-    setOpeningAdmin(true);
-    try {
-      await onAdminLogin();
-    } finally {
-      setOpeningAdmin(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden bg-[#050505] p-6">
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-primary/10 blur-[130px]" />
@@ -31,7 +17,7 @@ export default function MaintenanceScreen({
       <motion.main
         initial={{ opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.45, ease: 'easeOut' }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
         className="relative z-10 w-full max-w-lg overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl"
       >
         <div className="border-b border-white/10 px-7 py-5">
@@ -72,28 +58,10 @@ export default function MaintenanceScreen({
           </div>
         </div>
 
-        <div className="border-t border-white/10 bg-black/20 px-7 py-5">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <p className="text-center text-[10px] font-bold uppercase tracking-[0.16em] text-white/25 sm:text-left">
-              O acesso será liberado automaticamente após a manutenção
-            </p>
-
-            {onAdminLogin && (
-              <button
-                type="button"
-                onClick={() => void handleAdminLogin()}
-                disabled={openingAdmin}
-                className="group flex shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-black text-white/70 transition-all hover:border-brand-primary/30 hover:bg-brand-primary/10 hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {openingAdmin ? (
-                  <Loader2 size={17} className="animate-spin" />
-                ) : (
-                  <ShieldCheck size={17} className="transition-transform group-hover:scale-110" />
-                )}
-                Acesso administrativo
-              </button>
-            )}
-          </div>
+        <div className="border-t border-white/10 bg-black/20 px-7 py-5 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/25">
+            O acesso será liberado automaticamente após a manutenção
+          </p>
         </div>
       </motion.main>
     </div>
