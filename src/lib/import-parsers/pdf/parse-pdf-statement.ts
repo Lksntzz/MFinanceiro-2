@@ -5,6 +5,7 @@ import { ImportedTransaction } from '../../../types';
 import { getPdfBankParser, resolvePdfBank } from './index';
 import { parseAmount, parsePdfDateToIso, normalizeHeader, looksLikeNoiseLine } from './utils';
 import { ExtractedPdfTransaction, PdfParserContext } from './types';
+import { requestPdfPassword } from './pdf-password-prompt';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -207,10 +208,10 @@ function toImportedTransactions(
     const amount = Math.abs(entry.signedAmount);
     const description = entry.description || 'Sem descricao';
     const flowByContext = inferFlowByDescription(description);
-    const type: 'income' | 'expense' =
-      flowByContext || (entry.signedAmount >= 0 ? 'income' : 'expense');
+    const type: 'income' | 'expense' = flowByContext || (entry.signedAmount >= 0 ? 'income' : 'expense');
     const status: ImportedTransaction['status'] = description !== 'Sem descricao' && amount > 0 ? 'ready' : 'error';
     const classification = classifyStatementEntry(description, type, options);
+
     return {
       id: generateId(`pdf-${bank}`, index),
       date: parsePdfDateToIso(entry.rawDate),
@@ -230,13 +231,20 @@ function toImportedTransactions(
   });
 }
 
+function isPasswordError(error: unknown): boolean {
+  const value = error as { name?: string; message?: string; code?: number } | null;
+  const name = String(value?.name || '').toLowerCase();
+  const message = String(value?.message || '').toLowerCase();
+  return name.includes('password') || message.includes('password') || message.includes('senha');
+}
+
 function classifyPdfOpenError(error: unknown): string {
   const value = error as { name?: string; message?: string; code?: number } | null;
   const name = String(value?.name || '').toLowerCase();
   const message = String(value?.message || '').toLowerCase();
 
-  if (name.includes('password') || message.includes('password') || message.includes('senha')) {
-    return 'PDF protegido por senha. Remova a senha no banco ou exporte o extrato em CSV/OFX antes de importar.';
+  if (isPasswordError(error)) {
+    return 'O PDF continua protegido e não pôde ser aberto. Confira a senha e tente novamente.';
   }
   if (name.includes('invalidpdf') || message.includes('invalid pdf') || message.includes('pdf structure')) {
     return 'PDF inválido ou com estrutura não compatível. Baixe novamente o extrato original no banco; não use impressão em PDF.';
@@ -273,6 +281,31 @@ function emptyPdfResult(selectedBank: string, reason: string, scanned = false): 
   };
 }
 
+async function openPdfWithPassword(bytes: Uint8Array, fileName: string) {
+  const loadingTask = getDocument({ data: bytes });
+  let passwordCancelled = false;
+
+  loadingTask.onPassword = (updatePassword: (password: string) => void, reason: number) => {
+    const incorrect = reason === 2;
+    void requestPdfPassword({ fileName, incorrect }).then((password) => {
+      if (password === null) {
+        passwordCancelled = true;
+        void loadingTask.destroy();
+        return;
+      }
+      updatePassword(password);
+    });
+  };
+
+  try {
+    const pdf = await loadingTask.promise;
+    return { pdf, passwordCancelled: false };
+  } catch (error) {
+    if (passwordCancelled) return { pdf: null, passwordCancelled: true };
+    throw error;
+  }
+}
+
 export async function parsePdfStatementWithDebug(
   file: File,
   selectedBank: string,
@@ -285,9 +318,13 @@ export async function parsePdfStatementWithDebug(
     return emptyPdfResult(selectedBank, 'Não foi possível ler os bytes do arquivo. Selecione o PDF novamente.');
   }
 
-  let pdf: Awaited<ReturnType<typeof getDocument>['promise']>;
+  let pdf: any;
   try {
-    pdf = await getDocument({ data: bytes }).promise;
+    const opened = await openPdfWithPassword(bytes, file.name);
+    if (opened.passwordCancelled || !opened.pdf) {
+      return emptyPdfResult(selectedBank, 'Leitura cancelada. A senha do PDF é necessária para importar este extrato.');
+    }
+    pdf = opened.pdf;
   } catch (error) {
     return emptyPdfResult(selectedBank, classifyPdfOpenError(error));
   }
@@ -314,7 +351,7 @@ export async function parsePdfStatementWithDebug(
       for (const y of ys) {
         const line = rows.get(y)!
           .sort((a, b) => a.x - b.x)
-          .map(part => part.text)
+          .map((part) => part.text)
           .join(' ')
           .replace(/\s+/g, ' ')
           .trim();
@@ -322,16 +359,14 @@ export async function parsePdfStatementWithDebug(
       }
     }
   } catch {
-    return {
-      ...emptyPdfResult(selectedBank, 'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.'),
-      debug: {
-        ...emptyPdfResult(selectedBank, '').debug,
-        totalPages: pdf.numPages,
-        totalTextItems,
-        linesExtracted: lines.length,
-        reason: 'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.',
-      }
-    };
+    const result = emptyPdfResult(
+      selectedBank,
+      'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.'
+    );
+    result.debug.totalPages = pdf.numPages;
+    result.debug.totalTextItems = totalTextItems;
+    result.debug.linesExtracted = lines.length;
+    return result;
   }
 
   const bank = resolvePdfBank(selectedBank, fullText);
@@ -342,6 +377,7 @@ export async function parsePdfStatementWithDebug(
     normalize: normalizeHeader,
     parseAmount,
   };
+
   let extracted = parser(context);
   let usedGenericFallback = false;
 
@@ -387,12 +423,13 @@ export async function parsePdfStatementWithDebug(
     ignoredLines++;
     if (looksLikeNoiseLine(line)) continue;
     if (rejectedLineReasons.length >= 8) continue;
+
     if (hasDate && !hasAmount) {
-      rejectedLineReasons.push(`Linha ignorada sem valor monetário: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(`Linha ignorada sem valor monetario: "${line.slice(0, 120)}"`);
     } else if (!hasDate && hasAmount) {
-      rejectedLineReasons.push(`Linha sem data própria; o leitor universal tentará associá-la à data anterior: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(`Linha ignorada sem data: "${line.slice(0, 120)}"`);
     } else {
-      rejectedLineReasons.push(`Linha sem padrão de transação: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(`Linha sem padrao de transacao: "${line.slice(0, 120)}"`);
     }
   }
 
