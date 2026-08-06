@@ -28,6 +28,12 @@ const normalize = (value?: string | null) =>
     .toLowerCase()
     .trim();
 
+function isVisible(element: Element | null): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+}
+
 function legacyButtons(): HTMLButtonElement[] {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-nav > button'))
     .filter((button) => !button.closest('#mf-simple-navigation-app'));
@@ -91,6 +97,53 @@ function go(route: RouteState) {
     else if (route.sub === 'goals') delayed(['Metas'], 90);
     else delayed(['Estatísticas'], 90);
   }
+}
+
+function openIncomeLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: boolean) {
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.textContent = 'Lançar';
+  trigger.style.display = 'none';
+  document.body.appendChild(trigger);
+  trigger.click();
+  trigger.remove();
+
+  const configure = (attempt = 0) => {
+    const root = document.getElementById('mf-unified-transaction-root');
+    if (!root || attempt > 20) return;
+
+    const incomeButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      isVisible(button) && normalize(button.textContent) === 'entrada',
+    );
+    incomeButton?.click();
+
+    window.setTimeout(() => {
+      const select = Array.from(root.querySelectorAll<HTMLSelectElement>('select')).find((candidate) =>
+        Array.from(candidate.options).some((option) => option.value === category || option.textContent?.trim() === category),
+      );
+      if (select) {
+        const option = Array.from(select.options).find((item) => item.value === category || item.textContent?.trim() === category);
+        if (option) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+          setter?.call(select, option.value);
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+
+      if (benefitMethod) {
+        const benefitButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+          isVisible(button) && normalize(button.textContent) === 'beneficio',
+        );
+        benefitButton?.click();
+      }
+    }, 60);
+  };
+
+  const waitForLauncher = (attempt = 0) => {
+    if (document.getElementById('mf-unified-transaction-root')) configure(attempt);
+    else if (attempt < 20) window.setTimeout(() => waitForLauncher(attempt + 1), 50);
+  };
+  waitForLauncher();
 }
 
 function inferRoute(): RouteState {
@@ -178,6 +231,8 @@ function SimpleNavigation() {
         .mf-simple-button.active { color:#050505; background:var(--brand-primary,#00f2ff); box-shadow:0 0 20px rgba(0,242,255,.13); }
         .mf-simple-sub .mf-simple-button { padding:6px 10px; font-size:10px; background:rgba(255,255,255,.035); border-color:rgba(255,255,255,.06); }
         .mf-simple-sub .mf-simple-button.active { color:var(--brand-primary,#00f2ff); background:rgba(0,242,255,.08); border-color:rgba(0,242,255,.2); }
+        .mf-income-quick-action { color:rgba(255,255,255,.7)!important; }
+        .mf-income-quick-action:hover { color:var(--brand-primary,#00f2ff)!important; border-color:rgba(0,242,255,.22)!important; background:rgba(0,242,255,.06)!important; }
         @media(max-width:980px){ .mf-simple-main .mf-simple-button span{display:none}.mf-simple-main .mf-simple-button{padding:9px} }
       `}</style>
       <nav className="mf-simple-nav" aria-label="Ferramentas financeiras">
@@ -195,6 +250,16 @@ function SimpleNavigation() {
                 <item.icon size={13}/><span>{item.label}</span>
               </button>
             ))}
+          </div>
+        )}
+        {route.primary === 'income' && (
+          <div className="mf-simple-sub" aria-label="Atalhos de renda">
+            <button data-mf-simple-nav="true" type="button" className="mf-simple-button mf-income-quick-action" onClick={() => openIncomeLauncher('Renda extra', false)}>
+              <span>+ Renda extra</span>
+            </button>
+            <button data-mf-simple-nav="true" type="button" className="mf-simple-button mf-income-quick-action" onClick={() => openIncomeLauncher('Benefícios', true)}>
+              <span>+ Benefício</span>
+            </button>
           </div>
         )}
       </nav>
