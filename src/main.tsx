@@ -13,7 +13,7 @@ import './lib/income-payroll-layer-guard';
 import './lib/payroll-cycle-display-guard';
 import './lib/simple-navigation-mount';
 import './lib/profile-onboarding-mount';
-import './lib/safe-tutorial-mount';
+import './lib/guided-tutorial-mount';
 import './lib/monthly-fixed-bills-mount';
 import './lib/standalone-insights-mount';
 import './lib/insights-fixed-bill-count-guard';
