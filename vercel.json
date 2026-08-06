@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "m-financeiro-2.vercel.app"
+        }
+      ],
+      "destination": "https://mfinanceiro.com.br/$1",
+      "permanent": true
+    }
+  ]
+}
