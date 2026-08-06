@@ -9,7 +9,6 @@ import { supabase } from './supabase';
 import {
   CardInstallment,
   CreditCard,
-  DailyBill,
   FinanceSummary,
   FixedBill,
   Transaction,
@@ -208,16 +207,15 @@ function StandaloneInsights() {
     setError(null);
 
     try {
-      const [settingsResult, transactionsResult, fixedResult, cardsResult, dailyResult, installmentsResult] = await Promise.all([
+      const [settingsResult, transactionsResult, fixedResult, cardsResult, installmentsResult] = await Promise.all([
         supabase.from('mf_user_settings').select('*').eq('user_id', userId).maybeSingle(),
         supabase.from('mf_finance_ledger_entries').select('*').eq('user_id', userId).order('date', { ascending: false }),
         supabase.from('mf_fixed_bills').select('*').eq('user_id', userId).eq('active', true),
         supabase.from('mf_credit_cards').select('*').eq('user_id', userId),
-        supabase.from('mf_daily_bills').select('*').eq('user_id', userId),
         supabase.from('mf_card_installments').select('*').eq('user_id', userId),
       ]);
 
-      const firstError = settingsResult.error || transactionsResult.error || fixedResult.error || cardsResult.error || dailyResult.error || installmentsResult.error;
+      const firstError = settingsResult.error || transactionsResult.error || fixedResult.error || cardsResult.error || installmentsResult.error;
       if (firstError) throw firstError;
       if (!settingsResult.data) throw new Error('As configurações financeiras não foram encontradas.');
 
@@ -226,7 +224,6 @@ function StandaloneInsights() {
         .filter((item): item is Transaction => Boolean(item));
       const nextFixed = (fixedResult.data || []) as FixedBill[];
       const nextCards = (cardsResult.data || []) as CreditCard[];
-      const nextDaily = (dailyResult.data || []) as DailyBill[];
       const nextInstallments = (installmentsResult.data || []).map((item: any) => ({
         ...item,
         description: item.description || item.descricao || 'Parcelamento',
@@ -240,7 +237,7 @@ function StandaloneInsights() {
 
       setTransactions(nextTransactions);
       setFixedBills(nextFixed);
-      setSummary(calculateFinanceSummary(nextTransactions, nextSettings, nextFixed, nextCards, nextDaily, nextInstallments));
+      setSummary(calculateFinanceSummary(nextTransactions, nextSettings, nextFixed, nextCards, nextInstallments));
     } catch (loadError: any) {
       setError(loadError?.message || 'Não foi possível carregar os Insights.');
       setSummary(null);
@@ -261,7 +258,6 @@ function StandaloneInsights() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries', filter: `user_id=eq.${userId}` }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_fixed_bills', filter: `user_id=eq.${userId}` }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_credit_cards', filter: `user_id=eq.${userId}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_daily_bills', filter: `user_id=eq.${userId}` }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_card_installments', filter: `user_id=eq.${userId}` }, load)
       .subscribe();
     return () => {
