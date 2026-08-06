@@ -21,56 +21,51 @@ export default function App() {
 
     let active = true;
 
-    const loadFreshSession = async (incoming?: Session | null) => {
+    const initialize = async () => {
       try {
-        if (!incoming) {
-          const { data, error } = await supabase.auth.getSession();
-          if (error) throw error;
-          incoming = data.session;
+        const [{ data: sessionData, error: sessionError }, maintenanceConfig] = await Promise.all([
+          supabase.auth.getSession(),
+          fetchMaintenanceConfig(supabase).catch((err) => {
+            console.warn('Falha na verificação de manutenção:', err);
+            return null;
+          }),
+        ]);
+
+        if (sessionError) throw sessionError;
+        if (!active) return;
+
+        setMaintenance(maintenanceConfig);
+
+        let currentSession = sessionData.session;
+        if (currentSession) {
+          // Refresh only once at application startup. Never refresh again from
+          // TOKEN_REFRESHED, otherwise the auth listener creates an infinite loop.
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+          if (!refreshError && refreshed.session) currentSession = refreshed.session;
         }
 
-        if (!incoming) {
-          if (active) setSession(null);
-          return;
-        }
-
-        // Force a new JWT so recently changed app_metadata roles are reflected.
-        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError) throw refreshError;
-
-        const currentSession = refreshed.session ?? incoming;
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
-
-        if (active) {
-          setSession({
-            ...currentSession,
-            user: userData.user ?? currentSession.user,
-          });
-        }
+        if (active) setSession(currentSession);
       } catch (err) {
-        console.error('Falha ao atualizar sessão:', err);
-        if (active) setSession(incoming ?? null);
+        console.error('Falha ao carregar a sessão:', err);
+        if (active) setSession(null);
+      } finally {
+        if (active) setLoading(false);
       }
     };
 
-    fetchMaintenanceConfig(supabase)
-      .then((config) => active && setMaintenance(config))
-      .catch((err) => console.warn('Falha na verificação de manutenção:', err));
-
-    loadFreshSession()
-      .finally(() => active && setLoading(false));
+    void initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) return;
+
       if (event === 'SIGNED_OUT' || !nextSession) {
         setSession(null);
         return;
       }
 
-      // Avoid doing network work synchronously inside the auth callback.
-      window.setTimeout(() => {
-        loadFreshSession(nextSession);
-      }, 0);
+      // The session delivered by Supabase is already current. Setting it directly
+      // avoids refresh storms and lets the Dashboard load financial records.
+      setSession(nextSession);
     });
 
     return () => {
@@ -87,9 +82,7 @@ export default function App() {
     );
   }
 
-  if (!isSupabaseConfigured()) {
-    return <ConfigRequired />;
-  }
+  if (!isSupabaseConfigured()) return <ConfigRequired />;
 
   const isAdmin = isMaintenanceAdmin(session);
   const isMaintenanceActive = maintenance?.maintenance_mode && !isAdmin;
@@ -103,9 +96,7 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return <Auth />;
-  }
+  if (!session) return <Auth />;
 
   return (
     <Dashboard
