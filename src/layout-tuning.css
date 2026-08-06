@@ -1,31 +1,35 @@
 /* Fine tuning for the desktop dashboard after the responsive layout refactor. */
 
 @media (min-width: 821px) {
-  /* Give the navigation bar a little more breathing room before the KPIs. */
+  /* Create a clearer visual separation between navigation tools and dashboard content. */
   .mf-app-shell {
-    row-gap: clamp(7px, 0.9vh, 12px);
+    row-gap: clamp(10px, 1.15vh, 16px);
   }
 
   .mf-topbar {
-    padding-bottom: clamp(7px, 0.9vh, 12px);
+    padding-bottom: clamp(6px, 0.72vh, 10px);
   }
 
-  /* Slightly reduce the first two dashboard rows and return that space to charts/cards. */
+  /* Keep the four KPI cards compact and return space to the remaining dashboard rows. */
   .mf-dashboard-grid {
     grid-template-rows:
-      minmax(52px, 0.48fr)
+      minmax(46px, 0.42fr)
       minmax(38px, 0.34fr)
-      minmax(116px, 1.08fr)
-      minmax(116px, 1.08fr)
-      minmax(145px, 1.36fr);
+      minmax(116px, 1.1fr)
+      minmax(116px, 1.1fr)
+      minmax(145px, 1.4fr);
   }
 
   .mf-kpi {
-    padding: clamp(7px, 0.78vh, 11px) clamp(9px, 0.9vw, 13px);
+    padding: clamp(6px, 0.65vh, 9px) clamp(9px, 0.85vw, 12px);
+  }
+
+  .mf-kpi span {
+    font-size: clamp(8px, 0.56vw, 10px);
   }
 
   .mf-kpi strong {
-    font-size: clamp(16px, 1.15vw, 22px);
+    font-size: clamp(15px, 1.05vw, 20px);
   }
 
   .mf-alert {
@@ -49,12 +53,24 @@
 }
 
 @media (max-height: 800px) and (min-width: 1024px) {
+  .mf-app-shell {
+    row-gap: clamp(8px, 1vh, 12px);
+  }
+
   .mf-dashboard-grid {
     grid-template-rows:
-      minmax(44px, 0.42fr)
-      minmax(34px, 0.31fr)
-      minmax(100px, 0.99fr)
-      minmax(100px, 0.99fr)
-      minmax(128px, 1.25fr);
+      minmax(40px, 0.37fr)
+      minmax(32px, 0.29fr)
+      minmax(100px, 1fr)
+      minmax(100px, 1fr)
+      minmax(128px, 1.3fr);
+  }
+
+  .mf-kpi {
+    padding-block: 5px;
+  }
+
+  .mf-kpi strong {
+    font-size: clamp(14px, 1vw, 18px);
   }
 }
