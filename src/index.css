@@ -26,9 +26,9 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  --app-gap: clamp(0.3rem, 0.65vh, 0.7rem);
-  --app-pad: clamp(0.35rem, 0.75vh, 0.8rem);
-  --card-pad: clamp(0.5rem, 0.9vh, 0.9rem);
+  --app-gap: clamp(0.28rem, 0.58vh, 0.62rem);
+  --app-pad: clamp(0.32rem, 0.68vh, 0.72rem);
+  --card-pad: clamp(0.48rem, 0.78vh, 0.78rem);
 }
 
 html,
@@ -36,8 +36,6 @@ body,
 #root {
   width: 100%;
   height: 100%;
-  min-height: 100%;
-  max-height: 100%;
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
@@ -45,20 +43,20 @@ body,
 
 body {
   @apply bg-[#050505] text-white font-sans antialiased overflow-hidden;
-  position: fixed;
-  inset: 0;
   background: radial-gradient(circle at top right, #1a1a2e 0%, #050505 100%);
   transition: background 0.3s ease, color 0.3s ease;
 }
 
 #root {
   display: flex;
-  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 #root > * {
   width: 100%;
-  height: 100%;
+  height: 100dvh;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -66,7 +64,7 @@ body {
 #root > div.h-screen,
 #root > div.min-h-screen {
   height: 100dvh !important;
-  min-height: 100dvh !important;
+  min-height: 0 !important;
   max-height: 100dvh !important;
   padding: var(--app-pad) !important;
   gap: var(--app-gap) !important;
@@ -74,17 +72,122 @@ body {
 }
 
 #root > div > header {
+  flex: 0 0 auto;
+  min-height: 0;
   margin-bottom: 0 !important;
   gap: var(--app-gap) !important;
-  flex: 0 0 auto;
 }
 
 #root > div > .flex-1.overflow-y-auto {
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow: hidden !important;
   padding-bottom: 0 !important;
 }
 
+/* Overview fills the exact remaining viewport height. */
+#root main.grid {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-content: stretch;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows:
+    minmax(54px, 0.68fr)
+    minmax(42px, 0.48fr)
+    minmax(94px, 1.02fr)
+    minmax(94px, 1.02fr)
+    minmax(116px, 1.18fr);
+  gap: var(--app-gap) !important;
+}
+
+#root main.grid:has(> .col-span-full:first-child:not([class~="h-[220px]"])) {
+  grid-template-rows:
+    auto
+    minmax(54px, 0.68fr)
+    minmax(42px, 0.48fr)
+    minmax(94px, 1.02fr)
+    minmax(94px, 1.02fr)
+    minmax(116px, 1.18fr);
+}
+
+#root main.grid > * {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#root main.grid .glass-card {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#root main.grid > [class~="h-24"],
+#root main.grid > [class~="h-[220px]"],
+#root main.grid > [class~="h-[250px]"] {
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+/* Metrics and alerts become denser on every desktop size. */
+#root main.grid > [class~="h-24"] {
+  padding: clamp(0.5rem, 0.75vh, 0.72rem) !important;
+}
+
+#root main.grid > [class~="h-24"] [class*="text-2xl"] {
+  font-size: clamp(1rem, 1.25vw, 1.45rem) !important;
+}
+
+#root main.grid > [class*="lg:col-span-6"]:not([class~="h-[220px]"]):not([class~="h-[250px]"]) {
+  padding: clamp(0.45rem, 0.68vh, 0.68rem) !important;
+}
+
+/* Charts are always stacked and consume less vertical space. */
+#root main.grid > [class~="h-[220px]"] {
+  grid-column: 1 / -1 !important;
+  padding: var(--card-pad) !important;
+}
+
+#root main.grid > [class~="h-[220px]"] h3 {
+  flex: 0 0 auto;
+  margin-bottom: clamp(0.18rem, 0.34vh, 0.34rem) !important;
+}
+
+#root main.grid > [class~="h-[220px]"] canvas {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+/* Bottom cards receive the largest proportional row. */
+#root main.grid > [class~="h-[250px]"] {
+  padding: var(--card-pad) !important;
+  justify-content: flex-start !important;
+}
+
+#root main.grid > [class~="h-[250px]"] h3 {
+  flex: 0 0 auto;
+  margin-bottom: clamp(0.24rem, 0.45vh, 0.45rem) !important;
+}
+
+#root main.grid > [class~="h-[250px]"] .overflow-y-auto {
+  min-height: 0;
+  overflow: hidden !important;
+}
+
+#root main.grid > [class~="h-[250px]"] .space-y-3,
+#root main.grid > [class~="h-[250px]"] .space-y-4,
+#root main.grid > [class~="h-[250px]"] .space-y-6 {
+  gap: clamp(0.18rem, 0.36vh, 0.36rem) !important;
+}
+
+#root main.grid > [class~="h-[250px]"] [class*="p-3"] {
+  padding: clamp(0.28rem, 0.46vh, 0.46rem) !important;
+}
+
+/* History is the only desktop section allowed to scroll vertically. */
 .history-shell,
 .history-scroll {
   min-height: 0;
@@ -93,168 +196,118 @@ body {
 .history-scroll {
   overflow-y: auto !important;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
-/* Dashboard fills all remaining viewport height using proportional rows. */
-main.grid {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  gap: var(--app-gap) !important;
-  align-content: stretch;
-  grid-template-rows:
-    minmax(64px, 0.72fr)
-    minmax(48px, 0.56fr)
-    minmax(120px, 1.34fr)
-    minmax(120px, 1.34fr)
-    minmax(112px, 1.08fr);
-}
-
-main.grid:has(> .col-span-full:first-child:not([class~="h-[220px]"])) {
-  grid-template-rows:
-    auto
-    minmax(64px, 0.72fr)
-    minmax(48px, 0.56fr)
-    minmax(120px, 1.34fr)
-    minmax(120px, 1.34fr)
-    minmax(112px, 1.08fr);
-}
-
-main.grid > * {
+/* Responsive sizing for the remaining tabs. */
+#root [class*="animate-fade-in"] {
+  min-width: 0;
   min-height: 0;
 }
 
-main.grid .glass-card {
-  min-height: 0;
-  overflow: hidden;
-}
-
-main.grid > [class~="h-24"],
-main.grid > [class~="h-[220px]"],
-main.grid > [class~="h-[250px]"] {
-  height: 100% !important;
-}
-
-/* Charts always stay stacked and use the full row. */
-main.grid > [class~="h-[220px]"] {
-  grid-column: 1 / -1 !important;
-  padding: var(--card-pad) !important;
-}
-
-main.grid > [class~="h-[220px]"] h3 {
-  margin-bottom: clamp(0.25rem, 0.55vh, 0.55rem) !important;
-}
-
-/* Bottom cards stretch to the remaining space with no internal scrollbar. */
-main.grid > [class~="h-[250px]"] {
-  padding: var(--card-pad) !important;
-  justify-content: flex-start !important;
-}
-
-main.grid > [class~="h-[250px]"] h3 {
-  margin-bottom: clamp(0.25rem, 0.55vh, 0.55rem) !important;
-}
-
-main.grid > [class~="h-[250px]"] .overflow-y-auto {
-  overflow: hidden !important;
-}
-
-main.grid > [class~="h-[250px]"] .space-y-3,
-main.grid > [class~="h-[250px]"] .space-y-4,
-main.grid > [class~="h-[250px]"] .space-y-6 {
-  gap: clamp(0.2rem, 0.45vh, 0.45rem) !important;
-}
-
-main.grid > [class~="h-[250px]"] [class*="p-3"] {
-  padding: clamp(0.28rem, 0.55vh, 0.5rem) !important;
-}
-
-/* Other tabs also respond to viewport height without browser zoom. */
-[class*="animate-fade-in"] .glass-card {
+#root [class*="animate-fade-in"] .glass-card {
+  min-width: 0;
   min-height: 0;
 }
 
-[class*="animate-fade-in"] [class*="h-[300px]"],
-[class*="animate-fade-in"] [class*="h-[320px]"],
-[class*="animate-fade-in"] [class*="h-[350px]"] {
-  height: clamp(145px, 23vh, 240px) !important;
+#root [class*="animate-fade-in"] [class*="h-[300px]"],
+#root [class*="animate-fade-in"] [class*="h-[320px]"],
+#root [class*="animate-fade-in"] [class*="h-[350px]"] {
+  height: clamp(140px, 21dvh, 225px) !important;
+  min-height: 0 !important;
   padding: var(--card-pad) !important;
 }
 
 @media (min-width: 1024px) and (max-height: 820px) {
   :root {
-    --app-gap: 0.3rem;
-    --app-pad: 0.38rem;
-    --card-pad: 0.48rem;
+    --app-gap: 0.26rem;
+    --app-pad: 0.32rem;
+    --card-pad: 0.42rem;
   }
 
-  main.grid {
+  #root main.grid {
     grid-template-rows:
-      minmax(54px, 0.7fr)
-      minmax(42px, 0.52fr)
-      minmax(96px, 1.3fr)
-      minmax(96px, 1.3fr)
-      minmax(88px, 1.04fr);
+      minmax(48px, 0.62fr)
+      minmax(36px, 0.42fr)
+      minmax(82px, 0.96fr)
+      minmax(82px, 0.96fr)
+      minmax(96px, 1.08fr);
   }
 
-  main.grid:has(> .col-span-full:first-child:not([class~="h-[220px]"])) {
+  #root main.grid:has(> .col-span-full:first-child:not([class~="h-[220px]"])) {
     grid-template-rows:
       auto
-      minmax(54px, 0.7fr)
-      minmax(42px, 0.52fr)
-      minmax(96px, 1.3fr)
-      minmax(96px, 1.3fr)
-      minmax(88px, 1.04fr);
+      minmax(48px, 0.62fr)
+      minmax(36px, 0.42fr)
+      minmax(82px, 0.96fr)
+      minmax(82px, 0.96fr)
+      minmax(96px, 1.08fr);
   }
 
   #root > div > header h1 {
-    font-size: 1rem !important;
+    font-size: 0.95rem !important;
   }
 
   #root > div > header button {
-    padding-top: 0.3rem !important;
-    padding-bottom: 0.3rem !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
   }
 
-  main.grid > [class~="h-24"] {
-    padding: 0.5rem !important;
-  }
-
-  main.grid > [class~="h-24"] [class*="text-2xl"] {
-    font-size: 1.05rem !important;
+  #root main.grid h3 {
+    font-size: 0.7rem !important;
   }
 }
 
+/* Tablet and phone use natural flow because fitting every panel in one viewport would reduce usability. */
 @media (max-width: 1023px) {
-  main.grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  html,
+  body,
+  #root {
+    overflow: auto;
+  }
+
+  #root > * {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  #root > div.h-screen,
+  #root > div.min-h-screen {
+    height: auto !important;
+    min-height: 100dvh !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #root > div > .flex-1.overflow-y-auto {
+    overflow: visible !important;
+  }
+
+  #root main.grid {
+    height: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: none;
-    grid-auto-rows: minmax(84px, auto);
+    grid-auto-rows: auto;
     align-content: start;
   }
 
-  main.grid > [class~="h-[220px]"] {
+  #root main.grid > [class~="h-[220px]"] {
     grid-column: 1 / -1 !important;
-    min-height: clamp(120px, 20vh, 175px);
+    height: clamp(170px, 26dvh, 235px) !important;
   }
 
-  main.grid > [class~="h-[250px]"] {
-    min-height: clamp(104px, 17vh, 148px);
+  #root main.grid > [class~="h-[250px]"] {
+    height: clamp(145px, 22dvh, 205px) !important;
   }
 }
 
-@media (max-width: 639px) {
-  :root {
-    --app-gap: 0.3rem;
-    --app-pad: 0.3rem;
-    --card-pad: 0.45rem;
+@media (max-width: 640px) {
+  #root main.grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  main.grid {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  main.grid > * {
+  #root main.grid > * {
     grid-column: 1 / -1 !important;
   }
 }
