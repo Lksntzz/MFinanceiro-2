@@ -1,0 +1,60 @@
+/* Fine tuning for the desktop dashboard after the responsive layout refactor. */
+
+@media (min-width: 821px) {
+  /* Give the navigation bar a little more breathing room before the KPIs. */
+  .mf-app-shell {
+    row-gap: clamp(7px, 0.9vh, 12px);
+  }
+
+  .mf-topbar {
+    padding-bottom: clamp(7px, 0.9vh, 12px);
+  }
+
+  /* Slightly reduce the first two dashboard rows and return that space to charts/cards. */
+  .mf-dashboard-grid {
+    grid-template-rows:
+      minmax(52px, 0.48fr)
+      minmax(38px, 0.34fr)
+      minmax(116px, 1.08fr)
+      minmax(116px, 1.08fr)
+      minmax(145px, 1.36fr);
+  }
+
+  .mf-kpi {
+    padding: clamp(7px, 0.78vh, 11px) clamp(9px, 0.9vw, 13px);
+  }
+
+  .mf-kpi strong {
+    font-size: clamp(16px, 1.15vw, 22px);
+  }
+
+  .mf-alert {
+    padding: clamp(6px, 0.62vh, 9px) clamp(9px, 0.8vw, 12px);
+    gap: 8px;
+  }
+
+  .mf-alert > svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .mf-alert strong {
+    font-size: 11px;
+  }
+
+  .mf-alert p {
+    margin-top: 1px;
+    font-size: clamp(8px, 0.56vw, 10px);
+  }
+}
+
+@media (max-height: 800px) and (min-width: 1024px) {
+  .mf-dashboard-grid {
+    grid-template-rows:
+      minmax(44px, 0.42fr)
+      minmax(34px, 0.31fr)
+      minmax(100px, 0.99fr)
+      minmax(100px, 0.99fr)
+      minmax(128px, 1.25fr);
+  }
+}
