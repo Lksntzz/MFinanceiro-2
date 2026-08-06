@@ -1,31 +1,149 @@
-
-import { Transaction, UserSettings, FinanceSummary, RhythmData, PriorityItem, FixedBill, CreditCard, DailyBill, CardInstallment } from '../types';
-import { 
+import {
+  CardInstallment,
+  CreditCard,
+  DailyBill,
+  FinanceSummary,
+  FixedBill,
+  PriorityItem,
+  Transaction,
+  UserSettings,
+} from '../types';
+import {
+  addDays,
+  addMonths,
   differenceInCalendarDays,
-  startOfDay, 
-  endOfDay, 
-  isWithinInterval, 
-  addMonths, 
-  setDate, 
-  isAfter,
-  startOfMonth,
-  endOfMonth,
   eachDayOfInterval,
   eachWeekOfInterval,
-  format,
-  isSameDay,
-  isSameWeek,
-  isSameMonth,
-  subDays,
-  addDays,
-  subMonths,
-  startOfWeek,
   endOfWeek,
-  parseISO
+  format,
+  getDaysInMonth,
+  isAfter,
+  isBefore,
+  isSameMonth,
+  isWithinInterval,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+  subMonths,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { identifyCompany, normalizeText } from './company-aliases';
 import { PAYMENT_ALIASES } from '../data/payment-aliases';
+import { calculatePayrollFromGross } from './payroll-tax';
+
+type CycleWindow = {
+  start: Date;
+  end: Date;
+};
+
+type ProcessedFixedBill = FixedBill & {
+  reconciledStatus: 'paid_identified' | 'pending' | 'overdue' | 'off-cycle';
+  dueDate?: string;
+};
+
+type DatedCard = CreditCard & { cycleDueDate: Date };
+type DatedInstallment = CardInstallment & { cycleDueDate: Date };
+
+function asNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function clampDay(value: unknown): number {
+  const day = Math.round(asNumber(value));
+  return Math.max(1, Math.min(31, day || 1));
+}
+
+function dateAtRecurringDay(monthReference: Date, rawDay: unknown): Date {
+  const monthStart = startOfMonth(monthReference);
+  const safeDay = Math.min(clampDay(rawDay), getDaysInMonth(monthStart));
+  return startOfDay(new Date(monthStart.getFullYear(), monthStart.getMonth(), safeDay));
+}
+
+function uniqueSortedDates(dates: Date[]): Date[] {
+  const byTimestamp = new Map<number, Date>();
+  dates.forEach((date) => byTimestamp.set(date.getTime(), date));
+  return [...byTimestamp.values()].sort((a, b) => a.getTime() - b.getTime());
+}
+
+function getPaymentDatesAround(settings: UserSettings, reference: Date): Date[] {
+  const paymentDays = settings.payday_cycle === 'biweekly'
+    ? [clampDay(settings.payday_1 || 5), clampDay(settings.payday_2 || 20)]
+    : [clampDay(settings.payday_1 || 5)];
+
+  const dates: Date[] = [];
+  for (let offset = -2; offset <= 2; offset += 1) {
+    const month = addMonths(startOfMonth(reference), offset);
+    paymentDays.forEach((day) => dates.push(dateAtRecurringDay(month, day)));
+  }
+  return uniqueSortedDates(dates);
+}
+
+function getCycleWindow(settings: UserSettings, reference: Date): CycleWindow {
+  const today = startOfDay(reference);
+  const candidates = getPaymentDatesAround(settings, today);
+  const start = [...candidates].reverse().find((date) => !isAfter(date, today));
+  const end = candidates.find((date) => isAfter(date, today));
+
+  if (start && end) return { start, end };
+
+  const fallbackStart = start || dateAtRecurringDay(today, settings.payday_1 || 5);
+  const fallbackEnd = end || addMonths(fallbackStart, 1);
+  return { start: fallbackStart, end: fallbackEnd };
+}
+
+function isInsideCycle(date: Date, cycle: CycleWindow): boolean {
+  const value = startOfDay(date).getTime();
+  return value >= cycle.start.getTime() && value < cycle.end.getTime();
+}
+
+function getRecurringDateInCycle(rawDay: unknown, cycle: CycleWindow): Date | null {
+  const base = startOfMonth(cycle.start);
+  for (let offset = -1; offset <= 2; offset += 1) {
+    const candidate = dateAtRecurringDay(addMonths(base, offset), rawDay);
+    if (isInsideCycle(candidate, cycle)) return candidate;
+  }
+  return null;
+}
+
+function parseTransactionDate(raw: string): Date | null {
+  try {
+    const parsed = parseISO(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
+}
+
+function isSettledTransaction(transaction: Transaction): boolean {
+  const status = String(transaction.status || 'paid').toLowerCase();
+  return !['pending', 'duplicate', 'error'].includes(status);
+}
+
+function isSamePaymentMonth(lastPaidMonth: string | undefined, dueDate: Date): boolean {
+  return Boolean(lastPaidMonth && lastPaidMonth === format(dueDate, 'yyyy-MM'));
+}
+
+function formatMoney(value: number): string {
+  return asNumber(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function paymentAmountForDate(settings: UserSettings, payday: Date): { amount: number; percentage: number } {
+  const net = Math.max(0, asNumber(settings.net_salary_estimated));
+  if (settings.payday_cycle !== 'biweekly') return { amount: net, percentage: 100 };
+
+  const firstPercentage = Math.max(0, Math.min(100, asNumber(settings.payday_1_percentage ?? 50)));
+  const secondPercentage = Math.max(0, Math.min(100, asNumber(settings.payday_2_percentage ?? 50)));
+  const firstAmount = Math.round((net * firstPercentage / 100) * 100) / 100;
+  const secondAmount = Math.round((net - firstAmount) * 100) / 100;
+  const isFirstPayment = payday.getDate() === clampDay(settings.payday_1 || 5);
+
+  return isFirstPayment
+    ? { amount: firstAmount, percentage: firstPercentage }
+    : { amount: secondAmount, percentage: secondPercentage };
+}
 
 export function calculateFinanceSummary(
   transactions: Transaction[],
@@ -34,339 +152,252 @@ export function calculateFinanceSummary(
   cards: CreditCard[] = [],
   dailyBills: DailyBill[] = [],
   installments: CardInstallment[] = [],
-  currentDate: Date = new Date()
+  currentDate: Date = new Date(),
 ): FinanceSummary {
-  // 1. Determine cycle boundaries
-  const nextPayday = getNextPayday(settings, currentDate);
-  const lastPayday = getLastPayday(settings, currentDate);
-  const daysRemaining = Math.max(1, differenceInCalendarDays(nextPayday, currentDate));
-  const cycleInterval = { start: startOfDay(lastPayday), end: endOfDay(nextPayday) };
+  const today = startOfDay(currentDate);
+  const cycle = getCycleWindow(settings, today);
+  const lastPayday = cycle.start;
+  const nextPayday = cycle.end;
+  const daysRemaining = Math.max(0, differenceInCalendarDays(nextPayday, today));
+  const divisorDays = Math.max(1, daysRemaining);
+  const currentBalance = asNumber(settings.current_balance);
 
-  // 2. Balances & Commitments
-  const currentBalance = settings.current_balance;
-  
-  const isInCycle = (dueDay: number) => {
-    const billDateLocal = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay, 12, 0, 0);
-    return isWithinInterval(billDateLocal, { start: startOfDay(lastPayday), end: endOfDay(nextPayday) }) ||
-           isWithinInterval(addMonths(billDateLocal, 1), { start: startOfDay(lastPayday), end: endOfDay(nextPayday) }) ||
-           isWithinInterval(subDays(billDateLocal, 30), { start: startOfDay(lastPayday), end: endOfDay(nextPayday) });
-  };
-
-  // Filtrar transações do ciclo para conciliação
-  const cycleExpenses = transactions.filter(t => {
-    try {
-      const d = parseISO(t.date);
-      return t.type === 'expense' && isWithinInterval(d, cycleInterval);
-    } catch { return false; }
+  const cycleTransactions = transactions.filter((transaction) => {
+    const date = parseTransactionDate(transaction.date);
+    return Boolean(date && isInsideCycle(date, cycle) && isSettledTransaction(transaction));
   });
+  const cycleExpenses = cycleTransactions.filter((transaction) => transaction.type === 'expense');
+  const cycleIncomes = cycleTransactions.filter((transaction) => transaction.type === 'income');
 
-  // RECONCILIAÇÃO INTELIGENTE COM ALIASES
   const matchedTransactionIds = new Set<string>();
-  const processedFixedBills = fixedBills.map(bill => {
-    if (!isInCycle(bill.due_day)) return { ...bill, reconciledStatus: 'off-cycle' as const };
-    
-    const billValue = Math.abs(bill.amount);
-    const normalizedBillName = normalizeText(bill.name);
+  const processedFixedBills: ProcessedFixedBill[] = fixedBills.map((bill) => {
+    const dueDate = getRecurringDateInCycle(bill.due_day, cycle);
+    if (!dueDate) return { ...bill, reconciledStatus: 'off-cycle' };
+
+    const billValue = Math.abs(asNumber(bill.amount));
+    const normalizedBillName = normalizeText(bill.name || '');
     const billKeywords = (bill.keywords || []).map(normalizeText);
-    
-    // Identifica se a conta pertence a uma categoria conhecida (água, luz, etc)
-    const normBillName = normalizeText(bill.name);
     let knownCategoryKey = '';
-    
-    for (const [catKey, companies] of Object.entries(PAYMENT_ALIASES)) {
-      if (normBillName.includes(catKey.replace('_', ' '))) {
-        knownCategoryKey = catKey;
+
+    for (const [categoryKey, companies] of Object.entries(PAYMENT_ALIASES)) {
+      if (normalizedBillName.includes(categoryKey.replace('_', ' '))) {
+        knownCategoryKey = categoryKey;
         break;
       }
-      for (const comp of companies) {
-        if (normBillName.includes(normalizeText(comp.displayName)) || 
-            normBillName.includes(normalizeText(comp.officialName))) {
-          knownCategoryKey = catKey;
-          break;
-        }
+      if (companies.some((company) =>
+        normalizedBillName.includes(normalizeText(company.displayName)) ||
+        normalizedBillName.includes(normalizeText(company.officialName)))) {
+        knownCategoryKey = categoryKey;
+        break;
       }
-      if (knownCategoryKey) break;
     }
 
-    const dueInCycle = setDate(new Date(cycleInterval.start), bill.due_day);
-    const searchStart = startOfDay(subDays(dueInCycle, 5));
-    const searchEnd = endOfDay(addDays(dueInCycle, 7));
+    const searchStart = startOfDay(subDays(dueDate, 5));
+    const searchEnd = startOfDay(addDays(dueDate, 8));
+    const match = cycleExpenses.find((transaction) => {
+      if (matchedTransactionIds.has(transaction.id)) return false;
+      const transactionDate = parseTransactionDate(transaction.date);
+      if (!transactionDate || transactionDate < searchStart || transactionDate >= searchEnd) return false;
 
-    const match = cycleExpenses.find(t => {
-      if (matchedTransactionIds.has(t.id)) return false;
-      if (t.type !== 'expense') return false;
-      
-      const tAmount = Math.abs(t.amount);
-      const tDate = parseISO(t.date);
-      const normalizedTDesc = normalizeText(t.description || '');
+      const transactionAmount = Math.abs(asNumber(transaction.amount));
+      const normalizedDescription = normalizeText(transaction.description || '');
+      const valueMatch = Math.abs(transactionAmount - billValue) < Math.max(2, billValue * 0.005);
+      let textMatch = normalizedDescription.includes(normalizedBillName) ||
+        normalizedBillName.includes(normalizedDescription) ||
+        billKeywords.some((keyword) => normalizedDescription.includes(keyword));
 
-      // 1. Verificação de Valor (tolerância de 0.5% ou R$ 2,00)
-      const valueMatch = Math.abs(tAmount - billValue) < Math.max(2, billValue * 0.005);
-      
-      // 2. Verificação de Data
-      const dateMatch = isWithinInterval(tDate, { start: searchStart, end: searchEnd });
-
-      // 3. Verificação de Nome (Inteligente via Base Estática)
-      // - Match direto no nome ou keywords
-      let textMatch = normalizedTDesc.includes(normalizedBillName) || 
-                      normalizedBillName.includes(normalizedTDesc) ||
-                      billKeywords.some(k => normalizedTDesc.includes(k));
-
-      // - Match por Alias identificado na base local
       if (!textMatch) {
-        const identified = identifyCompany(t.description);
+        const identified = identifyCompany(transaction.description || '');
         if (identified && identified.confidence >= 0.7) {
-          // Se identificamos a empresa e ela bate com o nome da conta ou categoria
-          const isSameCompany = normalizedBillName.includes(normalizeText(identified.company));
-          const isSameCategory = knownCategoryKey === identified.category;
-          
-          if (isSameCompany || isSameCategory) {
-            textMatch = true;
-          }
+          textMatch = normalizedBillName.includes(normalizeText(identified.company)) ||
+            knownCategoryKey === identified.category;
         }
       }
-      
-      // Regras de decisão de Match
-      // 1. Valor exato + Qualquer indício de texto ou proximidade de data
-      if (valueMatch && (textMatch || dateMatch)) return true;
-      
-      // 2. Match de texto forte + Proximidade de data (mesmo que o valor varie até 15%)
-      if (textMatch && dateMatch && Math.abs(tAmount - billValue) < billValue * 0.15) return true;
 
-      return false;
+      return (valueMatch && textMatch) ||
+        (textMatch && Math.abs(transactionAmount - billValue) < Math.max(2, billValue * 0.15));
     });
 
     if (match) {
       matchedTransactionIds.add(match.id);
-      return { ...bill, reconciledStatus: 'paid_identified' as const };
+      return { ...bill, dueDate: format(dueDate, 'yyyy-MM-dd'), reconciledStatus: 'paid_identified' };
     }
 
-    const currentMonthIdx = `${cycleInterval.start.getFullYear()}-${cycleInterval.start.getMonth() + 1}`;
-    if (bill.status === 'paid' && bill.last_paid_month === currentMonthIdx) {
-      return { ...bill, reconciledStatus: 'paid_identified' as const };
+    if (bill.status === 'paid' && isSamePaymentMonth(bill.last_paid_month, dueDate)) {
+      return { ...bill, dueDate: format(dueDate, 'yyyy-MM-dd'), reconciledStatus: 'paid_identified' };
     }
 
-    return { 
-      ...bill, 
-      reconciledStatus: (bill.due_day < currentDate.getDate() ? 'overdue' as const : 'pending' as const)
+    return {
+      ...bill,
+      dueDate: format(dueDate, 'yyyy-MM-dd'),
+      reconciledStatus: isBefore(dueDate, today) ? 'overdue' : 'pending',
     };
   });
 
-  // Calculate pending fixed commitments
-  const pendingBillsTotal = processedFixedBills
-    .filter(bill => bill.reconciledStatus === 'pending' || bill.reconciledStatus === 'overdue')
-    .reduce((sum, bill) => sum + bill.amount, 0);
-    
-  // Calculate card usage - only if the due date is within this sub-cycle
-  const cardsTotal = cards
-    .filter(card => isInCycle(card.due_day))
-    .reduce((sum, card) => sum + (card.used || 0), 0);
+  const pendingFixedBills = processedFixedBills
+    .filter((bill) => bill.reconciledStatus === 'pending' || bill.reconciledStatus === 'overdue')
+    .sort((a, b) => {
+      if (a.reconciledStatus !== b.reconciledStatus) return a.reconciledStatus === 'overdue' ? -1 : 1;
+      return String(a.dueDate).localeCompare(String(b.dueDate));
+    });
+  const pendingBillsTotal = pendingFixedBills.reduce((sum, bill) => sum + Math.abs(asNumber(bill.amount)), 0);
 
-  // Calculate upcoming installments for THIS SPECIFIC SUB-CYCLE
-  const installmentsTotal = installments
-    .filter(inst => {
-      const isFinished = inst.current_installment > inst.total_installments;
-      return !isFinished && isInCycle(inst.due_day);
+  const cycleCards: DatedCard[] = cards
+    .map((card) => {
+      const dueDate = getRecurringDateInCycle(card.due_day, cycle);
+      return dueDate ? { ...card, cycleDueDate: dueDate } : null;
     })
-    .reduce((sum, inst) => sum + inst.monthly_amount, 0);
-  
-  // Calculate expected daily bills until payday
+    .filter((card): card is DatedCard => Boolean(card && asNumber(card.used) > 0))
+    .sort((a, b) => a.cycleDueDate.getTime() - b.cycleDueDate.getTime());
+  const cardsTotal = cycleCards.reduce((sum, card) => sum + Math.abs(asNumber(card.used)), 0);
+
+  const cycleInstallments: DatedInstallment[] = installments
+    .map((installment) => {
+      const dueDate = getRecurringDateInCycle(installment.due_day, cycle);
+      if (!dueDate) return null;
+      const finished = asNumber(installment.current_installment) > asNumber(installment.total_installments);
+      const alreadyPaidThisMonth = isSamePaymentMonth(installment.last_paid_month, dueDate);
+      return !finished && !alreadyPaidThisMonth ? { ...installment, cycleDueDate: dueDate } : null;
+    })
+    .filter((installment): installment is DatedInstallment => Boolean(installment))
+    .sort((a, b) => a.cycleDueDate.getTime() - b.cycleDueDate.getTime());
+  const installmentsTotal = cycleInstallments.reduce((sum, installment) => sum + Math.abs(asNumber(installment.monthly_amount)), 0);
+
   const dailyBillsCommitment = dailyBills.reduce((sum, bill) => {
-    if (bill.frequency === 'weekly') {
-      const weeksRemaining = Math.ceil(daysRemaining / 7);
-      return sum + (bill.average_amount * weeksRemaining);
-    } else {
-      // Monthly - only if it falls in this sub-cycle
-      return isInCycle(28) ? sum + bill.average_amount : sum; // Assume day 28 for general daily bills if no day specified
-    }
+    const amount = Math.abs(asNumber(bill.average_amount));
+    if (bill.frequency === 'weekly') return sum + amount * Math.max(1, Math.ceil(divisorDays / 7));
+    return getRecurringDateInCycle(28, cycle) ? sum + amount : sum;
   }, 0);
-  
-  // The "Real" available balance is what's left after commitments in THIS CYCLE
+
   const totalCommitments = pendingBillsTotal + cardsTotal + installmentsTotal + dailyBillsCommitment;
-  const availableForDaily = Math.max(0, currentBalance - totalCommitments);
-  const projectedBalance = currentBalance - pendingBillsTotal - installmentsTotal;
-  const cyclePeriodLabel = `${format(lastPayday, 'dd')} a ${format(nextPayday, 'dd')}`;
+  const availableForDaily = currentBalance - totalCommitments;
+  const projectedBalance = currentBalance - totalCommitments;
+  const cyclePeriodLabel = `${format(lastPayday, 'dd/MM')} a ${format(nextPayday, 'dd/MM')}`;
 
-  // 4. Spending stats
-  const todayStart = startOfDay(currentDate);
-  const todayEnd = endOfDay(currentDate);
-  
   const todaySpent = cycleExpenses
-    .filter(t => {
-      try {
-        const d = parseISO(t.date);
-        return isWithinInterval(d, { start: todayStart, end: todayEnd });
-      } catch {
-        return false;
-      }
+    .filter((transaction) => {
+      const date = parseTransactionDate(transaction.date);
+      return Boolean(date && startOfDay(date).getTime() === today.getTime());
     })
-    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-
-  const totalSpentInCycle = cycleExpenses.reduce((acc, t) => acc + Math.abs(t.amount), 0);
-  const totalIncomesInCycle = transactions
-    .filter(t => {
-      try {
-        const d = new Date(t.date);
-        return t.type === 'income' && isWithinInterval(d, cycleInterval);
-      } catch { return false; }
-    })
-    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-  
-  const daysPassedInCycle = Math.max(1, differenceInCalendarDays(currentDate, lastPayday));
+    .reduce((sum, transaction) => sum + Math.abs(asNumber(transaction.amount)), 0);
+  const totalSpentInCycle = cycleExpenses.reduce((sum, transaction) => sum + Math.abs(asNumber(transaction.amount)), 0);
+  const totalIncomesInCycle = cycleIncomes.reduce((sum, transaction) => sum + Math.abs(asNumber(transaction.amount)), 0);
+  const daysPassedInCycle = Math.max(1, differenceInCalendarDays(today, lastPayday) + 1);
   const averageDailySpent = totalSpentInCycle / daysPassedInCycle;
+  const dailyLimit = Math.max(0, availableForDaily) / divisorDays;
 
-  // 5. Daily limit
-  const dailyLimit = availableForDaily / daysRemaining;
-
-  // 6. Dominant category & Top categories
   const categoryTotals: Record<string, number> = {};
-  cycleExpenses.forEach(t => {
-    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Math.abs(t.amount);
+  cycleExpenses.forEach((transaction) => {
+    const category = transaction.category || 'Geral';
+    categoryTotals[category] = (categoryTotals[category] || 0) + Math.abs(asNumber(transaction.amount));
   });
-  
   const sortedCategories = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])
     .map(([name, amount]) => ({
       name,
       amount,
-      percentage: totalSpentInCycle > 0 ? (amount / totalSpentInCycle) * 100 : 0
+      percentage: totalSpentInCycle > 0 ? amount / totalSpentInCycle * 100 : 0,
     }));
-
   const dominantCategory = sortedCategories[0]?.name || 'Nenhuma';
-
-  // 7. Rhythm Data
-  const rhythm = calculateRhythm(transactions, currentDate, fixedBills, dailyBills);
-
-  // 8. Smart Alert
-  let smartAlert: FinanceSummary['smartAlert'] = null;
-  
-  // Logic for a "fresh" or "empty" cycle
+  const rhythm = calculateRhythm(transactions, currentDate);
   const isBrandNewCycle = totalSpentInCycle === 0 && totalIncomesInCycle === 0;
+  const nextIncome = paymentAmountForDate(settings, nextPayday);
 
-  // Expected income for the remainder of the cycle
-  const nextPaydayDate = getNextPayday(settings, currentDate);
-  const p1 = Number(settings.payday_1) || 5;
-  const isPayday1 = nextPaydayDate.getDate() === p1;
-  const slotPercentage = isPayday1 ? (settings.payday_1_percentage || 50) : (settings.payday_2_percentage || 50);
-  const expectedImmediateIncome = (settings.net_salary_estimated * slotPercentage) / 100;
-
+  let smartAlert: FinanceSummary['smartAlert'];
   if (currentBalance < 0) {
-    smartAlert = { message: "Seu saldo está negativo! Priorize cobrir o rombo imediatamente.", type: 'danger' };
-  } else if (isBrandNewCycle && totalCommitments > 0) {
-    smartAlert = { message: "Boas-vindas! Registre seu salário ou saldo inicial para cobrir seus compromissos agendados.", type: 'warning' };
+    smartAlert = { message: 'Seu saldo está negativo. Priorize os compromissos essenciais deste ciclo.', type: 'danger' };
   } else if (totalCommitments > currentBalance) {
-    // Check if expected income covers the gap
-    if (expectedImmediateIncome + currentBalance >= totalCommitments) {
-      smartAlert = { 
-        message: `Saldo atual (R$ ${Math.max(0, currentBalance).toLocaleString('pt-BR')}) não cobre compromissos, mas seu próximo salário resolve isso.`, 
-        type: 'warning' 
-      };
-    } else {
-      smartAlert = { 
-        message: `Aviso: Seus compromissos (R$ ${totalCommitments.toLocaleString('pt-BR')}) superam o saldo + próximo salário. Planeje um corte.`, 
-        type: 'danger' 
-      };
-    }
-  } else if (dailyLimit < averageDailySpent * 0.7 && dailyLimit > 0) {
-    smartAlert = { message: "Atenção: Seu ritmo de gastos está acima do limite diário projetado.", type: 'warning' };
-  } else if (daysRemaining < 3 && currentBalance > 500) {
-    smartAlert = { message: "Parabéns! Você chegou ao fim do ciclo com uma boa reserva.", type: 'success' };
+    smartAlert = nextIncome.amount + currentBalance >= totalCommitments
+      ? { message: 'O saldo atual não cobre o ciclo, mas o próximo recebimento cobre os compromissos cadastrados.', type: 'warning' }
+      : { message: 'Os compromissos deste ciclo superam o saldo atual e o próximo recebimento previsto.', type: 'danger' };
+  } else if (isBrandNewCycle && totalCommitments > 0) {
+    smartAlert = { message: 'Novo ciclo iniciado. Confira as contas organizadas até o próximo pagamento.', type: 'warning' };
+  } else if (dailyLimit > 0 && averageDailySpent > dailyLimit) {
+    smartAlert = { message: 'Seu ritmo de gastos está acima do limite diário disponível neste ciclo.', type: 'warning' };
   } else {
-    smartAlert = { message: "Tudo sob controle. Seu saldo e previsões cobrem os compromissos do mês.", type: 'success' };
+    smartAlert = { message: `Ciclo ${cyclePeriodLabel} organizado com os compromissos cadastrados.`, type: 'success' };
   }
 
-  // 9. Insights
   const insights: string[] = [];
-  if (dailyLimit < 50 && dailyLimit > 0) insights.push("Seu limite diário está crítico. Corte gastos supérfluos hoje.");
-  if (pendingBillsTotal > 0) insights.push(`Você ainda tem R$ ${pendingBillsTotal.toLocaleString('pt-BR')} em contas fixas pendentes.`);
-  
+  insights.push(`Ciclo atual: ${cyclePeriodLabel}. As prioridades são renovadas automaticamente no próximo pagamento.`);
+  if (pendingBillsTotal > 0) insights.push(`Contas fixas deste ciclo: R$ ${formatMoney(pendingBillsTotal)}.`);
   if (settings.payday_cycle === 'biweekly') {
-    const nextPaydayDate = getNextPayday(settings, currentDate);
-    const isPayday1 = nextPaydayDate.getDate() === settings.payday_1;
-    const percentage = isPayday1 ? (settings.payday_1_percentage || 50) : (settings.payday_2_percentage || 50);
-    const expectedAmount = (settings.net_salary_estimated * percentage) / 100;
-    insights.push(`Previsão de recebimento no dia ${nextPaydayDate.getDate()}: R$ ${expectedAmount.toLocaleString('pt-BR')} (${percentage}% do salário).`);
+    insights.push(`Previsão para o dia ${format(nextPayday, 'dd')}: R$ ${formatMoney(nextIncome.amount)} (${nextIncome.percentage}% da base do ciclo).`);
+  }
+  if (cardsTotal > 0) insights.push(`Faturas de cartão no ciclo: R$ ${formatMoney(cardsTotal)}.`);
+  if (installmentsTotal > 0) insights.push(`Parcelas ainda pendentes no ciclo: R$ ${formatMoney(installmentsTotal)}.`);
+  if (dailyBillsCommitment > 0) insights.push(`Gastos cotidianos estimados até o próximo pagamento: R$ ${formatMoney(dailyBillsCommitment)}.`);
+  if (dominantCategory !== 'Nenhuma' && (sortedCategories[0]?.percentage || 0) > 40) {
+    insights.push(`${dominantCategory} representa ${(sortedCategories[0]?.percentage || 0).toFixed(0)}% dos gastos do ciclo.`);
+  }
+  if (dailyLimit > 0 && averageDailySpent > dailyLimit) {
+    insights.push(`Reduza aproximadamente R$ ${formatMoney(averageDailySpent - dailyLimit)} por dia para voltar ao limite.`);
   }
 
-  if (cardsTotal > 0) insights.push(`Sua fatura de cartão atual soma R$ ${cardsTotal.toLocaleString('pt-BR')}.`);
-  if (installmentsTotal > 0) insights.push(`Você tem R$ ${installmentsTotal.toLocaleString('pt-BR')} em parcelas de cartão para este ciclo.`);
-  if (dailyBillsCommitment > 0) insights.push(`Previsão de R$ ${dailyBillsCommitment.toLocaleString('pt-BR')} em gastos cotidianos (café, pão, etc) até o fim do ciclo.`);
-  
-  if (dominantCategory !== 'Nenhuma' && sortedCategories[0].percentage > 40) {
-    insights.push(`A categoria ${dominantCategory} representa ${sortedCategories[0].percentage.toFixed(0)}% dos seus gastos.`);
-  }
-  if (averageDailySpent > dailyLimit && dailyLimit > 0) {
-    insights.push("Você está gastando mais do que o ideal. Tente reduzir R$ " + (averageDailySpent - dailyLimit).toFixed(2) + " por dia.");
-  }
-
-  // 20. Priorities (INTELLIGENT FILTERING)
   const priorities: PriorityItem[] = [];
-  
-  // Critical Balance 
-  if (currentBalance < 100 && !isBrandNewCycle) {
-    priorities.push({ id: 'p-balance', title: 'Saldo Crítico', message: 'Evite qualquer gasto não essencial até o próximo pagamento.', type: 'urgent' });
-  } else if (currentBalance === 0 && isBrandNewCycle) {
-    priorities.push({ id: 'p-welcome', title: 'Ciclo Vazio', message: 'Registre seu saldo inicial ou renda para começar o planejamento.', type: 'info' });
-  }
-  
-  // Over-commitment
-  if (totalCommitments > currentBalance && !isBrandNewCycle) {
-    priorities.push({ id: 'p-commit', title: 'Comprometimento Alto', message: 'Seus compromissos no período atual já superam seu saldo.', type: 'urgent' });
-  }
-  
-  // Pending Bills (Only in current sub-cycle)
-  processedFixedBills.filter(bill => bill.reconciledStatus === 'pending' || bill.reconciledStatus === 'overdue').forEach(bill => {
-    const today = currentDate.getDate();
-    const isDueSoon = bill.due_day === today || bill.due_day === today + 1;
-    const isOverdue = bill.reconciledStatus === 'overdue';
-    
+
+  // 1. Contas fixas: primeira prioridade operacional do ciclo.
+  pendingFixedBills.forEach((bill) => {
+    const dueDate = parseISO(String(bill.dueDate));
+    const daysUntilDue = differenceInCalendarDays(dueDate, today);
+    const overdue = bill.reconciledStatus === 'overdue';
+    const dueSoon = daysUntilDue >= 0 && daysUntilDue <= 1;
     priorities.push({
       id: `bill-${bill.id}`,
-      title: isOverdue ? 'Conta Vencida' : (isDueSoon ? 'Pagar Hoje/Amanhã' : 'Conta do Ciclo'),
-      message: `${bill.name}: R$ ${bill.amount.toLocaleString('pt-BR')} (Venceu dia ${bill.due_day})`,
-      type: isOverdue ? 'urgent' : (isDueSoon ? 'urgent' : 'warning')
+      title: overdue ? 'Conta fixa vencida' : dueSoon ? 'Conta fixa para pagar agora' : 'Conta fixa do ciclo',
+      message: `${bill.name}: R$ ${formatMoney(bill.amount)} · ${overdue ? 'venceu' : 'vence'} em ${format(dueDate, 'dd/MM')}`,
+      type: overdue || dueSoon ? 'urgent' : 'warning',
     });
   });
 
-  // Credit Card Bills (Only in current sub-cycle)
-  cards.filter(card => isInCycle(card.due_day)).forEach(card => {
-    const today = currentDate.getDate();
-    const isDueSoon = card.due_day === today || card.due_day === today + 1;
-    
-    if (card.used > 0) {
-      priorities.push({
-        id: `card-${card.id}`,
-        title: isDueSoon ? 'Vencimento Cartão' : 'Fatura no Ciclo',
-        message: `${card.name}: R$ ${card.used.toLocaleString('pt-BR')} (Vence dia ${card.due_day})`,
-        type: isDueSoon ? 'urgent' : 'info'
-      });
-    }
-  });
-
-  // Installments in Cycle
-  installments.filter(inst => {
-    const isFinished = inst.current_installment > inst.total_installments;
-    return !isFinished && isInCycle(inst.due_day);
-  }).forEach(inst => {
+  // 2. Faturas de cartão: segunda prioridade do ciclo.
+  cycleCards.forEach((card) => {
+    const overdue = isBefore(card.cycleDueDate, today);
+    const daysUntilDue = differenceInCalendarDays(card.cycleDueDate, today);
     priorities.push({
-      id: `inst-prio-${inst.id}`,
-      title: 'Parcela Pendente',
-      message: `${inst.description}: R$ ${inst.monthly_amount.toLocaleString('pt-BR')} (Dia ${inst.due_day})`,
-      type: 'info'
+      id: `card-${card.id}`,
+      title: overdue ? 'Fatura de cartão vencida' : daysUntilDue <= 1 ? 'Fatura próxima' : 'Fatura do ciclo',
+      message: `${card.name}: R$ ${formatMoney(card.used)} · ${overdue ? 'venceu' : 'vence'} em ${format(card.cycleDueDate, 'dd/MM')}`,
+      type: overdue || daysUntilDue <= 1 ? 'urgent' : 'warning',
     });
   });
 
-  if (daysRemaining > 10 && availableForDaily < 500) {
-    priorities.push({ id: 'p-pressure', title: 'Pressão no Ciclo', message: 'Ainda faltam muitos dias e o saldo livre está baixo.', type: 'warning' });
+  // 3. Parcelas ativas que ainda não foram pagas no mês.
+  cycleInstallments.forEach((installment) => {
+    const overdue = isBefore(installment.cycleDueDate, today);
+    priorities.push({
+      id: `installment-${installment.id}`,
+      title: overdue ? 'Parcela vencida' : 'Parcela do ciclo',
+      message: `${installment.description}: R$ ${formatMoney(installment.monthly_amount)} · parcela ${installment.current_installment}/${installment.total_installments} · ${overdue ? 'venceu' : 'vence'} em ${format(installment.cycleDueDate, 'dd/MM')}`,
+      type: overdue ? 'urgent' : 'info',
+    });
+  });
+
+  // 4. Gastos essenciais estimados e alertas gerais ficam depois dos compromissos datados.
+  if (dailyBillsCommitment > 0) {
+    priorities.push({
+      id: 'daily-cycle-estimate',
+      title: 'Gastos cotidianos previstos',
+      message: `Reserve R$ ${formatMoney(dailyBillsCommitment)} até ${format(nextPayday, 'dd/MM')}.`,
+      type: 'info',
+    });
   }
-  
+  if (currentBalance < 100 && !isBrandNewCycle) {
+    priorities.push({ id: 'p-balance', title: 'Saldo crítico', message: 'Evite gastos não essenciais até o próximo pagamento.', type: 'urgent' });
+  }
+  if (totalCommitments > currentBalance && !isBrandNewCycle) {
+    priorities.push({ id: 'p-commit', title: 'Comprometimento alto', message: 'Os compromissos do ciclo superam o saldo atual.', type: 'urgent' });
+  }
+  if (daysRemaining > 10 && availableForDaily < 500) {
+    priorities.push({ id: 'p-pressure', title: 'Pressão no ciclo', message: 'Ainda faltam muitos dias e o saldo livre está baixo.', type: 'warning' });
+  }
   if (todaySpent > dailyLimit && dailyLimit > 0) {
-    priorities.push({ id: 'p-limit', title: 'Meta Diária', message: 'Você já ultrapassou o limite de hoje.', type: 'info' });
+    priorities.push({ id: 'p-limit', title: 'Limite diário ultrapassado', message: 'Os gastos de hoje passaram do limite calculado.', type: 'info' });
   }
 
   return {
-    currentBalance: Math.max(0, currentBalance),
-    projectedBalance: Math.max(0, projectedBalance),
+    currentBalance,
+    projectedBalance,
     dailyLimit,
     daysRemaining,
     todaySpent,
@@ -375,228 +406,76 @@ export function calculateFinanceSummary(
     nextPaydayDate: format(nextPayday, 'dd/MM/yyyy'),
     nextPaydayLabel: format(nextPayday, 'dd/MM'),
     cyclePeriodLabel,
-    cycleInterval,
+    cycleInterval: cycle,
     dominantCategory,
-    spendingTrend: averageDailySpent > dailyLimit ? 'up' : 'down',
+    spendingTrend: dailyLimit > 0 && averageDailySpent > dailyLimit ? 'up' : averageDailySpent === dailyLimit ? 'stable' : 'down',
     insights,
     dailyInsight: insights[0] || '',
     smartAlert,
     rhythm,
     topCategories: sortedCategories.slice(0, 5),
     priorities,
-    processedFixedBills
+    processedFixedBills,
   };
 }
 
-function calculateRhythm(
-  transactions: Transaction[], 
-  now: Date, 
-  fixedBills: FixedBill[] = [], 
-  dailyBills: DailyBill[] = []
-): FinanceSummary['rhythm'] {
-  // Use last 30 days for a more continuous rhythm view
-  const startDate = subDays(now, 29);
-  const days = eachDayOfInterval({ start: startDate, end: now });
-  
-  const dayLabels = days.map(d => format(d, 'dd/MM'));
-  const dayData = days.map(d => {
-    const dateKey = format(d, 'yyyy-MM-dd');
-    
-    // 1. Real transactions (Manual + Imported)
-    const dayTransactions = transactions.filter(t => {
-      try {
-        const tDateKey = t.date.split('T')[0];
-        return tDateKey === dateKey;
-      } catch {
-        return false;
-      }
-    });
+function calculateRhythm(transactions: Transaction[], now: Date): FinanceSummary['rhythm'] {
+  const settledTransactions = transactions.filter(isSettledTransaction);
+  const expenseForInterval = (start: Date, end: Date) => settledTransactions
+    .filter((transaction) => {
+      const date = parseTransactionDate(transaction.date);
+      return Boolean(date && transaction.type === 'expense' && isWithinInterval(date, { start, end }));
+    })
+    .reduce((sum, transaction) => sum + Math.abs(asNumber(transaction.amount)), 0);
+  const incomeForInterval = (start: Date, end: Date) => settledTransactions
+    .filter((transaction) => {
+      const date = parseTransactionDate(transaction.date);
+      return Boolean(date && transaction.type === 'income' && isWithinInterval(date, { start, end }));
+    })
+    .reduce((sum, transaction) => sum + Math.abs(asNumber(transaction.amount)), 0);
 
-    const expenseTotal = dayTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+  const days = eachDayOfInterval({ start: subDays(startOfDay(now), 29), end: startOfDay(now) });
+  const dayLabels = days.map((day) => format(day, 'dd/MM'));
+  const dayExpenses = days.map((day) => expenseForInterval(startOfDay(day), startOfDay(addDays(day, 1))));
+  const dayIncomes = days.map((day) => incomeForInterval(startOfDay(day), startOfDay(addDays(day, 1))));
 
-    const incomeTotal = dayTransactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+  const weeks = eachWeekOfInterval(
+    { start: subDays(startOfDay(now), 28), end: startOfDay(now) },
+    { locale: ptBR, weekStartsOn: 0 },
+  );
+  const weekLabels = weeks.map((week) => format(week, 'dd/MM'));
+  const weekExpenses = weeks.map((week) => expenseForInterval(
+    startOfWeek(week, { locale: ptBR, weekStartsOn: 0 }),
+    endOfWeek(week, { locale: ptBR, weekStartsOn: 0 }),
+  ));
+  const weekIncomes = weeks.map((week) => incomeForInterval(
+    startOfWeek(week, { locale: ptBR, weekStartsOn: 0 }),
+    endOfWeek(week, { locale: ptBR, weekStartsOn: 0 }),
+  ));
 
-    // 2. Fixed bills due on this specific day
-    const fixedTotal = fixedBills
-      .filter(b => b.due_day === d.getDate())
-      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
-
-    return { expense: expenseTotal + fixedTotal, income: incomeTotal };
-  });
-
-  const dayExpenses = dayData.map(d => d.expense);
-  const dayIncomes = dayData.map(d => d.income);
-
-  // Week rhythm (Last 4 weeks)
-  const weekStart = subDays(now, 28);
-  const weeks = eachWeekOfInterval({ start: weekStart, end: now }, { locale: ptBR, weekStartsOn: 0 });
-  const weekLabels = weeks.map((w, i) => format(w, 'dd/MM'));
-  const weekData = weeks.map(w => {
-    const wInterval = { start: startOfWeek(w, { locale: ptBR }), end: endOfWeek(w, { locale: ptBR }) };
-    
-    const weekTransactions = transactions.filter(t => {
-      try {
-        const td = new Date(t.date);
-        return isWithinInterval(td, wInterval);
-      } catch {
-        return false;
-      }
-    });
-
-    const transExpense = weekTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
-
-    const transIncome = weekTransactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
-
-    const fixedTotal = fixedBills
-      .filter(b => {
-        const dueDate = setDate(now, b.due_day);
-        return isWithinInterval(dueDate, wInterval);
-      })
-      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
-
-    return { expense: transExpense + fixedTotal, income: transIncome };
-  });
-
-  const weekExpenses = weekData.map(w => w.expense);
-  const weekIncomes = weekData.map(w => w.income);
-
-  // Month rhythm (Last 6 months)
   const monthLabels: string[] = [];
   const monthExpenses: number[] = [];
   const monthIncomes: number[] = [];
-  
-  for (let i = 5; i >= 0; i--) {
-    const mDate = subMonths(now, i);
-    const mStart = startOfMonth(mDate);
-    const mEnd = endOfMonth(mDate);
-    
-    monthLabels.push(format(mDate, 'MMM', { locale: ptBR }));
-    
-    const monthTransactions = transactions.filter(t => {
-      try {
-        const td = new Date(t.date);
-        return isWithinInterval(td, { start: mStart, end: mEnd });
-      } catch {
-        return false;
-      }
-    });
-
-    const mExpense = monthTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
-    
-    const mIncome = monthTransactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
-
-    // For historical months, we only really have transactions
-    const isCurrentMonth = isSameMonth(mDate, now);
-    const fixedCurrent = isCurrentMonth ? fixedBills.filter(b => b.status === 'pending').reduce((s,b) => s + b.amount, 0) : 0;
-    
-    monthExpenses.push(mExpense + fixedCurrent);
-    monthIncomes.push(mIncome);
+  for (let offset = 5; offset >= 0; offset -= 1) {
+    const month = subMonths(startOfMonth(now), offset);
+    const nextMonth = addMonths(month, 1);
+    monthLabels.push(format(month, 'MMM', { locale: ptBR }));
+    monthExpenses.push(expenseForInterval(month, nextMonth));
+    monthIncomes.push(incomeForInterval(month, nextMonth));
   }
 
   return {
     day: { labels: dayLabels, data: dayExpenses, incomeData: dayIncomes },
     week: { labels: weekLabels, data: weekExpenses, incomeData: weekIncomes },
-    month: { labels: monthLabels, data: monthExpenses, incomeData: monthIncomes }
+    month: { labels: monthLabels, data: monthExpenses, incomeData: monthIncomes },
   };
 }
 
-function getNextPayday(settings: UserSettings, now: Date): Date {
-  const today = startOfDay(now);
-  const p1 = Number(settings.payday_1) || 5;
-  const p2 = Number(settings.payday_2) || 20;
-
-  const candidates: Date[] = [
-    startOfDay(setDate(now, p1)),
-    startOfDay(setDate(addMonths(now, 1), p1)),
-    startOfDay(setDate(subDays(now, 30), p1))
-  ];
-
-  if (settings.payday_cycle === 'biweekly') {
-    candidates.push(
-      startOfDay(setDate(now, p2)),
-      startOfDay(setDate(addMonths(now, 1), p2)),
-      startOfDay(setDate(subDays(now, 30), p2))
-    );
-  }
-
-  const futureCandidates = candidates
-    .filter(d => isAfter(d, today))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  return futureCandidates[0] || addMonths(today, 1);
-}
-
-function getLastPayday(settings: UserSettings, now: Date): Date {
-  const today = startOfDay(now);
-  const p1 = Number(settings.payday_1) || 5;
-  const p2 = Number(settings.payday_2) || 20;
-
-  const candidates: Date[] = [
-    startOfDay(setDate(now, p1)),
-    startOfDay(setDate(addMonths(now, 1), p1)),
-    startOfDay(setDate(subDays(now, 30), p1))
-  ];
-
-  if (settings.payday_cycle === 'biweekly') {
-    candidates.push(
-      startOfDay(setDate(now, p2)),
-      startOfDay(setDate(addMonths(now, 1), p2)),
-      startOfDay(setDate(subDays(now, 30), p2))
-    );
-  }
-
-  const pastCandidates = candidates
-    .filter(d => !isAfter(d, today))
-    .sort((a, b) => b.getTime() - a.getTime());
-
-  return pastCandidates[0] || subDays(today, 15);
-}
-
 export function calculateBrazilianTaxes(grossSalary: number): { inss: number; irrf: number; totalDeductions: number } {
-  // INSS 2024/2025
-  let inss = 0;
-  if (grossSalary <= 1412.00) {
-    inss = grossSalary * 0.075;
-  } else if (grossSalary <= 2666.68) {
-    inss = (1412.00 * 0.075) + ((grossSalary - 1412.00) * 0.09);
-  } else if (grossSalary <= 4000.03) {
-    inss = (1412.00 * 0.075) + ((2666.68 - 1412.00) * 0.09) + ((grossSalary - 2666.68) * 0.12);
-  } else if (grossSalary <= 7786.02) {
-    inss = (1412.00 * 0.075) + ((2666.68 - 1412.00) * 0.09) + ((4000.03 - 2666.68) * 0.12) + ((grossSalary - 4000.03) * 0.14);
-  } else {
-    inss = 908.85; // Ceiling
-  }
-
-  // IRRF 2024/2025
-  const irrfBase = grossSalary - inss;
-  let irrf = 0;
-  if (irrfBase <= 2259.20) {
-    irrf = 0;
-  } else if (irrfBase <= 2826.65) {
-    irrf = (irrfBase * 0.075) - 169.44;
-  } else if (irrfBase <= 3751.05) {
-    irrf = (irrfBase * 0.15) - 381.44;
-  } else if (irrfBase <= 4664.68) {
-    irrf = (irrfBase * 0.225) - 662.77;
-  } else {
-    irrf = (irrfBase * 0.275) - 896.00;
-  }
-
+  const payroll = calculatePayrollFromGross(Math.max(0, asNumber(grossSalary)), new Date());
   return {
-    inss: Math.max(0, inss),
-    irrf: Math.max(0, irrf),
-    totalDeductions: Math.max(0, inss + irrf)
+    inss: Math.max(0, asNumber(payroll.inss)),
+    irrf: Math.max(0, asNumber(payroll.irrf)),
+    totalDeductions: Math.max(0, asNumber(payroll.totalDeductions)),
   };
 }
