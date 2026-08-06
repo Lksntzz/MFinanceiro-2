@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { AppProvider } from './context/AppContext';
 import './index.css';
+import './layout-tuning.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
