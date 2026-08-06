@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FileDown, Search, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import * as XLSX from 'xlsx';
 
-import { ReportService } from '../services/reportService';
+import { supabase } from '../lib/supabase';
 import { Transaction } from '../types';
 
 interface HistoryProps {
@@ -15,25 +16,56 @@ interface HistoryProps {
 }
 
 type FilterType = 'all' | 'income' | 'expense';
+type LedgerTransaction = Transaction & {
+  affects_balance?: boolean | null;
+  payment_method?: string | null;
+};
 
 type DayGroup = {
   key: string;
   label: string;
-  items: Transaction[];
+  items: LedgerTransaction[];
   income: number;
   expense: number;
+  closingBalance?: number;
 };
 
 function safeDateKey(raw: string | undefined): string {
   if (!raw) return 'sem-data';
-  return raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);
+  const key = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : 'sem-data';
+}
+
+function normalize(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function formatMoney(value: number): string {
-  return value.toLocaleString('pt-BR', {
+  return Number(value || 0).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   });
+}
+
+function signedAmount(transaction: LedgerTransaction): number {
+  const amount = Number(transaction.amount || 0);
+  if (!Number.isFinite(amount)) return 0;
+  if (amount !== 0) return amount;
+  return transaction.type === 'income' ? Math.abs(amount) : -Math.abs(amount);
+}
+
+function affectsCurrentBalance(transaction: LedgerTransaction): boolean {
+  const status = normalize(transaction.status || 'paid');
+  return !['pending', 'duplicate', 'error'].includes(status) && transaction.affects_balance !== false;
 }
 
 export default function History({
@@ -46,28 +78,94 @@ export default function History({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
+  const [currentBalance, setCurrentBalance] = useState(0);
+  const [balanceConfirmed, setBalanceConfirmed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const setup = async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      if (!userId || !active) return;
+
+      const loadBalance = async () => {
+        const { data, error } = await supabase
+          .from('mf_user_settings')
+          .select('current_balance,balance_confirmed')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (error) {
+          console.warn('Falha ao carregar saldo do histórico:', error);
+          return;
+        }
+        if (!active) return;
+        setCurrentBalance(Number(data?.current_balance || 0));
+        setBalanceConfirmed(data?.balance_confirmed === true);
+      };
+
+      await loadBalance();
+      if (!active) return;
+
+      channel = supabase
+        .channel(`history-settings-${userId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'mf_user_settings', filter: `user_id=eq.${userId}` },
+          () => void loadBalance(),
+        )
+        .subscribe();
+    };
+
+    void setup();
+    return () => {
+      active = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const ledgerTransactions = transactions as LedgerTransaction[];
 
   const filteredTransactions = useMemo(() => {
-    const search = searchTerm.trim().toLowerCase();
-    return transactions.filter((transaction) => {
+    const search = normalize(searchTerm);
+    return ledgerTransactions.filter((transaction) => {
       if (filterType !== 'all' && transaction.type !== filterType) return false;
       if (!search) return true;
 
-      return [
+      return normalize([
         transaction.description,
         transaction.category,
         transaction.source,
         String(transaction.amount),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(search);
+      ].filter(Boolean).join(' ')).includes(search);
     });
-  }, [transactions, searchTerm, filterType]);
+  }, [ledgerTransactions, searchTerm, filterType]);
+
+  const balanceState = useMemo(() => {
+    const realized = ledgerTransactions.filter(affectsCurrentBalance);
+    const allNet = roundMoney(realized.reduce((sum, transaction) => sum + signedAmount(transaction), 0));
+    const openingBase = roundMoney(currentBalance - allNet);
+    const byDay = new Map<string, number>();
+
+    realized.forEach((transaction) => {
+      const key = safeDateKey(transaction.date);
+      if (key === 'sem-data') return;
+      byDay.set(key, roundMoney((byDay.get(key) || 0) + signedAmount(transaction)));
+    });
+
+    const dayClosing = new Map<string, number>();
+    let running = currentBalance;
+    [...byDay.keys()].sort((a, b) => b.localeCompare(a)).forEach((key) => {
+      dayClosing.set(key, roundMoney(running));
+      running = roundMoney(running - (byDay.get(key) || 0));
+    });
+
+    return { allNet, openingBase, dayClosing };
+  }, [ledgerTransactions, currentBalance]);
 
   const groups = useMemo<DayGroup[]>(() => {
-    const grouped = new Map<string, Transaction[]>();
+    const grouped = new Map<string, LedgerTransaction[]>();
 
     filteredTransactions.forEach((transaction) => {
       const key = safeDateKey(transaction.date);
@@ -94,20 +192,24 @@ export default function History({
           expense: sortedItems
             .filter((item) => item.type === 'expense')
             .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0),
+          closingBalance: key === 'sem-data' ? undefined : balanceState.dayClosing.get(key),
         };
       });
-  }, [filteredTransactions]);
+  }, [filteredTransactions, balanceState.dayClosing]);
 
   const summary = useMemo(() => {
-    const income = filteredTransactions
-      .filter((item) => item.type === 'income')
-      .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
-    const expense = filteredTransactions
-      .filter((item) => item.type === 'expense')
-      .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
+    const realized = filteredTransactions.filter(affectsCurrentBalance);
+    const income = realized
+      .filter((item) => signedAmount(item) > 0)
+      .reduce((sum, item) => sum + Math.abs(signedAmount(item)), 0);
+    const expense = realized
+      .filter((item) => signedAmount(item) < 0)
+      .reduce((sum, item) => sum + Math.abs(signedAmount(item)), 0);
 
-    return { income, expense, balance: income - expense };
+    return { income: roundMoney(income), expense: roundMoney(expense), net: roundMoney(income - expense) };
   }, [filteredTransactions]);
+
+  const filteredDifference = roundMoney(currentBalance - summary.net);
 
   function toggleDay(key: string) {
     setExpandedDays((current) => {
@@ -116,6 +218,61 @@ export default function History({
       else next.add(key);
       return next;
     });
+  }
+
+  function exportHistory() {
+    if (!filteredTransactions.length) return;
+    const realized = filteredTransactions.filter(affectsCurrentBalance);
+    const income = roundMoney(realized.filter((row) => signedAmount(row) > 0).reduce((sum, row) => sum + Math.abs(signedAmount(row)), 0));
+    const expense = roundMoney(realized.filter((row) => signedAmount(row) < 0).reduce((sum, row) => sum + Math.abs(signedAmount(row)), 0));
+    const net = roundMoney(income - expense);
+    const keys = filteredTransactions.map((row) => safeDateKey(row.date)).filter((key) => key !== 'sem-data').sort();
+    const periodStart = keys[0] || '';
+    const periodEnd = keys[keys.length - 1] || '';
+
+    const summaryRows = [
+      ['Relatório', 'Histórico financeiro'],
+      ['Gerado em', new Date().toLocaleString('pt-BR')],
+      ['Período inicial', periodStart ? new Date(`${periodStart}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem dados'],
+      ['Período final', periodEnd ? new Date(`${periodEnd}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem dados'],
+      ['Entradas realizadas', income],
+      ['Saídas realizadas', expense],
+      ['Movimento líquido do filtro', net],
+      ['Saldo atual', currentBalance],
+      ['Base anterior/ajustes fora do histórico', balanceState.openingBase],
+      ['Saldo confirmado pelo usuário', balanceConfirmed ? 'Sim' : 'Não'],
+    ];
+
+    const transactionRows = [...filteredTransactions]
+      .sort((a, b) => safeDateKey(a.date).localeCompare(safeDateKey(b.date)) || String(a.id).localeCompare(String(b.id)))
+      .map((row) => {
+        const key = safeDateKey(row.date);
+        const amount = signedAmount(row);
+        return {
+          Data: key !== 'sem-data' ? new Date(`${key}T12:00:00`).toLocaleDateString('pt-BR') : '',
+          Descrição: row.description || '',
+          Categoria: row.category || 'Geral',
+          Tipo: amount >= 0 ? 'Entrada' : 'Saída',
+          Valor: Math.abs(amount),
+          Situação: normalize(row.status) === 'pending' ? 'Pendente' : 'Realizado',
+          'Afeta saldo': row.affects_balance === false ? 'Não' : 'Sim',
+          Origem: row.source || '',
+          'Forma de pagamento': row.payment_method || '',
+          'Saldo ao fim do dia': key !== 'sem-data' ? balanceState.dayClosing.get(key) ?? '' : '',
+        };
+      });
+
+    const workbook = XLSX.utils.book_new();
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+    summarySheet['!cols'] = [{ wch: 38 }, { wch: 24 }];
+    const transactionSheet = XLSX.utils.json_to_sheet(transactionRows);
+    transactionSheet['!cols'] = [
+      { wch: 13 }, { wch: 38 }, { wch: 22 }, { wch: 12 }, { wch: 14 },
+      { wch: 13 }, { wch: 12 }, { wch: 20 }, { wch: 20 }, { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumo');
+    XLSX.utils.book_append_sheet(workbook, transactionSheet, 'Lançamentos');
+    XLSX.writeFile(workbook, `MFinanceiro_Historico_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   return (
@@ -144,7 +301,7 @@ export default function History({
 
           <button
             type="button"
-            onClick={() => ReportService.exportTransactionsToExcel(filteredTransactions)}
+            onClick={exportHistory}
             disabled={filteredTransactions.length === 0}
             className="flex items-center gap-2 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary disabled:opacity-40"
           >
@@ -163,21 +320,29 @@ export default function History({
         </div>
       </div>
 
-      <div className="grid shrink-0 grid-cols-3 gap-2">
+      <div className="grid shrink-0 grid-cols-2 gap-2 lg:grid-cols-4">
         <div className="glass-card !p-3">
-          <div className="text-[9px] font-bold uppercase text-white/40">Entradas</div>
+          <div className="text-[9px] font-bold uppercase text-white/40">Entradas realizadas</div>
           <div className="truncate text-sm font-bold text-green-400">{formatMoney(summary.income)}</div>
         </div>
         <div className="glass-card !p-3">
-          <div className="text-[9px] font-bold uppercase text-white/40">Saídas</div>
+          <div className="text-[9px] font-bold uppercase text-white/40">Saídas realizadas</div>
           <div className="truncate text-sm font-bold">{formatMoney(summary.expense)}</div>
         </div>
         <div className="glass-card !p-3">
-          <div className="text-[9px] font-bold uppercase text-white/40">Saldo</div>
-          <div className={`truncate text-sm font-bold ${summary.balance >= 0 ? 'text-brand-primary' : 'text-red-400'}`}>
-            {formatMoney(summary.balance)}
+          <div className="text-[9px] font-bold uppercase text-white/40">Movimento líquido</div>
+          <div className={`truncate text-sm font-bold ${summary.net >= 0 ? 'text-brand-primary' : 'text-red-400'}`}>
+            {formatMoney(summary.net)}
           </div>
         </div>
+        <div className="glass-card !p-3">
+          <div className="text-[9px] font-bold uppercase text-white/40">Saldo atual</div>
+          <div className="truncate text-sm font-bold text-brand-primary">{formatMoney(currentBalance)}</div>
+        </div>
+      </div>
+
+      <div className="shrink-0 rounded-xl border border-brand-primary/15 bg-brand-primary/[0.055] px-3 py-2 text-[10px] leading-relaxed text-white/55">
+        O <strong className="text-white/85">movimento líquido</strong> considera somente lançamentos realizados no filtro atual. O <strong className="text-white/85">saldo atual</strong> está {balanceConfirmed ? 'confirmado pelo usuário' : 'ainda não confirmado'} e não precisa ser igual ao movimento do período. Diferença entre saldo e filtro: <strong className="text-white/85">{formatMoney(filteredDifference)}</strong>. Base anterior/ajustes fora de todo o histórico: <strong className="text-white/85">{formatMoney(balanceState.openingBase)}</strong>.
       </div>
 
       <div className="history-scroll flex-1 min-h-0 overflow-y-auto pr-1 no-scrollbar">
@@ -198,9 +363,10 @@ export default function History({
                       <div className="text-[10px] text-white/40">{group.items.length} lançamentos</div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-3 text-[10px]">
+                  <div className="flex shrink-0 flex-wrap justify-end gap-3 text-[10px]">
                     {group.income > 0 && <span className="text-green-400">+{formatMoney(group.income)}</span>}
                     {group.expense > 0 && <span>-{formatMoney(group.expense)}</span>}
+                    {group.closingBalance !== undefined && <span className="text-white/45">Saldo ao fim do dia: {formatMoney(group.closingBalance)}</span>}
                   </div>
                 </button>
 
