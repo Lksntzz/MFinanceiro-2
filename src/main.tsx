@@ -10,6 +10,7 @@ import './lib/income-payroll-center-mount';
 import './lib/income-payroll-layer-guard';
 import './lib/payroll-cycle-display-guard';
 import './lib/navigation-profile-onboarding-mount';
+import './lib/tutorial-loop-guard';
 import './lib/safe-tutorial-mount';
 import './lib/simple-navigation-mount';
 import './lib/simple-navigation-placement-guard';
