@@ -13,6 +13,7 @@ import './lib/navigation-profile-onboarding-mount';
 import './lib/simple-navigation-mount';
 import './lib/simple-navigation-placement-guard';
 import './lib/monthly-fixed-bills-mount';
+import './lib/insights-fixed-bill-count-guard';
 import './lib/unified-transaction-launcher-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
