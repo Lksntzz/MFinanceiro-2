@@ -1,6 +1,6 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // @ts-ignore
-import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import pdfWorkerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { ImportedTransaction } from '../../../types';
 import { getPdfBankParser, resolvePdfBank } from './index';
 import { parseAmount, parsePdfDateToIso, normalizeHeader, looksLikeNoiseLine } from './utils';
