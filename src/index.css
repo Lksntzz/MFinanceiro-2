@@ -26,6 +26,11 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  --app-gap: clamp(0.35rem, 0.7vh, 0.75rem);
+  --app-pad: clamp(0.4rem, 0.9vh, 1rem);
+  --card-pad: clamp(0.55rem, 1vh, 1rem);
+  --chart-height: clamp(118px, 18vh, 190px);
+  --summary-height: clamp(108px, 16vh, 165px);
 }
 
 html,
@@ -65,11 +70,15 @@ body {
   height: 100dvh !important;
   min-height: 100dvh !important;
   max-height: 100dvh !important;
+  padding: var(--app-pad) !important;
+  gap: var(--app-gap) !important;
   overflow: hidden !important;
 }
 
 #root > div > header {
-  margin-bottom: 0.35rem !important;
+  margin-bottom: 0 !important;
+  gap: var(--app-gap) !important;
+  flex: 0 0 auto;
 }
 
 #root > div > .flex-1.overflow-y-auto {
@@ -78,7 +87,7 @@ body {
   padding-bottom: 0 !important;
 }
 
-/* Only History is allowed to scroll vertically. */
+/* History is the only application area with vertical scrolling. */
 .history-shell,
 .history-scroll {
   min-height: 0;
@@ -89,79 +98,152 @@ body {
   overscroll-behavior: contain;
 }
 
-/* Dashboard: charts share one row instead of stacking vertically. */
-@media (min-width: 1024px) {
+/* Responsive dashboard: all rows adapt to the available viewport. */
+main.grid {
+  gap: var(--app-gap) !important;
+  align-content: start;
+  min-height: 0;
+}
+
+main.grid .glass-card {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The two charts always remain one below the other. */
+main.grid > [class~="h-[220px]"] {
+  grid-column: 1 / -1 !important;
+  height: var(--chart-height) !important;
+  padding: var(--card-pad) !important;
+}
+
+main.grid > [class~="h-[220px]"] h3 {
+  margin-bottom: clamp(0.3rem, 0.8vh, 0.75rem) !important;
+}
+
+/* Dashboard summary cards adapt without internal scrolling. */
+main.grid > [class~="h-[250px]"] {
+  height: var(--summary-height) !important;
+  padding: var(--card-pad) !important;
+  justify-content: flex-start !important;
+}
+
+main.grid > [class~="h-[250px]"] h3 {
+  margin-bottom: clamp(0.3rem, 0.8vh, 0.65rem) !important;
+}
+
+main.grid > [class~="h-[250px]"] .overflow-y-auto {
+  overflow: hidden !important;
+}
+
+main.grid > [class~="h-[250px]"] .space-y-3,
+main.grid > [class~="h-[250px]"] .space-y-4,
+main.grid > [class~="h-[250px]"] .space-y-6 {
+  gap: clamp(0.25rem, 0.6vh, 0.5rem) !important;
+}
+
+main.grid > [class~="h-[250px]"] [class*="p-3"] {
+  padding: clamp(0.3rem, 0.65vh, 0.55rem) !important;
+}
+
+/* Analysis and other tabs also resize by viewport instead of using zoom. */
+[class*="animate-fade-in"] .glass-card {
+  min-height: 0;
+}
+
+[class*="animate-fade-in"] [class*="h-[300px]"],
+[class*="animate-fade-in"] [class*="h-[320px]"],
+[class*="animate-fade-in"] [class*="h-[350px]"] {
+  height: clamp(150px, 24vh, 245px) !important;
+  padding: var(--card-pad) !important;
+}
+
+/* Notebook and smaller desktop screens. */
+@media (min-width: 1024px) and (max-height: 820px) {
+  :root {
+    --app-gap: 0.35rem;
+    --app-pad: 0.45rem;
+    --card-pad: 0.55rem;
+    --chart-height: clamp(105px, 16.5vh, 132px);
+    --summary-height: clamp(92px, 13.8vh, 112px);
+  }
+
+  #root > div > header h1 {
+    font-size: 1rem !important;
+  }
+
+  #root > div > header button {
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  main.grid > [class~="h-24"] {
+    height: 4.5rem !important;
+    padding: 0.55rem !important;
+  }
+
+  main.grid > [class~="h-24"] [class*="text-2xl"] {
+    font-size: 1.1rem !important;
+  }
+}
+
+/* Very short notebook screens receive stronger compaction, never browser zoom. */
+@media (min-width: 1024px) and (max-height: 700px) {
+  :root {
+    --app-gap: 0.25rem;
+    --app-pad: 0.3rem;
+    --card-pad: 0.4rem;
+    --chart-height: 100px;
+    --summary-height: 84px;
+  }
+
+  main.grid > [class~="h-24"] {
+    height: 3.85rem !important;
+  }
+
+  main.grid h3,
+  main.grid p,
+  main.grid span,
+  main.grid button {
+    line-height: 1.1 !important;
+  }
+}
+
+/* Tablets: cards reorganize naturally by available width. */
+@media (max-width: 1023px) {
+  :root {
+    --app-gap: 0.45rem;
+    --app-pad: 0.5rem;
+    --card-pad: 0.65rem;
+    --chart-height: clamp(120px, 20vh, 175px);
+    --summary-height: clamp(105px, 17vh, 145px);
+  }
+
   main.grid {
-    gap: 0.55rem !important;
-    align-content: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   main.grid > [class~="h-[220px]"] {
-    grid-column: span 6 / span 6 !important;
-    height: clamp(150px, 20vh, 190px) !important;
-    padding: 0.8rem !important;
-  }
-
-  main.grid > [class~="h-[250px]"] {
-    height: clamp(145px, 19vh, 180px) !important;
-    padding: 0.75rem !important;
-    justify-content: flex-start !important;
-  }
-
-  main.grid > [class~="h-[250px]"] h3 {
-    margin-bottom: 0.55rem !important;
-  }
-
-  main.grid > [class~="h-[250px]"] .overflow-y-auto {
-    overflow: hidden !important;
-  }
-
-  main.grid > [class~="h-[250px]"] .space-y-3,
-  main.grid > [class~="h-[250px]"] .space-y-4,
-  main.grid > [class~="h-[250px]"] .space-y-6 {
-    gap: 0.4rem !important;
-  }
-
-  main.grid > [class~="h-[250px]"] [class*="p-3"] {
-    padding: 0.45rem !important;
-  }
-
-  /* Compact analysis cards and prevent internal clipping. */
-  [class*="animate-fade-in"] .glass-card {
-    min-height: 0;
-  }
-
-  [class*="animate-fade-in"] [class*="h-[300px]"],
-  [class*="animate-fade-in"] [class*="h-[320px]"],
-  [class*="animate-fade-in"] [class*="h-[350px]"] {
-    height: clamp(170px, 24vh, 220px) !important;
+    grid-column: 1 / -1 !important;
   }
 }
 
-@media (min-width: 1024px) and (max-height: 900px) {
-  #root > div.h-screen,
-  #root > div.min-h-screen {
-    padding: 0.45rem !important;
-    gap: 0.3rem !important;
+/* Phones: one-column flow, still without page-level scrolling. */
+@media (max-width: 639px) {
+  :root {
+    --app-gap: 0.35rem;
+    --app-pad: 0.35rem;
+    --card-pad: 0.5rem;
+    --chart-height: clamp(100px, 17vh, 140px);
+    --summary-height: clamp(86px, 14vh, 115px);
   }
 
-  #root > div > header {
-    margin-bottom: 0.2rem !important;
-    gap: 0.4rem !important;
+  main.grid {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  #root > div > .flex-1.overflow-y-auto {
-    zoom: 0.92;
-    width: 108.7%;
-    height: 108.7%;
-  }
-}
-
-@media (min-width: 1024px) and (max-height: 760px) {
-  #root > div > .flex-1.overflow-y-auto {
-    zoom: 0.82;
-    width: 121.95%;
-    height: 121.95%;
+  main.grid > * {
+    grid-column: 1 / -1 !important;
   }
 }
 
