@@ -13,7 +13,6 @@ import './lib/guided-tutorial-mount';
 import './lib/monthly-fixed-bills-mount';
 import './lib/standalone-insights-mount';
 import './lib/unified-transaction-launcher-mount';
-import './lib/income-shortcuts-mount';
 import './lib/release-update-notification-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
