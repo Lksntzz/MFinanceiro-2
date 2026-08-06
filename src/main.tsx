@@ -2,6 +2,7 @@ import './lib/settings-conflict-recovery';
 import './lib/auth-refresh-guard';
 import './lib/rhythm-chart-filter';
 import './lib/admin-maintenance-mount';
+import './lib/bradesco-excel-parser-guard';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
