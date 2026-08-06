@@ -12,14 +12,13 @@ import {
   Save,
   SlidersHorizontal,
   Sparkles,
-  Wallet,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { calculatePayrollFromGross } from './payroll-tax';
 import { supabase } from './supabase';
 
-type Tab = 'overview' | 'income' | 'deductions' | 'payroll';
+type Tab = 'overview' | 'deductions' | 'distribution' | 'payroll';
 
 type SettingsRow = {
   user_id: string;
@@ -50,10 +49,12 @@ type PayrollRow = {
   payday_2_percentage: number;
 };
 
-type FormState = {
-  grossSalary: string;
+type DeductionsForm = {
   otherDeductions: string;
   benefits: string;
+};
+
+type DistributionForm = {
   paydayCycle: 'monthly' | 'biweekly';
   payday1: string;
   payday2: string;
@@ -124,10 +125,11 @@ function PreferencesCenter() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [settings, setSettings] = useState<SettingsRow | null>(null);
   const [payrollRows, setPayrollRows] = useState<PayrollRow[]>([]);
-  const [form, setForm] = useState<FormState>({
-    grossSalary: '0',
+  const [deductionsForm, setDeductionsForm] = useState<DeductionsForm>({
     otherDeductions: '0',
     benefits: '0',
+  });
+  const [distributionForm, setDistributionForm] = useState<DistributionForm>({
     paydayCycle: 'monthly',
     payday1: '5',
     payday2: '20',
@@ -136,7 +138,8 @@ function PreferencesCenter() {
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [deductionsDirty, setDeductionsDirty] = useState(false);
+  const [distributionDirty, setDistributionDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -207,21 +210,27 @@ function PreferencesCenter() {
     };
   }, [visible]);
 
-  const hydrate = useCallback((nextSettings: SettingsRow) => {
-    const estimate = calculatePayrollFromGross(nextSettings.gross_salary, new Date());
-    const otherDeductions = Math.max(0, nextSettings.deductions - estimate.totalDeductions);
+  const hydrate = useCallback((nextSettings: SettingsRow, latestPayroll?: PayrollRow | null) => {
+    const official = calculatePayrollFromGross(nextSettings.gross_salary, new Date());
+    const statutoryDeductions = latestPayroll
+      ? latestPayroll.inss_amount + latestPayroll.irrf_amount
+      : official.totalDeductions;
+    const otherDeductions = Math.max(0, nextSettings.deductions - statutoryDeductions);
     const cycle = nextSettings.payday_cycle;
-    setForm({
-      grossSalary: String(nextSettings.gross_salary),
+
+    setDeductionsForm({
       otherDeductions: String(Number(otherDeductions.toFixed(2))),
       benefits: String(nextSettings.benefits),
+    });
+    setDistributionForm({
       paydayCycle: cycle,
       payday1: String(nextSettings.payday_1 || 5),
       payday2: String(nextSettings.payday_2 || 20),
       payday1Percentage: String(cycle === 'biweekly' ? Number(nextSettings.payday_1_percentage ?? 50) : 100),
       payday2Percentage: String(cycle === 'biweekly' ? Number(nextSettings.payday_2_percentage ?? 50) : 0),
     });
-    setDirty(false);
+    setDeductionsDirty(false);
+    setDistributionDirty(false);
   }, []);
 
   const loadData = useCallback(async () => {
@@ -242,12 +251,14 @@ function PreferencesCenter() {
     if (settingsResult.error) setError(settingsResult.error.message);
     if (payrollResult.error) setError(payrollResult.error.message);
 
+    const nextPayrollRows = (payrollResult.data || []).map(normalizePayroll);
+    setPayrollRows(nextPayrollRows);
+
     if (settingsResult.data) {
       const nextSettings = normalizeSettings(settingsResult.data);
       setSettings(nextSettings);
-      hydrate(nextSettings);
+      hydrate(nextSettings, nextPayrollRows[0] || null);
     }
-    setPayrollRows((payrollResult.data || []).map(normalizePayroll));
     setLoading(false);
   }, [userId, hydrate]);
 
@@ -266,85 +277,140 @@ function PreferencesCenter() {
     };
   }, [userId, loadData]);
 
-  const gross = numberValue(form.grossSalary);
-  const official = useMemo(() => calculatePayrollFromGross(gross, new Date()), [gross]);
-  const otherDeductions = numberValue(form.otherDeductions);
-  const benefits = numberValue(form.benefits);
-  const totalDeductions = official.totalDeductions + otherDeductions;
-  const netSalary = Math.max(0, gross - totalDeductions);
-  const firstPercentage = form.paydayCycle === 'biweekly' ? Math.min(100, numberValue(form.payday1Percentage)) : 100;
-  const secondPercentage = form.paydayCycle === 'biweekly' ? Math.min(100, numberValue(form.payday2Percentage)) : 0;
-  const firstPayment = netSalary * firstPercentage / 100;
-  const secondPayment = netSalary * secondPercentage / 100;
-  const discountRate = gross > 0 ? totalDeductions / gross : 0;
   const latestPayroll = payrollRows[0] || null;
+  const gross = Number(settings?.gross_salary || 0);
+  const official = useMemo(() => calculatePayrollFromGross(gross, new Date()), [gross]);
+  const inssBase = latestPayroll?.inss_amount ?? official.inss;
+  const irrfBase = latestPayroll?.irrf_amount ?? official.irrf;
+  const otherDeductions = numberValue(deductionsForm.otherDeductions);
+  const benefits = numberValue(deductionsForm.benefits);
+  const totalDeductions = inssBase + irrfBase + otherDeductions;
+  const previewNetSalary = Math.max(0, gross - totalDeductions);
+  const savedNetSalary = Number(settings?.net_salary_estimated || 0);
+  const cycleNetSalary = savedNetSalary > 0 ? savedNetSalary : previewNetSalary;
+  const firstPercentage = distributionForm.paydayCycle === 'biweekly'
+    ? Math.min(100, numberValue(distributionForm.payday1Percentage))
+    : 100;
+  const secondPercentage = distributionForm.paydayCycle === 'biweekly'
+    ? Math.min(100, numberValue(distributionForm.payday2Percentage))
+    : 0;
+  const firstPayment = cycleNetSalary * firstPercentage / 100;
+  const secondPayment = cycleNetSalary * secondPercentage / 100;
+  const discountRate = gross > 0 ? totalDeductions / gross : 0;
 
-  function change<K extends keyof FormState>(field: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [field]: value }));
-    setDirty(true);
+  function changeDeduction<K extends keyof DeductionsForm>(field: K, value: DeductionsForm[K]) {
+    setDeductionsForm((current) => ({ ...current, [field]: value }));
+    setDeductionsDirty(true);
+    setSuccess(null);
+  }
+
+  function changeDistribution<K extends keyof DistributionForm>(field: K, value: DistributionForm[K]) {
+    setDistributionForm((current) => ({ ...current, [field]: value }));
+    setDistributionDirty(true);
+    setSuccess(null);
+  }
+
+  function changeCycle(value: 'monthly' | 'biweekly') {
+    setDistributionForm((current) => ({
+      ...current,
+      paydayCycle: value,
+      payday1Percentage: value === 'monthly' ? '100' : '50',
+      payday2Percentage: value === 'monthly' ? '0' : '50',
+    }));
+    setDistributionDirty(true);
     setSuccess(null);
   }
 
   function changeFirstPercentage(value: string) {
     const first = Math.min(100, numberValue(value));
-    setForm((current) => ({
+    setDistributionForm((current) => ({
       ...current,
       payday1Percentage: String(first),
       payday2Percentage: String(Number((100 - first).toFixed(2))),
     }));
-    setDirty(true);
+    setDistributionDirty(true);
     setSuccess(null);
   }
 
   function changeSecondPercentage(value: string) {
     const second = Math.min(100, numberValue(value));
-    setForm((current) => ({
+    setDistributionForm((current) => ({
       ...current,
       payday2Percentage: String(second),
       payday1Percentage: String(Number((100 - second).toFixed(2))),
     }));
-    setDirty(true);
+    setDistributionDirty(true);
     setSuccess(null);
   }
 
-  async function saveSettings() {
+  async function saveDeductions() {
+    if (!userId || !settings) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      if (gross <= 0) throw new Error('Registre o salário bruto na Folha de pagamento antes de ajustar os descontos.');
+      if (totalDeductions > gross) throw new Error('Os descontos não podem superar o salário bruto.');
+
+      const result = await supabase
+        .from('mf_user_settings')
+        .update({
+          deductions: Number(totalDeductions.toFixed(2)),
+          benefits,
+          net_salary_estimated: Number(previewNetSalary.toFixed(2)),
+        })
+        .eq('user_id', userId);
+
+      if (result.error) throw result.error;
+      setSuccess('Descontos recorrentes e benefícios atualizados no Dashboard.');
+      setDeductionsDirty(false);
+      await loadData();
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Não foi possível salvar os descontos.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveDistribution() {
     if (!userId) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const payday1 = Number(form.payday1);
-      const payday2 = Number(form.payday2);
-      if (gross <= 0) throw new Error('Informe um salário bruto maior que zero.');
-      if (totalDeductions > gross) throw new Error('Os descontos não podem superar o salário bruto.');
-      if (!Number.isInteger(payday1) || payday1 < 1 || payday1 > 31) throw new Error('O primeiro dia deve ficar entre 1 e 31.');
-      if (form.paydayCycle === 'biweekly') {
-        if (!Number.isInteger(payday2) || payday2 < 1 || payday2 > 31) throw new Error('O segundo dia deve ficar entre 1 e 31.');
-        if (Math.abs(firstPercentage + secondPercentage - 100) > 0.01) throw new Error('Os percentuais precisam somar 100%.');
+      const payday1 = Number(distributionForm.payday1);
+      const payday2 = Number(distributionForm.payday2);
+      if (!Number.isInteger(payday1) || payday1 < 1 || payday1 > 31) {
+        throw new Error('O primeiro dia deve ficar entre 1 e 31.');
+      }
+      if (distributionForm.paydayCycle === 'biweekly') {
+        if (!Number.isInteger(payday2) || payday2 < 1 || payday2 > 31) {
+          throw new Error('O segundo dia deve ficar entre 1 e 31.');
+        }
+        if (Math.abs(firstPercentage + secondPercentage - 100) > 0.01) {
+          throw new Error('Os percentuais precisam somar 100%.');
+        }
       }
 
       const result = await supabase
         .from('mf_user_settings')
         .update({
-          gross_salary: gross,
-          net_salary_estimated: Number(netSalary.toFixed(2)),
-          deductions: Number(totalDeductions.toFixed(2)),
-          benefits,
-          payday_cycle: form.paydayCycle,
+          payday_cycle: distributionForm.paydayCycle,
           payday_1: payday1,
-          payday_2: form.paydayCycle === 'biweekly' ? payday2 : null,
-          payday_1_percentage: form.paydayCycle === 'biweekly' ? firstPercentage : 100,
-          payday_2_percentage: form.paydayCycle === 'biweekly' ? secondPercentage : 0,
+          payday_2: distributionForm.paydayCycle === 'biweekly' ? payday2 : null,
+          payday_1_percentage: distributionForm.paydayCycle === 'biweekly' ? firstPercentage : 100,
+          payday_2_percentage: distributionForm.paydayCycle === 'biweekly' ? secondPercentage : 0,
         })
         .eq('user_id', userId);
 
       if (result.error) throw result.error;
-      setSuccess('Preferências salvas. O Dashboard foi atualizado.');
-      setDirty(false);
+      setSuccess('Distribuição do ciclo atualizada no Dashboard.');
+      setDistributionDirty(false);
       await loadData();
     } catch (saveError: any) {
-      setError(saveError?.message || 'Não foi possível salvar as preferências.');
+      setError(saveError?.message || 'Não foi possível salvar a distribuição.');
     } finally {
       setSaving(false);
     }
@@ -370,8 +436,8 @@ function PreferencesCenter() {
 
   const tabs: Array<{ id: Tab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
     { id: 'overview', label: 'Resumo', icon: LayoutDashboard },
-    { id: 'income', label: 'Renda e ciclo', icon: Wallet },
-    { id: 'deductions', label: 'Descontos', icon: Percent },
+    { id: 'deductions', label: 'Descontos e benefícios', icon: Percent },
+    { id: 'distribution', label: 'Distribuição', icon: CalendarDays },
     { id: 'payroll', label: 'Folha', icon: FileText },
   ];
 
@@ -387,19 +453,11 @@ function PreferencesCenter() {
               <SlidersHorizontal size={19} className="text-brand-primary" /> Preferências
             </h2>
             <p className="mt-0.5 truncate text-[9px] uppercase tracking-[0.18em] text-white/35">
-              Renda, ciclo, descontos e folha em uma única central
+              Cada configuração em um único lugar, sem funções repetidas
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {dirty && <span className="hidden rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-bold text-amber-300 sm:inline">Alterações não salvas</span>}
-            <button
-              type="button"
-              onClick={saveSettings}
-              disabled={saving || loading}
-              className="flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2 text-xs font-black text-black disabled:opacity-50"
-            >
-              <Save size={14} /> {saving ? 'Salvando...' : 'Salvar'}
-            </button>
+          <div className="flex items-center gap-2 text-[9px] text-white/30">
+            {loading ? 'Atualizando...' : 'Sincronizado com o Dashboard'}
           </div>
         </header>
 
@@ -428,44 +486,48 @@ function PreferencesCenter() {
             </div>
           )}
 
-          {activeTab === 'overview' && (
+          {!settings && loading && (
+            <div className="flex min-h-[240px] items-center justify-center text-sm text-white/35">Carregando preferências...</div>
+          )}
+
+          {settings && activeTab === 'overview' && (
             <div className="grid gap-3 xl:grid-cols-12">
               <section className="xl:col-span-12 grid grid-cols-2 gap-2 md:grid-cols-5">
-                <Metric label="Salário bruto" value={money(gross)} />
-                <Metric label="Salário líquido" value={money(netSalary)} highlight />
-                <Metric label="Descontos" value={money(totalDeductions)} detail={percent(totalDeductions, gross)} danger={discountRate > 0.5} />
-                <Metric label="Benefícios" value={money(benefits)} />
-                <Metric label="Ciclo" value={form.paydayCycle === 'biweekly' ? 'Quinzenal' : 'Mensal'} detail={form.paydayCycle === 'biweekly' ? `Dias ${form.payday1} e ${form.payday2}` : `Dia ${form.payday1}`} />
+                <Metric label="Salário bruto" value={money(settings.gross_salary)} />
+                <Metric label="Salário líquido" value={money(settings.net_salary_estimated)} highlight />
+                <Metric label="Descontos" value={money(settings.deductions)} detail={percent(settings.deductions, settings.gross_salary)} danger={settings.gross_salary > 0 && settings.deductions / settings.gross_salary > 0.5} />
+                <Metric label="Benefícios" value={money(settings.benefits)} />
+                <Metric label="Ciclo" value={settings.payday_cycle === 'biweekly' ? 'Quinzenal' : 'Mensal'} detail={settings.payday_cycle === 'biweekly' ? `Dias ${settings.payday_1} e ${settings.payday_2}` : `Dia ${settings.payday_1}`} />
               </section>
 
               <section className="glass-card !p-4 xl:col-span-7">
                 <div className="mb-3 flex items-center justify-between">
-                  <div><h3 className="text-sm font-bold">Distribuição do ciclo</h3><p className="text-[10px] text-white/35">Valores calculados sobre o salário líquido</p></div>
+                  <div><h3 className="text-sm font-bold">Distribuição atual</h3><p className="text-[10px] text-white/35">Consulta sobre o salário líquido salvo</p></div>
                   <Sparkles size={17} className="text-brand-primary" />
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <CycleCard day={form.payday1} percentage={firstPercentage} amount={firstPayment} primary />
-                  {form.paydayCycle === 'biweekly' ? (
-                    <CycleCard day={form.payday2} percentage={secondPercentage} amount={secondPayment} />
+                  <CycleCard day={String(settings.payday_1)} percentage={Number(settings.payday_1_percentage ?? 100)} amount={settings.net_salary_estimated * Number(settings.payday_1_percentage ?? 100) / 100} primary />
+                  {settings.payday_cycle === 'biweekly' ? (
+                    <CycleCard day={String(settings.payday_2 || 20)} percentage={Number(settings.payday_2_percentage ?? 0)} amount={settings.net_salary_estimated * Number(settings.payday_2_percentage ?? 0) / 100} />
                   ) : (
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                       <div className="text-[9px] uppercase text-white/30">Recebimento</div>
                       <div className="mt-2 text-lg font-black">100% em um pagamento</div>
-                      <p className="mt-1 text-[10px] text-white/35">O ciclo começa no dia {form.payday1}.</p>
+                      <p className="mt-1 text-[10px] text-white/35">O ciclo começa no dia {settings.payday_1}.</p>
                     </div>
                   )}
                 </div>
                 <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.025] p-3 text-xs text-white/45">
-                  O Dashboard usa <strong className="text-white">{money(netSalary)}</strong> como renda mensal projetada. Benefícios continuam separados do dinheiro disponível em conta.
+                  O Resumo é somente para consulta. Edições ficam separadas nas áreas de Descontos, Distribuição e Folha.
                 </div>
               </section>
 
               <aside className="glass-card !p-4 xl:col-span-5">
                 <h3 className="mb-3 text-sm font-bold">Ações rápidas</h3>
                 <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
-                  <QuickAction icon={<Wallet size={16} />} title="Editar renda e ciclo" text="Salário, datas e divisão" onClick={() => setActiveTab('income')} />
-                  <QuickAction icon={<Percent size={16} />} title="Revisar descontos" text="INSS, IRRF e adicionais" onClick={() => setActiveTab('deductions')} />
-                  <QuickAction icon={<FileText size={16} />} title="Abrir folha completa" text="Registrar o holerite do mês" onClick={openPayrollCenter} primary />
+                  <QuickAction icon={<Percent size={16} />} title="Ajustar descontos" text="Padrões recorrentes e benefícios" onClick={() => setActiveTab('deductions')} />
+                  <QuickAction icon={<CalendarDays size={16} />} title="Distribuir o ciclo" text="Dias e percentuais de recebimento" onClick={() => setActiveTab('distribution')} />
+                  <QuickAction icon={<FileText size={16} />} title="Registrar holerite" text="Valores reais e histórico mensal" onClick={openPayrollCenter} primary />
                 </div>
               </aside>
 
@@ -473,9 +535,9 @@ function PreferencesCenter() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="flex items-center gap-2 text-sm font-bold"><ReceiptText size={16} /> Última folha registrada</h3>
-                    <p className="mt-1 text-[10px] text-white/35">Conferência rápida do histórico mensal</p>
+                    <p className="mt-1 text-[10px] text-white/35">A folha é a fonte dos valores reais do holerite</p>
                   </div>
-                  <button data-mf-preferences-action="true" type="button" onClick={openPayrollCenter} className="rounded-xl border border-brand-primary/30 bg-brand-primary/10 px-3 py-2 text-[10px] font-bold text-brand-primary">Ver histórico completo</button>
+                  <button data-mf-preferences-action="true" type="button" onClick={openPayrollCenter} className="rounded-xl border border-brand-primary/30 bg-brand-primary/10 px-3 py-2 text-[10px] font-bold text-brand-primary">Abrir folha</button>
                 </div>
                 {latestPayroll ? (
                   <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-6">
@@ -493,80 +555,93 @@ function PreferencesCenter() {
             </div>
           )}
 
-          {activeTab === 'income' && (
+          {settings && activeTab === 'deductions' && (
             <div className="grid gap-3 xl:grid-cols-12">
               <section className="glass-card !p-4 xl:col-span-7">
-                <div className="mb-4"><h3 className="text-sm font-bold">Renda e ciclo</h3><p className="mt-1 text-[10px] text-white/35">Campos essenciais em uma única tela</p></div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Salário bruto"><input className={inputClass} type="number" min="0" step="0.01" value={form.grossSalary} onChange={(event) => change('grossSalary', event.target.value)} /></Field>
-                  <Field label="Salário líquido calculado"><div className={`${inputClass} flex items-center font-black text-brand-primary`}>{money(netSalary)}</div></Field>
-                  <Field label="Ciclo de pagamento"><select className={inputClass} value={form.paydayCycle} onChange={(event) => { const cycle = event.target.value as 'monthly' | 'biweekly'; setForm((current) => ({ ...current, paydayCycle: cycle, payday1Percentage: cycle === 'monthly' ? '100' : '50', payday2Percentage: cycle === 'monthly' ? '0' : '50' })); setDirty(true); setSuccess(null); }}><option value="monthly">Mensal</option><option value="biweekly">Quinzenal</option></select></Field>
-                  <Field label="Primeiro pagamento"><input className={inputClass} type="number" min="1" max="31" value={form.payday1} onChange={(event) => change('payday1', event.target.value)} /></Field>
-                  {form.paydayCycle === 'biweekly' && (
-                    <>
-                      <Field label="Percentual do primeiro"><input className={inputClass} type="number" min="0" max="100" step="0.01" value={form.payday1Percentage} onChange={(event) => changeFirstPercentage(event.target.value)} /></Field>
-                      <Field label="Segundo pagamento"><input className={inputClass} type="number" min="1" max="31" value={form.payday2} onChange={(event) => change('payday2', event.target.value)} /></Field>
-                      <Field label="Percentual do segundo"><input className={inputClass} type="number" min="0" max="100" step="0.01" value={form.payday2Percentage} onChange={(event) => changeSecondPercentage(event.target.value)} /></Field>
-                    </>
-                  )}
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold">Descontos recorrentes e benefícios</h3>
+                  <p className="mt-1 text-[10px] text-white/35">Somente os padrões usados nas projeções; o holerite mensal fica na Folha</p>
                 </div>
-              </section>
-
-              <aside className="glass-card !p-4 xl:col-span-5">
-                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold"><CalendarDays size={16} /> Prévia do ciclo</h3>
-                <SummaryRow label="Salário bruto" value={money(gross)} />
-                <SummaryRow label="Descontos totais" value={`- ${money(totalDeductions)}`} danger />
-                <SummaryRow label="Renda líquida" value={money(netSalary)} highlight />
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <MiniMetric label={`Dia ${form.payday1}`} value={money(firstPayment)} detail={`${firstPercentage.toFixed(1)}%`} />
-                  {form.paydayCycle === 'biweekly' ? <MiniMetric label={`Dia ${form.payday2}`} value={money(secondPayment)} detail={`${secondPercentage.toFixed(1)}%`} /> : <MiniMetric label="Frequência" value="Mensal" detail="Pagamento único" />}
-                </div>
-                <button type="button" onClick={saveSettings} disabled={saving} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-sm font-black text-black disabled:opacity-50"><Save size={15} /> Salvar renda e ciclo</button>
-              </aside>
-            </div>
-          )}
-
-          {activeTab === 'deductions' && (
-            <div className="grid gap-3 xl:grid-cols-12">
-              <section className="glass-card !p-4 xl:col-span-7">
-                <div className="mb-4"><h3 className="text-sm font-bold">Descontos e benefícios</h3><p className="mt-1 text-[10px] text-white/35">O cálculo oficial fica separado dos descontos da empresa</p></div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <ReadOnly label="INSS estimado" value={money(official.inss)} detail={percent(official.inss, gross)} />
-                  <ReadOnly label="IRRF estimado" value={money(official.irrf)} detail={percent(official.irrf, gross)} />
-                  <Field label="Outros descontos da folha"><input className={inputClass} type="number" min="0" step="0.01" value={form.otherDeductions} onChange={(event) => change('otherDeductions', event.target.value)} /></Field>
-                  <Field label="Benefícios mensais"><input className={inputClass} type="number" min="0" step="0.01" value={form.benefits} onChange={(event) => change('benefits', event.target.value)} /></Field>
+                  <ReadOnly label="Salário bruto da folha" value={money(gross)} />
+                  <ReadOnly label="Salário líquido projetado" value={money(previewNetSalary)} />
+                  <ReadOnly label={latestPayroll ? 'INSS da última folha' : 'INSS estimado'} value={money(inssBase)} detail={percent(inssBase, gross)} />
+                  <ReadOnly label={latestPayroll ? 'IRRF da última folha' : 'IRRF estimado'} value={money(irrfBase)} detail={percent(irrfBase, gross)} />
+                  <Field label="Outros descontos recorrentes"><input className={inputClass} type="number" min="0" step="0.01" value={deductionsForm.otherDeductions} onChange={(event) => changeDeduction('otherDeductions', event.target.value)} /></Field>
+                  <Field label="Benefícios mensais"><input className={inputClass} type="number" min="0" step="0.01" value={deductionsForm.benefits} onChange={(event) => changeDeduction('benefits', event.target.value)} /></Field>
                 </div>
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.025] p-3 text-[10px] leading-relaxed text-white/40">
-                  “Outros descontos” inclui plano de saúde, vale-transporte, empréstimos, faltas, adiantamentos ou rubricas que não fazem parte do INSS e do IRRF. Para valores exatos do holerite, use a área de Folha.
+                  Use esta área apenas para padrões recorrentes, como plano de saúde, vale-transporte ou empréstimo fixo. Valores específicos de cada mês, salário bruto e impostos reais são registrados exclusivamente na Folha de pagamento.
                 </div>
               </section>
 
               <aside className="glass-card !p-4 xl:col-span-5">
-                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold"><BadgeDollarSign size={16} /> Impacto na renda</h3>
-                <SummaryRow label="INSS + IRRF" value={money(official.totalDeductions)} />
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold"><BadgeDollarSign size={16} /> Impacto dos ajustes</h3>
+                <SummaryRow label="INSS + IRRF de referência" value={money(inssBase + irrfBase)} />
                 <SummaryRow label="Outros descontos" value={money(otherDeductions)} />
                 <SummaryRow label="Total descontado" value={money(totalDeductions)} danger={discountRate > 0.5} />
                 <SummaryRow label="Percentual descontado" value={percent(totalDeductions, gross)} danger={discountRate > 0.5} />
-                <SummaryRow label="Salário líquido" value={money(netSalary)} highlight />
-                {discountRate > 0.5 && <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-[10px] text-amber-200">Mais de 50% do salário está comprometido com descontos. Confira a folha mensal para identificar as rubricas.</div>}
-                <button type="button" onClick={openPayrollCenter} data-mf-preferences-action="true" className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-brand-primary/30 bg-brand-primary/10 py-3 text-xs font-bold text-brand-primary"><FileText size={15} /> Conferir no holerite</button>
+                <SummaryRow label="Salário líquido projetado" value={money(previewNetSalary)} highlight />
+                <SummaryRow label="Benefícios separados" value={money(benefits)} />
+                {discountRate > 0.5 && <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-[10px] text-amber-200">Mais de 50% do salário está comprometido com descontos. Confira as rubricas na Folha mensal.</div>}
+                <button type="button" onClick={saveDeductions} disabled={saving || !deductionsDirty} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-sm font-black text-black disabled:opacity-40"><Save size={15} /> {saving ? 'Salvando...' : deductionsDirty ? 'Salvar ajustes' : 'Ajustes salvos'}</button>
+                <button type="button" onClick={openPayrollCenter} data-mf-preferences-action="true" className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-bold text-white/55"><FileText size={15} /> Abrir holerite do mês</button>
               </aside>
             </div>
           )}
 
-          {activeTab === 'payroll' && (
+          {settings && activeTab === 'distribution' && (
+            <div className="grid gap-3 xl:grid-cols-12">
+              <section className="glass-card !p-4 xl:col-span-7">
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold">Distribuição do recebimento</h3>
+                  <p className="mt-1 text-[10px] text-white/35">Somente datas e percentuais; os valores do holerite não são editados aqui</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Frequência"><select className={inputClass} value={distributionForm.paydayCycle} onChange={(event) => changeCycle(event.target.value as 'monthly' | 'biweekly')}><option value="monthly">Mensal</option><option value="biweekly">Quinzenal</option></select></Field>
+                  <Field label="Primeiro pagamento"><input className={inputClass} type="number" min="1" max="31" value={distributionForm.payday1} onChange={(event) => changeDistribution('payday1', event.target.value)} /></Field>
+                  {distributionForm.paydayCycle === 'biweekly' && (
+                    <>
+                      <Field label="Percentual do primeiro"><input className={inputClass} type="number" min="0" max="100" step="0.01" value={distributionForm.payday1Percentage} onChange={(event) => changeFirstPercentage(event.target.value)} /></Field>
+                      <Field label="Segundo pagamento"><input className={inputClass} type="number" min="1" max="31" value={distributionForm.payday2} onChange={(event) => changeDistribution('payday2', event.target.value)} /></Field>
+                      <Field label="Percentual do segundo"><input className={inputClass} type="number" min="0" max="100" step="0.01" value={distributionForm.payday2Percentage} onChange={(event) => changeSecondPercentage(event.target.value)} /></Field>
+                    </>
+                  )}
+                </div>
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.025] p-3 text-[10px] leading-relaxed text-white/40">
+                  A distribuição usa o salário líquido salvo pela Folha. Alterar dias ou percentuais não modifica salário, INSS, IRRF, descontos ou benefícios.
+                </div>
+              </section>
+
+              <aside className="glass-card !p-4 xl:col-span-5">
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold"><CalendarDays size={16} /> Prévia da distribuição</h3>
+                <SummaryRow label="Salário líquido usado" value={money(cycleNetSalary)} highlight />
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <MiniMetric label={`Dia ${distributionForm.payday1}`} value={money(firstPayment)} detail={`${firstPercentage.toFixed(1)}%`} />
+                  {distributionForm.paydayCycle === 'biweekly' ? <MiniMetric label={`Dia ${distributionForm.payday2}`} value={money(secondPayment)} detail={`${secondPercentage.toFixed(1)}%`} /> : <MiniMetric label="Frequência" value="Mensal" detail="Pagamento único" />}
+                </div>
+                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-[10px] text-white/40">
+                  Soma prevista: <strong className="text-white">{money(firstPayment + secondPayment)}</strong>
+                </div>
+                <button type="button" onClick={saveDistribution} disabled={saving || !distributionDirty} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-sm font-black text-black disabled:opacity-40"><Save size={15} /> {saving ? 'Salvando...' : distributionDirty ? 'Salvar distribuição' : 'Distribuição salva'}</button>
+              </aside>
+            </div>
+          )}
+
+          {settings && activeTab === 'payroll' && (
             <div className="grid gap-3 xl:grid-cols-12">
               <section className="glass-card !p-4 xl:col-span-5">
                 <div className="flex h-full flex-col">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-primary/10 text-brand-primary"><ReceiptText size={21} /></div>
                   <h3 className="mt-4 text-lg font-black">Folha de pagamento</h3>
-                  <p className="mt-2 text-xs leading-relaxed text-white/45">Registre os valores reais do holerite, compare INSS e IRRF, visualize as porcentagens e atualize a renda líquida do Dashboard.</p>
+                  <p className="mt-2 text-xs leading-relaxed text-white/45">Único lugar para editar salário bruto, INSS real, IRRF real, descontos do mês, benefícios do mês e observações do holerite.</p>
+                  <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-[10px] leading-relaxed text-white/40">Ao salvar a folha, o salário líquido e os padrões usados no Dashboard são atualizados. A distribuição de datas e percentuais permanece na aba Distribuição.</p>
                   <button type="button" onClick={openPayrollCenter} data-mf-preferences-action="true" className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-sm font-black text-black"><FileText size={16} /> Abrir folha de pagamento</button>
                 </div>
               </section>
 
               <section className="glass-card !p-4 xl:col-span-7">
-                <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">Últimas competências</h3><p className="text-[10px] text-white/35">Histórico resumido</p></div>{loading && <span className="text-[10px] text-white/30">Atualizando...</span>}</div>
+                <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">Últimas competências</h3><p className="text-[10px] text-white/35">Histórico resumido, sem edição duplicada</p></div>{loading && <span className="text-[10px] text-white/30">Atualizando...</span>}</div>
                 {payrollRows.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-white/10 py-10 text-center text-xs text-white/30">Nenhuma folha registrada.</div>
                 ) : (
