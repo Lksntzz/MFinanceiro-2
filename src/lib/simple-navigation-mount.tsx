@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  ArrowLeftRight,
   BarChart3,
   CircleDollarSign,
   CreditCard,
@@ -10,14 +11,24 @@ import {
   LayoutDashboard,
   Lightbulb,
   ListChecks,
-  PiggyBank,
+  Plus,
   Receipt,
-  Repeat2,
   Target,
+  Upload,
+  Zap,
 } from 'lucide-react';
 
-type Primary = 'home' | 'movements' | 'accounts' | 'cards' | 'income' | 'analysis';
-type Subroute = 'fixed' | 'subscriptions' | 'budgets' | 'summary' | 'insights' | 'health' | 'goals' | 'investments';
+type Primary = 'home' | 'movements' | 'organize' | 'analysis';
+type Subroute =
+  | 'accounts'
+  | 'cards'
+  | 'income'
+  | 'subscriptions'
+  | 'investments'
+  | 'summary'
+  | 'insights'
+  | 'health'
+  | 'goals';
 type RouteState = { primary: Primary; sub?: Subroute };
 
 const normalize = (value?: string | null) =>
@@ -120,35 +131,53 @@ function syncIncomePayrollLayer(active: boolean) {
 function go(route: RouteState) {
   sessionStorage.setItem('mf-simple-route', JSON.stringify(route));
 
-  if (route.primary === 'home') clickLegacy(['Dashboard']);
-  if (route.primary === 'movements') clickLegacy(['Histórico']);
-  if (route.primary === 'cards') clickLegacy(['Cartões']);
-  if (route.primary === 'income') clickLegacy(['Renda e Folha', 'Preferências']);
-
-  if (route.primary === 'accounts') {
-    clickLegacy(['Contas']);
-    if (route.sub === 'subscriptions') delayed(['Assinaturas'], 90);
-    else {
-      delayed(['Gestão de contas'], 90);
-      delayed(route.sub === 'budgets' ? ['Orçamentos'] : ['Contas fixas'], 190);
-    }
+  if (route.primary === 'home') {
+    clickLegacy(['Dashboard']);
+    return;
   }
 
-  if (route.primary === 'analysis') {
+  if (route.primary === 'movements') {
+    clickLegacy(['Histórico']);
+    delayed(['Movimentações'], 90);
+    return;
+  }
+
+  if (route.primary === 'organize') {
+    if (route.sub === 'cards') {
+      clickLegacy(['Cartões']);
+      return;
+    }
+
+    if (route.sub === 'income') {
+      clickLegacy(['Renda e Folha', 'Preferências']);
+      return;
+    }
+
+    clickLegacy(['Contas']);
+    if (route.sub === 'subscriptions') {
+      delayed(['Assinaturas'], 90);
+      return;
+    }
     if (route.sub === 'investments') {
-      clickLegacy(['Contas']);
       delayed(['Investimentos'], 90);
       return;
     }
+
+    delayed(['Gestão de contas'], 90);
+    delayed(['Contas fixas'], 180);
+    return;
+  }
+
+  if (route.primary === 'analysis') {
     clickLegacy(['Análises']);
-    if (route.sub === 'insights') delayed(['Insights AI'], 90);
+    if (route.sub === 'insights') delayed(['Insights AI', 'Insights'], 90);
     else if (route.sub === 'health') delayed(['Saúde financeira'], 90);
     else if (route.sub === 'goals') delayed(['Metas'], 90);
     else delayed(['Estatísticas'], 90);
   }
 }
 
-function openIncomeLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: boolean) {
+function triggerUnifiedLauncher() {
   const trigger = document.createElement('button');
   trigger.type = 'button';
   trigger.textContent = 'Lançar';
@@ -156,11 +185,21 @@ function openIncomeLauncher(category: 'Renda extra' | 'Benefícios', benefitMeth
   document.body.appendChild(trigger);
   trigger.click();
   trigger.remove();
+}
 
-  const configure = (attempt = 0) => {
-    const root = document.getElementById('mf-unified-transaction-root');
-    if (!root || attempt > 20) return;
+function waitForLauncher(callback: (root: HTMLElement) => void, attempt = 0) {
+  const root = document.getElementById('mf-unified-transaction-root');
+  if (root) {
+    callback(root);
+    return;
+  }
+  if (attempt < 24) window.setTimeout(() => waitForLauncher(callback, attempt + 1), 50);
+}
 
+function openIncomeLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: boolean) {
+  triggerUnifiedLauncher();
+
+  waitForLauncher((root) => {
     const incomeButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
       isVisible(button) && normalize(button.textContent) === 'entrada',
     );
@@ -186,13 +225,30 @@ function openIncomeLauncher(category: 'Renda extra' | 'Benefícios', benefitMeth
         benefitButton?.click();
       }
     }, 60);
-  };
+  });
+}
 
-  const waitForLauncher = (attempt = 0) => {
-    if (document.getElementById('mf-unified-transaction-root')) configure(attempt);
-    else if (attempt < 20) window.setTimeout(() => waitForLauncher(attempt + 1), 50);
-  };
-  waitForLauncher();
+function openTransferLauncher() {
+  triggerUnifiedLauncher();
+  waitForLauncher((root) => {
+    const selectTransfer = (attempt = 0) => {
+      const transferButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        isVisible(button) && normalize(button.textContent).includes('transferencia'),
+      );
+      if (transferButton) {
+        transferButton.click();
+        return;
+      }
+      if (attempt < 10) window.setTimeout(() => selectTransfer(attempt + 1), 60);
+    };
+    selectTransfer();
+  });
+}
+
+function openStatementImport() {
+  sessionStorage.setItem('mf-simple-route', JSON.stringify({ primary: 'movements' } satisfies RouteState));
+  clickLegacy(['Histórico']);
+  delayed(['Importar extrato'], 120);
 }
 
 function inferRoute(): RouteState {
@@ -205,22 +261,50 @@ function inferRoute(): RouteState {
   const activeSubs = Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-content button.active')).map((button) => normalize(button.textContent));
 
   if (top.includes('historico')) return { primary: 'movements' };
-  if (top.includes('cartoes')) return { primary: 'cards' };
-  if (top.includes('renda e folha') || top.includes('preferencias')) return { primary: 'income' };
+  if (top.includes('cartoes')) return { primary: 'organize', sub: 'cards' };
+  if (top.includes('renda e folha') || top.includes('preferencias')) return { primary: 'organize', sub: 'income' };
+
   if (top.includes('analises')) {
     if (activeSubs.some((item) => item.includes('insights'))) return { primary: 'analysis', sub: 'insights' };
     if (activeSubs.some((item) => item.includes('saude'))) return { primary: 'analysis', sub: 'health' };
     if (activeSubs.some((item) => item.includes('metas'))) return { primary: 'analysis', sub: 'goals' };
     return { primary: 'analysis', sub: 'summary' };
   }
+
   if (top.includes('contas')) {
-    if (activeSubs.some((item) => item.includes('investimentos'))) return saved?.primary === 'analysis' ? saved : { primary: 'analysis', sub: 'investments' };
-    if (activeSubs.some((item) => item.includes('assinaturas'))) return { primary: 'accounts', sub: 'subscriptions' };
-    if (activeSubs.some((item) => item.includes('orcamentos'))) return { primary: 'accounts', sub: 'budgets' };
-    return { primary: 'accounts', sub: 'fixed' };
+    if (activeSubs.some((item) => item.includes('investimentos'))) return { primary: 'organize', sub: 'investments' };
+    if (activeSubs.some((item) => item.includes('assinaturas'))) return { primary: 'organize', sub: 'subscriptions' };
+    return { primary: 'organize', sub: 'accounts' };
   }
+
+  if (saved?.primary === 'organize' && saved.sub === 'income' && document.querySelector('#mf-income-payroll-center-root')) {
+    return saved;
+  }
+
   return { primary: 'home' };
 }
+
+const primaryItems = [
+  { id: 'home' as const, label: 'Início', icon: LayoutDashboard },
+  { id: 'movements' as const, label: 'Movimentações', icon: Receipt },
+  { id: 'organize' as const, label: 'Organizar', icon: CircleDollarSign },
+  { id: 'analysis' as const, label: 'Análises', icon: BarChart3 },
+];
+
+const organizeItems = [
+  { id: 'accounts' as const, label: 'Contas', icon: CircleDollarSign },
+  { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
+  { id: 'income' as const, label: 'Renda', icon: FileText },
+  { id: 'subscriptions' as const, label: 'Assinaturas', icon: ListChecks },
+  { id: 'investments' as const, label: 'Investimentos', icon: Landmark },
+];
+
+const analysisItems = [
+  { id: 'summary' as const, label: 'Resumo', icon: BarChart3 },
+  { id: 'insights' as const, label: 'Insights', icon: Lightbulb },
+  { id: 'health' as const, label: 'Saúde', icon: HeartPulse },
+  { id: 'goals' as const, label: 'Metas', icon: Target },
+];
 
 function SimpleNavigation() {
   const [route, setRoute] = useState<RouteState>({ primary: 'home' });
@@ -229,7 +313,7 @@ function SimpleNavigation() {
     const sync = () => {
       suppressLegacyNavigation();
       const next = inferRoute();
-      syncIncomePayrollLayer(next.primary === 'income');
+      syncIncomePayrollLayer(next.primary === 'organize' && next.sub === 'income');
       setRoute(next);
     };
 
@@ -246,29 +330,10 @@ function SimpleNavigation() {
     };
   }, []);
 
-  const primaryItems = useMemo(() => [
-    { id: 'home' as const, label: 'Início', icon: LayoutDashboard },
-    { id: 'movements' as const, label: 'Movimentações', icon: Receipt },
-    { id: 'accounts' as const, label: 'Contas', icon: CircleDollarSign },
-    { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
-    { id: 'income' as const, label: 'Renda', icon: FileText },
-    { id: 'analysis' as const, label: 'Análises', icon: BarChart3 },
-  ], []);
-
-  const subItems = route.primary === 'accounts'
-    ? [
-        { id: 'fixed' as const, label: 'Fixas', icon: Repeat2 },
-        { id: 'subscriptions' as const, label: 'Assinaturas', icon: ListChecks },
-        { id: 'budgets' as const, label: 'Orçamentos', icon: PiggyBank },
-      ]
+  const subItems = route.primary === 'organize'
+    ? organizeItems
     : route.primary === 'analysis'
-      ? [
-          { id: 'summary' as const, label: 'Resumo', icon: BarChart3 },
-          { id: 'insights' as const, label: 'Insights', icon: Lightbulb },
-          { id: 'health' as const, label: 'Saúde', icon: HeartPulse },
-          { id: 'goals' as const, label: 'Metas', icon: Target },
-          { id: 'investments' as const, label: 'Investimentos', icon: Landmark },
-        ]
+      ? analysisItems
       : [];
 
   return (
@@ -276,41 +341,98 @@ function SimpleNavigation() {
       <style>{`
         #mf-simple-navigation-app { width:100%; min-width:0; }
         #mf-simple-navigation-root { width:100%; min-width:0; }
-        .mf-simple-main,.mf-simple-sub { display:flex; align-items:center; gap:6px; overflow-x:auto; scrollbar-width:none; }
-        .mf-simple-main::-webkit-scrollbar,.mf-simple-sub::-webkit-scrollbar { display:none; }
-        .mf-simple-nav { width:100%; display:flex; flex-direction:column; gap:7px; }
-        .mf-simple-button { flex:0 0 auto; display:inline-flex; align-items:center; gap:7px; border-radius:12px; padding:8px 11px; color:rgba(255,255,255,.52); font-size:11px; font-weight:850; border:1px solid transparent; transition:.18s ease; }
+        .mf-simple-nav { width:100%; display:flex; flex-direction:column; gap:6px; }
+        .mf-simple-main,.mf-simple-sub,.mf-simple-quick { display:flex; align-items:center; gap:6px; overflow-x:auto; scrollbar-width:none; }
+        .mf-simple-main::-webkit-scrollbar,.mf-simple-sub::-webkit-scrollbar,.mf-simple-quick::-webkit-scrollbar { display:none; }
+        .mf-simple-main { justify-content:center; }
+        .mf-simple-button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:11px; padding:8px 13px; color:rgba(255,255,255,.58); font-size:11px; font-weight:850; border:1px solid transparent; background:transparent; transition:.18s ease; white-space:nowrap; }
         .mf-simple-button:hover { color:#fff; background:rgba(255,255,255,.055); }
-        .mf-simple-button.active { color:#050505; background:var(--brand-primary,#00f2ff); box-shadow:0 0 20px rgba(0,242,255,.13); }
-        .mf-simple-sub .mf-simple-button { padding:6px 10px; font-size:10px; background:rgba(255,255,255,.035); border-color:rgba(255,255,255,.06); }
-        .mf-simple-sub .mf-simple-button.active { color:var(--brand-primary,#00f2ff); background:rgba(0,242,255,.08); border-color:rgba(0,242,255,.2); }
-        .mf-income-quick-action { color:rgba(255,255,255,.7)!important; }
-        .mf-income-quick-action:hover { color:var(--brand-primary,#00f2ff)!important; border-color:rgba(0,242,255,.22)!important; background:rgba(0,242,255,.06)!important; }
-        @media(max-width:980px){ .mf-simple-main .mf-simple-button span{display:none}.mf-simple-main .mf-simple-button{padding:9px} }
+        .mf-simple-main .mf-simple-button.active { color:#041114; background:var(--brand-primary,#00f2ff); box-shadow:0 0 20px rgba(0,242,255,.13); }
+        .mf-simple-sub { justify-content:center; }
+        .mf-simple-sub .mf-simple-button { padding:5px 9px; font-size:10px; color:rgba(255,255,255,.5); background:rgba(255,255,255,.025); border-color:rgba(255,255,255,.055); }
+        .mf-simple-sub .mf-simple-button.active { color:var(--brand-primary,#00f2ff); background:rgba(0,242,255,.075); border-color:rgba(0,242,255,.2); }
+        .mf-simple-context-label { flex:0 0 auto; display:inline-flex; align-items:center; padding-right:3px; color:rgba(255,255,255,.28); font-size:9px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+        .mf-simple-quick { justify-content:center; }
+        .mf-simple-quick-label { flex:0 0 auto; display:inline-flex; align-items:center; gap:4px; color:rgba(255,255,255,.34); font-size:9px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
+        .mf-simple-quick-button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:25px; padding:4px 9px; border-radius:9px; border:1px solid rgba(0,242,255,.11); background:rgba(0,242,255,.035); color:rgba(255,255,255,.68); font-size:9px; font-weight:800; white-space:nowrap; transition:.16s ease; }
+        .mf-simple-quick-button:hover { color:var(--brand-primary,#00f2ff); border-color:rgba(0,242,255,.28); background:rgba(0,242,255,.075); }
+        @media(max-width:1100px){
+          .mf-simple-quick-label{display:none}
+          .mf-simple-quick-button{padding-inline:7px}
+        }
+        @media(max-width:820px){
+          .mf-simple-main{justify-content:flex-start}
+          .mf-simple-sub,.mf-simple-quick{justify-content:flex-start}
+          .mf-simple-main .mf-simple-button span{display:inline}
+          .mf-simple-button{padding:7px 10px}
+        }
+        @media(max-width:560px){
+          .mf-simple-context-label{display:none}
+          .mf-simple-quick-button span{display:none}
+          .mf-simple-quick-button{width:31px;padding:5px}
+        }
       `}</style>
-      <nav className="mf-simple-nav" aria-label="Ferramentas financeiras">
+
+      <nav className="mf-simple-nav" aria-label="Navegação financeira">
         <div className="mf-simple-main">
           {primaryItems.map((item) => (
-            <button data-mf-simple-nav="true" key={item.id} type="button" className={`mf-simple-button ${route.primary === item.id ? 'active' : ''}`} onClick={() => go({ primary: item.id, sub: item.id === 'accounts' ? 'fixed' : item.id === 'analysis' ? 'summary' : undefined })}>
+            <button
+              data-mf-simple-nav="true"
+              key={item.id}
+              type="button"
+              className={`mf-simple-button ${route.primary === item.id ? 'active' : ''}`}
+              onClick={() => go({
+                primary: item.id,
+                sub: item.id === 'organize' ? 'accounts' : item.id === 'analysis' ? 'summary' : undefined,
+              })}
+            >
               <item.icon size={15}/><span>{item.label}</span>
             </button>
           ))}
         </div>
+
+        {route.primary === 'home' && (
+          <div className="mf-simple-quick" aria-label="Ações rápidas">
+            <span className="mf-simple-quick-label"><Zap size={11}/>Ações rápidas</span>
+            <button type="button" className="mf-simple-quick-button" onClick={triggerUnifiedLauncher}>
+              <Plus size={12}/><span>Lançar</span>
+            </button>
+            <button type="button" className="mf-simple-quick-button" onClick={openStatementImport}>
+              <Upload size={12}/><span>Importar extrato</span>
+            </button>
+            <button type="button" className="mf-simple-quick-button" onClick={() => go({ primary: 'organize', sub: 'accounts' })}>
+              <CircleDollarSign size={12}/><span>Contas a pagar</span>
+            </button>
+            <button type="button" className="mf-simple-quick-button" onClick={openTransferLauncher}>
+              <ArrowLeftRight size={12}/><span>Transferência</span>
+            </button>
+          </div>
+        )}
+
         {subItems.length > 0 && (
           <div className="mf-simple-sub">
+            <span className="mf-simple-context-label">{route.primary === 'organize' ? 'Organizar' : 'Análises'}</span>
             {subItems.map((item) => (
-              <button data-mf-simple-nav="true" key={item.id} type="button" className={`mf-simple-button ${route.sub === item.id ? 'active' : ''}`} onClick={() => go({ primary: route.primary, sub: item.id })}>
+              <button
+                data-mf-simple-nav="true"
+                key={item.id}
+                type="button"
+                className={`mf-simple-button ${route.sub === item.id ? 'active' : ''}`}
+                onClick={() => go({ primary: route.primary, sub: item.id })}
+              >
                 <item.icon size={13}/><span>{item.label}</span>
               </button>
             ))}
           </div>
         )}
-        {route.primary === 'income' && (
+
+        {route.primary === 'organize' && route.sub === 'income' && (
           <div className="mf-simple-sub" aria-label="Atalhos de renda">
-            <button data-mf-simple-nav="true" type="button" className="mf-simple-button mf-income-quick-action" onClick={() => openIncomeLauncher('Renda extra', false)}>
+            <span className="mf-simple-context-label">Atalhos</span>
+            <button data-mf-simple-nav="true" type="button" className="mf-simple-button" onClick={() => openIncomeLauncher('Renda extra', false)}>
               <span>+ Renda extra</span>
             </button>
-            <button data-mf-simple-nav="true" type="button" className="mf-simple-button mf-income-quick-action" onClick={() => openIncomeLauncher('Benefícios', true)}>
+            <button data-mf-simple-nav="true" type="button" className="mf-simple-button" onClick={() => openIncomeLauncher('Benefícios', true)}>
               <span>+ Benefício</span>
             </button>
           </div>
