@@ -1,11 +1,12 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Auth from './components/Auth';
-import DashboardBootstrap from './components/DashboardBootstrap';
 import ConfigRequired from './components/ConfigRequired';
-import MaintenanceScreen from './components/MaintenanceScreen';
 import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
+
+const DashboardBootstrap = lazy(() => import('./components/DashboardBootstrap'));
+const MaintenanceScreen = lazy(() => import('./components/MaintenanceScreen'));
 
 const ADMIN_LOGIN_PATH = '/admin-login';
 const ADMIN_OAUTH_INTENT = 'mf-admin-oauth-intent';
@@ -78,6 +79,17 @@ function rememberConfirmedEmail(email: string | null | undefined) {
   }
 
   window.dispatchEvent(new CustomEvent('mf:confirmed-email', { detail: normalized }));
+}
+
+function LoadingScreen({ label = 'Carregando MF Financeiro' }: { label?: string }) {
+  return (
+    <div className="flex h-screen items-center justify-center bg-[#050505]" role="status" aria-live="polite" aria-label={label}>
+      <div className="text-center">
+        <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" aria-hidden="true" />
+        <span className="sr-only">{label}</span>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -293,13 +305,7 @@ export default function App() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[#050505]">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" />
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   if (!isSupabaseConfigured()) return <ConfigRequired />;
 
@@ -311,9 +317,9 @@ export default function App() {
 
   if (validatingAdminEntry || (session && (adminRoute || adminIntent) && !isAdmin)) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#050505]">
+      <div className="flex h-screen items-center justify-center bg-[#050505]" role="status" aria-live="polite">
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" />
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" aria-hidden="true" />
           <p className="mt-4 text-xs font-bold uppercase tracking-widest text-white/35">Validando acesso administrativo</p>
         </div>
       </div>
@@ -322,15 +328,21 @@ export default function App() {
 
   if (maintenanceEnabled && !isAdmin) {
     if (!session && (hiddenAdminLogin || adminRoute)) return <Auth />;
-    return <MaintenanceScreen message={maintenance?.maintenance_message} />;
+    return (
+      <Suspense fallback={<LoadingScreen label="Carregando manutenção" />}>
+        <MaintenanceScreen message={maintenance?.maintenance_message} />
+      </Suspense>
+    );
   }
 
   if (!session) return <Auth />;
 
   return (
-    <DashboardBootstrap
-      user={session.user}
-      isMaintenanceBypass={isAdmin && maintenanceEnabled}
-    />
+    <Suspense fallback={<LoadingScreen label="Carregando sua área financeira" />}>
+      <DashboardBootstrap
+        user={session.user}
+        isMaintenanceBypass={isAdmin && maintenanceEnabled}
+      />
+    </Suspense>
   );
 }
