@@ -27,6 +27,9 @@ function installSidebarAccountMenu() {
     style.id = styleId;
     style.textContent = `
       .mf-side-shortcuts,.mf-side-settings{display:none!important}
+      body.mf-sidebar-navigation-active .mf-top-actions > button.primary,
+      body.mf-sidebar-navigation-active .mf-top-actions > button[title="Sair"],
+      body.mf-sidebar-navigation-active #mf-profile-action-host{display:none!important}
       .mf-side-account-wrap{position:relative;flex:0 0 auto;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)}
       .mf-side-account{width:100%;min-height:42px;display:flex;align-items:center;gap:9px;padding:7px 8px;border:1px solid rgba(255,255,255,.065);border-radius:11px;color:rgba(255,255,255,.62);background:rgba(255,255,255,.025);text-align:left;transition:.16s ease}
       .mf-side-account:hover,.mf-side-account.open{color:#fff;border-color:rgba(0,242,255,.16);background:rgba(0,242,255,.045)}
@@ -70,6 +73,9 @@ function installSidebarAccountMenu() {
       .find((button) => normalize(button.getAttribute('title')) === wanted) || null;
   };
 
+  const profileButton = () =>
+    document.querySelector<HTMLButtonElement>('#mf-profile-action-host .mf-profile-trigger');
+
   const ensureMenu = () => {
     const panel = document.querySelector<HTMLElement>('.mf-side-panel');
     if (!panel || panel.querySelector('#mf-sidebar-account-tools')) return;
@@ -108,9 +114,8 @@ function installSidebarAccountMenu() {
       return button;
     };
 
+    addAction('Perfil', () => profileButton()?.click());
     addAction('Preferências', () => legacyNavButton('Preferências')?.click());
-    addAction('Notificações', () => topActionButton('Notificações')?.click());
-    addAction('Privacidade', () => topActionButton('Privacidade')?.click());
     const adminAction = addAction('Administração', () => legacyNavButton('Admin')?.click(), 'mf-account-admin');
     addAction('Sair', () => topActionButton('Sair')?.click(), 'mf-account-signout');
 
