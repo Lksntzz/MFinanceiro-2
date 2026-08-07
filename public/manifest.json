@@ -1,21 +1,23 @@
 {
-  "name": "MFinanceiro - Controle Inteligente",
-  "short_name": "MFinanceiro",
+  "name": "MF Financeiro - Controle Financeiro Inteligente",
+  "short_name": "MF Financeiro",
   "description": "Seu controle financeiro inteligente de ponta a ponta.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050505",
-  "theme_color": "#00f2ff",
+  "theme_color": "#071221",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
-      "sizes": "192x192",
-      "type": "image/png"
+      "src": "/mf-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "/mf-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }
