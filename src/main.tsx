@@ -1,4 +1,5 @@
 // Bank format adapters are pure parsing compatibility layers.
+import './lib/unified-transaction-launcher-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
