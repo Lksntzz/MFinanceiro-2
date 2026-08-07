@@ -226,6 +226,10 @@ export default function Dashboard({
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
+  const [analyticsTransactions, setAnalyticsTransactions] = useState<Transaction[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsComplete, setAnalyticsComplete] = useState(false);
+  const analyticsRequestRef = useRef(0);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -313,6 +317,47 @@ export default function Dashboard({
     );
   }
 
+  async function hydrateAnalyticsLedger(seed: LedgerPage) {
+    const requestId = ++analyticsRequestRef.current;
+    let rows = seed.items;
+    let hasMore = seed.has_more;
+    let cursor = seed.next_cursor;
+
+    setAnalyticsLoading(hasMore);
+    setAnalyticsComplete(!hasMore);
+
+    try {
+      while (hasMore) {
+        if (!cursor) throw new Error('O ledger informou mais páginas sem fornecer cursor.');
+        const { data, error: pageError } = await db.rpc('mf_get_ledger_page', {
+          p_page_size: 250,
+          p_cursor_date: cursor.date,
+          p_cursor_created_at: cursor.created_at,
+          p_cursor_id: cursor.id,
+        });
+        if (pageError) throw pageError;
+
+        const page = normalizeLedgerPage(data);
+        rows = mergeLedgerRows(rows, page.items);
+        hasMore = page.has_more;
+        cursor = page.next_cursor;
+      }
+
+      if (requestId === analyticsRequestRef.current) {
+        setAnalyticsTransactions(rows);
+        setAnalyticsComplete(true);
+      }
+    } catch (analyticsError) {
+      console.warn('Falha ao consolidar o histórico completo para análises:', analyticsError);
+      if (requestId === analyticsRequestRef.current) {
+        setAnalyticsTransactions(rows);
+        setAnalyticsComplete(false);
+      }
+    } finally {
+      if (requestId === analyticsRequestRef.current) setAnalyticsLoading(false);
+    }
+  }
+
   async function fetchData() {
     setLoading(true);
     setError(null);
@@ -371,6 +416,7 @@ export default function Dashboard({
       setTransactionCount(ledgerPage.total_count);
       setHasMoreTransactions(ledgerPage.has_more);
       setLedgerCursor(ledgerPage.next_cursor);
+      void hydrateAnalyticsLedger(ledgerPage);
       setCards((cardsResult.data || []) as CreditCard[]);
       setInstallments(
         (installmentsResult.data || []).map((item: any) => ({
@@ -412,6 +458,14 @@ export default function Dashboard({
         }
 
         setTransactions((current) => {
+          if (payload.eventType === 'DELETE') {
+            return current.filter((item) => item.id !== rowId);
+          }
+          const normalized = normalizeTransaction(payload.new);
+          if (!normalized) return current;
+          return mergeLedgerRows(current, [normalized]);
+        });
+        setAnalyticsTransactions((current) => {
           if (payload.eventType === 'DELETE') {
             return current.filter((item) => item.id !== rowId);
           }
@@ -498,6 +552,11 @@ export default function Dashboard({
     }
   }
 
+  const financeTransactions = analyticsComplete ? analyticsTransactions : transactions;
+  const analyticsIncomplete = !analyticsLoading
+    && !analyticsComplete
+    && transactionCount > transactions.length;
+
   useEffect(() => {
     if (!settings) {
       setSummary(null);
@@ -505,12 +564,12 @@ export default function Dashboard({
     }
 
     try {
-      setSummary(calculateFinanceSummary(transactions, settings, fixedBills, cards, installments));
+      setSummary(calculateFinanceSummary(financeTransactions, settings, fixedBills, cards, installments));
     } catch (err) {
       console.error('Summary calculation failed:', err);
       setSummary(null);
     }
-  }, [transactions, settings, fixedBills, cards, installments]);
+  }, [financeTransactions, settings, fixedBills, cards, installments]);
 
   const isAdmin = useMemo(() => {
     const role = String(user.app_metadata?.role || '').toLowerCase();
@@ -521,7 +580,7 @@ export default function Dashboard({
     const totals: Record<string, number> = {};
     let total = 0;
 
-    transactions
+    financeTransactions
       .filter((transaction) => transaction.type === 'expense')
       .forEach((transaction) => {
         const amount = Math.abs(Number(transaction.amount) || 0);
@@ -533,7 +592,7 @@ export default function Dashboard({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
       .map(([name, amount]) => ({ name, amount, percentage: total > 0 ? (amount / total) * 100 : 0 }));
-  }, [transactions]);
+  }, [financeTransactions]);
 
   const latestOverviewTransactions = useMemo(
     () =>
@@ -544,7 +603,7 @@ export default function Dashboard({
   );
 
   const historicalWindow = useMemo(() => {
-    const validDates = transactions
+    const validDates = financeTransactions
       .map((transaction) => parseTransactionDate(transaction.date))
       .filter((date): date is Date => Boolean(date))
       .sort((a, b) => a.getTime() - b.getTime());
@@ -566,7 +625,7 @@ export default function Dashboard({
     const dailyIncome = new Map(keys.map((key) => [key, 0]));
     const dailyExpense = new Map(keys.map((key) => [key, 0]));
 
-    transactions.forEach((transaction) => {
+    financeTransactions.forEach((transaction) => {
       const key = transactionDay(transaction.date);
       if (!dailyNet.has(key)) return;
       const amount = Number(transaction.amount) || 0;
@@ -589,7 +648,7 @@ export default function Dashboard({
       incomes: keys.map((key) => Number((dailyIncome.get(key) || 0).toFixed(2))),
       expenses: keys.map((key) => Number((dailyExpense.get(key) || 0).toFixed(2))),
     };
-  }, [transactions, settings?.current_balance]);
+  }, [financeTransactions, settings?.current_balance]);
 
   const lineChartData = {
     labels: historicalWindow.labels,
@@ -832,13 +891,30 @@ export default function Dashboard({
     }
 
     const result = data as StatementImportRpcResult | null;
-    const insertedCount = Number(result?.inserted_count);
-    if (!result || !Number.isInteger(insertedCount) || insertedCount < 0) {
-      throw new Error('O banco não confirmou quantos lançamentos foram importados.');
+    if (!result) throw new Error('O banco não retornou o resumo da importação.');
+
+    const insertedCount = Number(result.inserted_count);
+    const duplicateCount = Number(result.duplicate_count);
+    const rejectedCount = Number(result.rejected_count);
+    const ignoredCount = Number(result.ignored_count);
+    const counts = [insertedCount, duplicateCount, rejectedCount, ignoredCount];
+    if (counts.some((count) => !Number.isInteger(count) || count < 0)) {
+      throw new Error('O banco retornou uma contagem inválida para a importação.');
     }
 
+    const normalizedResult: StatementImportRpcResult = {
+      ...result,
+      inserted_count: insertedCount,
+      duplicate_count: duplicateCount,
+      rejected_count: rejectedCount,
+      ignored_count: ignoredCount,
+      net_new: Number(result.net_new || 0),
+      balance_before: Number(result.balance_before || 0),
+      balance_after: Number(result.balance_after || 0),
+    };
+
     await fetchData();
-    return insertedCount;
+    return normalizedResult;
   }
 
   async function handleUpdateSettings(nextSettings: UserSettings) {
@@ -1090,7 +1166,8 @@ export default function Dashboard({
               </article>
             </section>
           </main>
-          {loading && <div className="mf-loading">Atualizando dados...</div>}
+          {(loading || analyticsLoading) && <div className="mf-loading">{loading ? 'Atualizando dados...' : 'Consolidando histórico completo...'}</div>}
+          {analyticsIncomplete && <div className="mf-error" role="status"><AlertCircle size={16} />As análises estão usando apenas os lançamentos recentes porque o histórico completo não pôde ser consolidado. Atualize a página para tentar novamente.</div>}
         </>} />
 
         <Route path="/app/movimentacoes/*" element={
@@ -1128,9 +1205,11 @@ export default function Dashboard({
               <button className={analysisSubTab === 'health' ? 'active' : ''} onClick={() => navigate('/app/analises/saude')}>Saúde financeira</button>
               <button className={analysisSubTab === 'goals' ? 'active' : ''} onClick={() => navigate('/app/analises/metas')}>Metas</button>
             </div>
-            {analysisSubTab === 'stats' && <Details transactions={transactions} summary={summary} />}
-            {analysisSubTab === 'insights' && <Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />}
-            {analysisSubTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, item) => sum + Number(item.amount || 0), 0), categoryCount: new Set(transactions.map((item) => item.category)).size }} />}
+            {analyticsLoading && <div className="mf-loading">Consolidando histórico completo...</div>}
+            {analyticsIncomplete && <div className="mf-error" role="status"><AlertCircle size={16} />Não foi possível consolidar todo o histórico. Os indicadores abaixo estão temporariamente limitados aos lançamentos recentes.</div>}
+            {analysisSubTab === 'stats' && <Details transactions={financeTransactions} summary={summary} />}
+            {analysisSubTab === 'insights' && <Insights summary={summary} transactions={financeTransactions} fixedBills={fixedBills} />}
+            {analysisSubTab === 'health' && <FinancialHealth transactions={financeTransactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, item) => sum + Number(item.amount || 0), 0), categoryCount: new Set(financeTransactions.map((item) => item.category)).size }} />}
             {analysisSubTab === 'goals' && <FinancialGoals />}
           </div>
         } />
