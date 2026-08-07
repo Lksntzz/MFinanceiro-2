@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { Camera, CheckCircle2, Save, UserRound, X } from 'lucide-react';
+import { Camera, CheckCircle2, ChevronRight, Save, ShieldCheck, UserRound, X } from 'lucide-react';
+import { useNavigate } from 'react-router';
 
 import { supabase } from '../lib/supabase';
 import { FinancialAccount, UserSettings } from '../types';
@@ -19,6 +20,7 @@ function initials(value: string) {
 }
 
 export default function ProfileCenter({ user, settings, accounts, open, onOpenChange, onSaved }: ProfileCenterProps) {
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
@@ -31,6 +33,8 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
   const friendlyName = settings?.display_name?.trim() || user.user_metadata?.name || user.email?.split('@')[0] || 'Perfil';
   const activeAccount = accounts.find((account) => account.is_default && account.is_active)
     || accounts.find((account) => account.is_active);
+  const role = String(user.app_metadata?.role || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'owner';
 
   useEffect(() => {
     if (!open) return;
@@ -118,6 +122,11 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
     }
   }
 
+  function openAdministration() {
+    onOpenChange(false);
+    navigate('/app/admin');
+  }
+
   return (
     <>
       <button type="button" onClick={() => onOpenChange(true)} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 pr-3 text-[10px] font-bold text-white/70" title="Perfil">
@@ -139,6 +148,27 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
             <label>Nome<input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
             <label>Nome do espaço<input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder={`MF Financeiro de ${displayName || 'você'}`} /></label>
             <label>Saldo confirmado da conta principal<input type="number" step="0.01" value={balance} onChange={(event) => setBalance(event.target.value)} /></label>
+
+            {isAdmin && (
+              <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3">
+                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.18em] text-amber-300/80">Administração</p>
+                <button
+                  type="button"
+                  onClick={openAdministration}
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-left transition hover:border-amber-300/30 hover:bg-amber-400/[0.06]"
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-400/10 text-amber-300"><ShieldCheck size={17} /></span>
+                    <span>
+                      <strong className="block text-xs text-white">Painel administrativo</strong>
+                      <small className="mt-0.5 block text-[9px] text-white/35">Solicitações de acesso e controle de manutenção</small>
+                    </span>
+                  </span>
+                  <ChevronRight size={16} className="text-white/30" />
+                </button>
+              </section>
+            )}
+
             <div className="mf-modal-actions"><button type="button" onClick={() => onOpenChange(false)}>Cancelar</button><button className="primary" disabled={saving}><Save size={14} /> {saving ? 'Salvando...' : 'Salvar perfil'}</button></div>
           </form>
         </div>
