@@ -11,10 +11,13 @@ import {
   LayoutDashboard,
   Lightbulb,
   ListChecks,
+  PieChart,
   Plus,
   Receipt,
   Settings,
+  Sparkles,
   Target,
+  TrendingUp,
   Upload,
   Wallet,
 } from 'lucide-react';
@@ -26,6 +29,8 @@ type NavigationItem = {
   icon: React.ComponentType<{ size?: number }>;
   end?: boolean;
 };
+
+type InvestmentSection = 'portfolio' | 'income' | 'planning';
 
 const primaryItems: NavigationItem[] = [
   { to: '/app', label: 'Início', icon: LayoutDashboard, end: true },
@@ -43,6 +48,16 @@ const planningItems: NavigationItem[] = [
   { to: '/app/planejamento/assinaturas', label: 'Assinaturas', icon: ListChecks },
   { to: '/app/planejamento/investimentos', label: 'Investimentos', icon: Landmark },
   { to: '/app/planejamento/automacoes', label: 'Automação e Open Finance', icon: Bot },
+];
+
+const investmentItems: Array<{
+  section: InvestmentSection;
+  label: string;
+  icon: React.ComponentType<{ size?: number }>;
+}> = [
+  { section: 'portfolio', label: 'Carteira', icon: PieChart },
+  { section: 'income', label: 'Proventos', icon: TrendingUp },
+  { section: 'planning', label: 'Planejamento de aportes', icon: Sparkles },
 ];
 
 const analysisItems: NavigationItem[] = [
@@ -67,10 +82,44 @@ function NavigationLink({ item, compact = false }: { item: NavigationItem; compa
   );
 }
 
+function InvestmentSectionLink({
+  section,
+  label,
+  icon: Icon,
+  activeSection,
+}: {
+  section: InvestmentSection;
+  label: string;
+  icon: React.ComponentType<{ size?: number }>;
+  activeSection: InvestmentSection;
+}) {
+  const search = section === 'portfolio' ? '' : `?section=${section}`;
+  const active = activeSection === section;
+
+  return (
+    <NavLink
+      to={{ pathname: '/app/planejamento/investimentos', search }}
+      className={`mf-side-item compact ${active ? 'active' : ''}`}
+      title={label}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+    >
+      <Icon size={14} aria-hidden="true" /><span>{label}</span>
+    </NavLink>
+  );
+}
+
 export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
   const location = useLocation();
   const inPlanning = location.pathname.startsWith('/app/planejamento');
+  const inInvestments = location.pathname.startsWith('/app/planejamento/investimentos');
   const inAnalysis = location.pathname.startsWith('/app/analises');
+  const requestedInvestmentSection = new URLSearchParams(location.search).get('section');
+  const investmentSection: InvestmentSection = requestedInvestmentSection === 'income'
+    ? 'income'
+    : requestedInvestmentSection === 'planning'
+      ? 'planning'
+      : 'portfolio';
 
   return (
     <aside className="mf-side-panel" aria-label="Navegação financeira">
@@ -86,12 +135,28 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
       <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
       <div className="mf-side-context">
-        {inPlanning && (
+        {inInvestments ? (
+          <section className="mf-side-group" aria-labelledby="mf-investment-navigation-label">
+            <span id="mf-investment-navigation-label" className="mf-side-group-label">Investimentos</span>
+            <nav className="mf-side-group-items" aria-label="Navegação de investimentos">
+              {investmentItems.map((item) => (
+                <InvestmentSectionLink
+                  key={item.section}
+                  section={item.section}
+                  label={item.label}
+                  icon={item.icon}
+                  activeSection={investmentSection}
+                />
+              ))}
+            </nav>
+          </section>
+        ) : inPlanning ? (
           <section className="mf-side-group" aria-labelledby="mf-planning-navigation-label">
             <span id="mf-planning-navigation-label" className="mf-side-group-label">Planejamento</span>
             <nav className="mf-side-group-items" aria-label="Navegação de planejamento">{planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</nav>
           </section>
-        )}
+        ) : null}
+
         {inAnalysis && (
           <section className="mf-side-group" aria-labelledby="mf-analysis-navigation-label">
             <span id="mf-analysis-navigation-label" className="mf-side-group-label">Entender seus dados</span>
