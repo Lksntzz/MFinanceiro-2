@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { User } from '@supabase/supabase-js';
 import { Camera, CheckCircle2, ChevronRight, Save, ShieldCheck, UserRound, X } from 'lucide-react';
 import { useNavigate } from 'react-router';
@@ -49,6 +50,15 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
   useEffect(() => () => {
     if (avatarPreview?.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
   }, [avatarPreview]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) onOpenChange(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onOpenChange, saving]);
 
   function chooseAvatar(file?: File) {
     if (!file) return;
@@ -127,19 +137,11 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
     navigate('/app/admin');
   }
 
-  return (
-    <>
-      <button type="button" onClick={() => onOpenChange(true)} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 pr-3 text-[10px] font-bold text-white/70" title="Perfil">
-        <span className="grid h-7 w-7 place-items-center overflow-hidden rounded-full border border-brand-primary/25 bg-brand-primary/10 text-[9px] text-brand-primary">
-          {settings?.avatar_url ? <img src={settings.avatar_url} alt="Foto do perfil" className="h-full w-full object-cover" /> : initials(friendlyName)}
-        </span>
-        <span className="max-w-24 truncate">{friendlyName.split(/\s+/)[0]}</span>
-      </button>
-
-      {open && (
+  const profileModal = open && typeof document !== 'undefined'
+    ? createPortal(
         <div className="mf-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="mf-profile-title">
           <form className="mf-modal" onSubmit={saveProfile}>
-            <div className="mf-modal-title"><div><h2 id="mf-profile-title">Seu espaço financeiro</h2><p className="mt-1 text-[10px] text-white/35">Perfil, identidade do espaço e saldo confirmado.</p></div><button type="button" onClick={() => onOpenChange(false)}><X size={18} /></button></div>
+            <div className="mf-modal-title"><div><h2 id="mf-profile-title">Seu espaço financeiro</h2><p className="mt-1 text-[10px] text-white/35">Perfil, identidade do espaço e saldo confirmado.</p></div><button type="button" onClick={() => onOpenChange(false)} aria-label="Fechar perfil"><X size={18} /></button></div>
             {error && <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-200">{error}</div>}
             <div className="flex items-center gap-3">
               <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl border border-brand-primary/20 bg-brand-primary/10 text-xl font-black text-brand-primary">{avatarPreview ? <img src={avatarPreview} alt="Prévia da foto" className="h-full w-full object-cover" /> : initials(friendlyName)}</div>
@@ -171,8 +173,20 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
 
             <div className="mf-modal-actions"><button type="button" onClick={() => onOpenChange(false)}>Cancelar</button><button className="primary" disabled={saving}><Save size={14} /> {saving ? 'Salvando...' : 'Salvar perfil'}</button></div>
           </form>
-        </div>
-      )}
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <>
+      <button type="button" onClick={() => onOpenChange(true)} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 pr-3 text-[10px] font-bold text-white/70" title="Perfil">
+        <span className="grid h-7 w-7 place-items-center overflow-hidden rounded-full border border-brand-primary/25 bg-brand-primary/10 text-[9px] text-brand-primary">
+          {settings?.avatar_url ? <img src={settings.avatar_url} alt="Foto do perfil" className="h-full w-full object-cover" /> : initials(friendlyName)}
+        </span>
+        <span className="max-w-24 truncate">{friendlyName.split(/\s+/)[0]}</span>
+      </button>
+      {profileModal}
     </>
   );
 }
