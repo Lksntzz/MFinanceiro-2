@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   ArrowLeftRight,
   BarChart3,
+  CalendarDays,
   CircleDollarSign,
   CreditCard,
   FileText,
@@ -13,9 +14,10 @@ import {
   ListChecks,
   Plus,
   Receipt,
+  Settings,
   Target,
   Upload,
-  Zap,
+  Wallet,
 } from 'lucide-react';
 
 type Primary = 'home' | 'movements' | 'organize' | 'analysis';
@@ -23,6 +25,7 @@ type Subroute =
   | 'accounts'
   | 'cards'
   | 'income'
+  | 'calendar'
   | 'subscriptions'
   | 'investments'
   | 'summary'
@@ -154,6 +157,10 @@ function go(route: RouteState) {
     }
 
     clickLegacy(['Contas']);
+    if (route.sub === 'calendar') {
+      delayed(['Calendário'], 90);
+      return;
+    }
     if (route.sub === 'subscriptions') {
       delayed(['Assinaturas'], 90);
       return;
@@ -194,38 +201,6 @@ function waitForLauncher(callback: (root: HTMLElement) => void, attempt = 0) {
     return;
   }
   if (attempt < 24) window.setTimeout(() => waitForLauncher(callback, attempt + 1), 50);
-}
-
-function openIncomeLauncher(category: 'Renda extra' | 'Benefícios', benefitMethod: boolean) {
-  triggerUnifiedLauncher();
-
-  waitForLauncher((root) => {
-    const incomeButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      isVisible(button) && normalize(button.textContent) === 'entrada',
-    );
-    incomeButton?.click();
-
-    window.setTimeout(() => {
-      const select = Array.from(root.querySelectorAll<HTMLSelectElement>('select')).find((candidate) =>
-        Array.from(candidate.options).some((option) => option.value === category || option.textContent?.trim() === category),
-      );
-      if (select) {
-        const option = Array.from(select.options).find((item) => item.value === category || item.textContent?.trim() === category);
-        if (option) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
-          setter?.call(select, option.value);
-          select.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      }
-
-      if (benefitMethod) {
-        const benefitButton = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-          isVisible(button) && normalize(button.textContent) === 'beneficio',
-        );
-        benefitButton?.click();
-      }
-    }, 60);
-  });
 }
 
 function openTransferLauncher() {
@@ -272,6 +247,7 @@ function inferRoute(): RouteState {
   }
 
   if (top.includes('contas')) {
+    if (activeSubs.some((item) => item.includes('calendario'))) return { primary: 'organize', sub: 'calendar' };
     if (activeSubs.some((item) => item.includes('investimentos'))) return { primary: 'organize', sub: 'investments' };
     if (activeSubs.some((item) => item.includes('assinaturas'))) return { primary: 'organize', sub: 'subscriptions' };
     return { primary: 'organize', sub: 'accounts' };
@@ -287,29 +263,71 @@ function inferRoute(): RouteState {
 const primaryItems = [
   { id: 'home' as const, label: 'Início', icon: LayoutDashboard },
   { id: 'movements' as const, label: 'Movimentações', icon: Receipt },
-  { id: 'organize' as const, label: 'Organizar', icon: CircleDollarSign },
+  { id: 'organize' as const, label: 'Planejamento', icon: Wallet },
   { id: 'analysis' as const, label: 'Análises', icon: BarChart3 },
 ];
 
-const organizeItems = [
+const moneyItems = [
   { id: 'accounts' as const, label: 'Contas', icon: CircleDollarSign },
-  { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
+  { id: 'cards' as const, label: 'Cartões e parcelas', icon: CreditCard },
   { id: 'income' as const, label: 'Renda', icon: FileText },
+];
+
+const commitmentItems = [
+  { id: 'calendar' as const, label: 'Calendário', icon: CalendarDays },
   { id: 'subscriptions' as const, label: 'Assinaturas', icon: ListChecks },
+];
+
+const futureItems = [
   { id: 'investments' as const, label: 'Investimentos', icon: Landmark },
 ];
 
 const analysisItems = [
-  { id: 'summary' as const, label: 'Resumo', icon: BarChart3 },
+  { id: 'summary' as const, label: 'Visão geral', icon: BarChart3 },
   { id: 'insights' as const, label: 'Insights', icon: Lightbulb },
-  { id: 'health' as const, label: 'Saúde', icon: HeartPulse },
+  { id: 'health' as const, label: 'Saúde financeira', icon: HeartPulse },
   { id: 'goals' as const, label: 'Metas', icon: Target },
 ];
+
+function SideItem({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active?: boolean;
+  icon: React.ComponentType<{ size?: number }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`mf-side-item ${active ? 'active' : ''}`} onClick={onClick} title={label}>
+      <Icon size={16}/><span>{label}</span>
+    </button>
+  );
+}
+
+function SideGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mf-side-group">
+      <span className="mf-side-group-label">{label}</span>
+      <div className="mf-side-group-items">{children}</div>
+    </section>
+  );
+}
 
 function SimpleNavigation() {
   const [route, setRoute] = useState<RouteState>({ primary: 'home' });
 
   useEffect(() => {
+    document.body.classList.add('mf-sidebar-navigation-active');
+
     const sync = () => {
       suppressLegacyNavigation();
       const next = inferRoute();
@@ -324,120 +342,183 @@ function SimpleNavigation() {
     window.addEventListener('resize', sync);
 
     return () => {
+      document.body.classList.remove('mf-sidebar-navigation-active');
       observer.disconnect();
       window.clearInterval(timer);
       window.removeEventListener('resize', sync);
     };
   }, []);
 
-  const subItems = route.primary === 'organize'
-    ? organizeItems
-    : route.primary === 'analysis'
-      ? analysisItems
-      : [];
-
   return (
     <div id="mf-simple-navigation-root">
       <style>{`
-        #mf-simple-navigation-app { width:100%; min-width:0; }
-        #mf-simple-navigation-root { width:100%; min-width:0; }
-        .mf-simple-nav { width:100%; display:flex; flex-direction:column; gap:6px; }
-        .mf-simple-main,.mf-simple-sub,.mf-simple-quick { display:flex; align-items:center; gap:6px; overflow-x:auto; scrollbar-width:none; }
-        .mf-simple-main::-webkit-scrollbar,.mf-simple-sub::-webkit-scrollbar,.mf-simple-quick::-webkit-scrollbar { display:none; }
-        .mf-simple-main { justify-content:center; }
-        .mf-simple-button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:11px; padding:8px 13px; color:rgba(255,255,255,.58); font-size:11px; font-weight:850; border:1px solid transparent; background:transparent; transition:.18s ease; white-space:nowrap; }
-        .mf-simple-button:hover { color:#fff; background:rgba(255,255,255,.055); }
-        .mf-simple-main .mf-simple-button.active { color:#041114; background:var(--brand-primary,#00f2ff); box-shadow:0 0 20px rgba(0,242,255,.13); }
-        .mf-simple-sub { justify-content:center; }
-        .mf-simple-sub .mf-simple-button { padding:5px 9px; font-size:10px; color:rgba(255,255,255,.5); background:rgba(255,255,255,.025); border-color:rgba(255,255,255,.055); }
-        .mf-simple-sub .mf-simple-button.active { color:var(--brand-primary,#00f2ff); background:rgba(0,242,255,.075); border-color:rgba(0,242,255,.2); }
-        .mf-simple-context-label { flex:0 0 auto; display:inline-flex; align-items:center; padding-right:3px; color:rgba(255,255,255,.28); font-size:9px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
-        .mf-simple-quick { justify-content:center; }
-        .mf-simple-quick-label { flex:0 0 auto; display:inline-flex; align-items:center; gap:4px; color:rgba(255,255,255,.34); font-size:9px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
-        .mf-simple-quick-button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:25px; padding:4px 9px; border-radius:9px; border:1px solid rgba(0,242,255,.11); background:rgba(0,242,255,.035); color:rgba(255,255,255,.68); font-size:9px; font-weight:800; white-space:nowrap; transition:.16s ease; }
-        .mf-simple-quick-button:hover { color:var(--brand-primary,#00f2ff); border-color:rgba(0,242,255,.28); background:rgba(0,242,255,.075); }
-        @media(max-width:1100px){
-          .mf-simple-quick-label{display:none}
-          .mf-simple-quick-button{padding-inline:7px}
+        #mf-simple-navigation-app { position:fixed; inset:0 auto 0 0; width:0; height:0; z-index:120; }
+        #mf-simple-navigation-root { width:auto; min-width:0; }
+
+        body.mf-sidebar-navigation-active .mf-nav { display:none!important; }
+        body.mf-sidebar-navigation-active .mf-brand { display:none!important; }
+        body.mf-sidebar-navigation-active .mf-topbar {
+          grid-template-columns:minmax(0,1fr) auto!important;
+          min-height:36px;
         }
-        @media(max-width:820px){
-          .mf-simple-main{justify-content:flex-start}
-          .mf-simple-sub,.mf-simple-quick{justify-content:flex-start}
-          .mf-simple-main .mf-simple-button span{display:inline}
-          .mf-simple-button{padding:7px 10px}
+        body.mf-sidebar-navigation-active .mf-top-actions { grid-column:2; justify-self:end; }
+        body.mf-sidebar-navigation-active .mf-app-shell {
+          padding-left:max(210px, calc(194px + var(--mf-page-pad-x, 12px)))!important;
         }
-        @media(max-width:560px){
-          .mf-simple-context-label{display:none}
-          .mf-simple-quick-button span{display:none}
-          .mf-simple-quick-button{width:31px;padding:5px}
+
+        .mf-side-panel {
+          position:fixed;
+          left:max(10px, env(safe-area-inset-left));
+          top:max(10px, env(safe-area-inset-top));
+          bottom:max(10px, env(safe-area-inset-bottom));
+          width:184px;
+          display:flex;
+          flex-direction:column;
+          gap:13px;
+          padding:14px 11px 12px;
+          border:1px solid rgba(255,255,255,.07);
+          border-radius:18px;
+          background:linear-gradient(180deg, rgba(16,20,24,.97), rgba(8,11,14,.985));
+          box-shadow:0 18px 54px rgba(0,0,0,.28);
+          backdrop-filter:blur(18px);
+          overflow:hidden;
+        }
+        .mf-side-brand { display:flex; align-items:center; gap:9px; min-height:36px; padding:2px 5px 9px; border-bottom:1px solid rgba(255,255,255,.065); }
+        .mf-side-brand-mark { width:31px; height:31px; flex:0 0 31px; display:grid; place-items:center; border-radius:10px; color:#041114; background:var(--brand-primary,#00f2ff); font-size:15px; font-weight:950; }
+        .mf-side-brand-copy { min-width:0; display:flex; flex-direction:column; }
+        .mf-side-brand-copy strong { color:#fff; font-size:12px; letter-spacing:-.01em; }
+        .mf-side-brand-copy small { color:rgba(255,255,255,.3); font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+
+        .mf-side-primary { display:flex; flex-direction:column; gap:4px; }
+        .mf-side-item {
+          width:100%; min-height:35px; display:flex; align-items:center; gap:9px; padding:8px 9px; border:1px solid transparent; border-radius:10px;
+          background:transparent; color:rgba(255,255,255,.55); font-size:10.5px; font-weight:820; text-align:left; transition:.16s ease;
+        }
+        .mf-side-item:hover { color:#fff; background:rgba(255,255,255,.045); }
+        .mf-side-item.active { color:#ecfeff; border-color:rgba(0,242,255,.18); background:rgba(0,242,255,.085); box-shadow:inset 2px 0 0 var(--brand-primary,#00f2ff); }
+        .mf-side-item svg { flex:0 0 auto; opacity:.82; }
+        .mf-side-item.active svg { color:var(--brand-primary,#00f2ff); opacity:1; }
+
+        .mf-side-launch {
+          width:100%; min-height:38px; display:flex; align-items:center; justify-content:center; gap:7px; padding:9px; border:0; border-radius:11px;
+          color:#041114; background:var(--brand-primary,#00f2ff); font-size:10.5px; font-weight:950; box-shadow:0 8px 24px rgba(0,242,255,.12);
+        }
+        .mf-side-launch:hover { filter:brightness(1.06); }
+
+        .mf-side-context { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; padding-right:1px; }
+        .mf-side-context::-webkit-scrollbar { display:none; }
+        .mf-side-context-title { display:block; margin:2px 6px 8px; color:rgba(255,255,255,.78); font-size:10px; font-weight:900; }
+        .mf-side-group { margin-top:11px; }
+        .mf-side-group:first-of-type { margin-top:0; }
+        .mf-side-group-label { display:block; margin:0 8px 4px; color:rgba(255,255,255,.25); font-size:7.5px; font-weight:950; letter-spacing:.11em; text-transform:uppercase; }
+        .mf-side-group-items { display:flex; flex-direction:column; gap:2px; }
+        .mf-side-group .mf-side-item { min-height:30px; padding:6px 8px; font-size:9.5px; border-radius:9px; }
+        .mf-side-group .mf-side-item svg { width:14px; height:14px; }
+
+        .mf-side-shortcuts { margin-top:auto; padding-top:10px; border-top:1px solid rgba(255,255,255,.06); display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+        .mf-side-shortcut { min-width:0; height:31px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.065); border-radius:9px; color:rgba(255,255,255,.48); background:rgba(255,255,255,.025); }
+        .mf-side-shortcut:hover { color:var(--brand-primary,#00f2ff); border-color:rgba(0,242,255,.18); background:rgba(0,242,255,.055); }
+        .mf-side-settings { width:100%; min-height:30px; display:flex; align-items:center; gap:8px; padding:6px 8px; border:0; border-radius:9px; color:rgba(255,255,255,.38); background:transparent; font-size:9px; font-weight:800; }
+        .mf-side-settings:hover { color:#fff; background:rgba(255,255,255,.04); }
+
+        @media (min-width:821px) and (max-width:1180px) {
+          body.mf-sidebar-navigation-active .mf-app-shell { padding-left:max(182px, calc(166px + var(--mf-page-pad-x, 10px)))!important; }
+          .mf-side-panel { width:156px; padding-inline:9px; }
+          .mf-side-brand-copy strong { font-size:11px; }
+          .mf-side-item { font-size:9.5px; padding-inline:8px; }
+          .mf-side-group .mf-side-item { font-size:9px; }
+        }
+
+        @media (max-height:720px) and (min-width:821px) {
+          .mf-side-panel { gap:8px; padding-top:10px; padding-bottom:9px; }
+          .mf-side-brand { min-height:31px; padding-bottom:6px; }
+          .mf-side-primary { gap:2px; }
+          .mf-side-item { min-height:29px; padding-block:5px; }
+          .mf-side-launch { min-height:32px; padding-block:6px; }
+          .mf-side-group { margin-top:6px; }
+          .mf-side-group .mf-side-item { min-height:25px; padding-block:4px; }
+          .mf-side-shortcuts { padding-top:6px; }
+          .mf-side-shortcut { height:27px; }
+        }
+
+        @media (max-width:820px) {
+          #mf-simple-navigation-app { inset:auto 0 0 0; width:auto; height:auto; z-index:160; }
+          body.mf-sidebar-navigation-active .mf-brand { display:flex!important; }
+          body.mf-sidebar-navigation-active .mf-nav { display:none!important; }
+          body.mf-sidebar-navigation-active .mf-topbar { grid-template-columns:minmax(0,1fr) auto!important; }
+          body.mf-sidebar-navigation-active .mf-app-shell { padding-left:max(var(--mf-page-pad-x,8px), env(safe-area-inset-left))!important; padding-bottom:78px!important; }
+          .mf-side-panel {
+            position:fixed; left:8px; right:8px; bottom:max(8px, env(safe-area-inset-bottom)); top:auto; width:auto; height:auto;
+            padding:6px; border-radius:15px; display:block; overflow:visible;
+          }
+          .mf-side-brand,.mf-side-context,.mf-side-shortcuts,.mf-side-settings,.mf-side-launch { display:none; }
+          .mf-side-primary { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; }
+          .mf-side-primary .mf-side-item { min-height:48px; flex-direction:column; justify-content:center; gap:3px; padding:5px 2px; font-size:8px; text-align:center; }
+          .mf-side-primary .mf-side-item.active { box-shadow:inset 0 -2px 0 var(--brand-primary,#00f2ff); }
         }
       `}</style>
 
-      <nav className="mf-simple-nav" aria-label="Navegação financeira">
-        <div className="mf-simple-main">
-          {primaryItems.map((item) => (
-            <button
-              data-mf-simple-nav="true"
-              key={item.id}
-              type="button"
-              className={`mf-simple-button ${route.primary === item.id ? 'active' : ''}`}
-              onClick={() => go({
-                primary: item.id,
-                sub: item.id === 'organize' ? 'accounts' : item.id === 'analysis' ? 'summary' : undefined,
-              })}
-            >
-              <item.icon size={15}/><span>{item.label}</span>
-            </button>
-          ))}
+      <aside className="mf-side-panel" aria-label="Navegação financeira">
+        <div className="mf-side-brand">
+          <div className="mf-side-brand-mark">M</div>
+          <div className="mf-side-brand-copy"><strong>MFinanceiro</strong><small>Central financeira</small></div>
         </div>
 
-        {route.primary === 'home' && (
-          <div className="mf-simple-quick" aria-label="Ações rápidas">
-            <span className="mf-simple-quick-label"><Zap size={11}/>Ações rápidas</span>
-            <button type="button" className="mf-simple-quick-button" onClick={triggerUnifiedLauncher}>
-              <Plus size={12}/><span>Lançar</span>
-            </button>
-            <button type="button" className="mf-simple-quick-button" onClick={openStatementImport}>
-              <Upload size={12}/><span>Importar extrato</span>
-            </button>
-            <button type="button" className="mf-simple-quick-button" onClick={() => go({ primary: 'organize', sub: 'accounts' })}>
-              <CircleDollarSign size={12}/><span>Contas a pagar</span>
-            </button>
-            <button type="button" className="mf-simple-quick-button" onClick={openTransferLauncher}>
-              <ArrowLeftRight size={12}/><span>Transferência</span>
-            </button>
-          </div>
-        )}
+        <nav className="mf-side-primary">
+          {primaryItems.map((item) => (
+            <SideItem
+              key={item.id}
+              active={route.primary === item.id}
+              icon={item.icon}
+              label={item.label}
+              onClick={() => go({ primary: item.id, sub: item.id === 'organize' ? 'accounts' : item.id === 'analysis' ? 'summary' : undefined })}
+            />
+          ))}
+        </nav>
 
-        {subItems.length > 0 && (
-          <div className="mf-simple-sub">
-            <span className="mf-simple-context-label">{route.primary === 'organize' ? 'Organizar' : 'Análises'}</span>
-            {subItems.map((item) => (
-              <button
-                data-mf-simple-nav="true"
-                key={item.id}
-                type="button"
-                className={`mf-simple-button ${route.sub === item.id ? 'active' : ''}`}
-                onClick={() => go({ primary: route.primary, sub: item.id })}
-              >
-                <item.icon size={13}/><span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <button type="button" className="mf-side-launch" onClick={triggerUnifiedLauncher}><Plus size={15}/>Lançar</button>
 
-        {route.primary === 'organize' && route.sub === 'income' && (
-          <div className="mf-simple-sub" aria-label="Atalhos de renda">
-            <span className="mf-simple-context-label">Atalhos</span>
-            <button data-mf-simple-nav="true" type="button" className="mf-simple-button" onClick={() => openIncomeLauncher('Renda extra', false)}>
-              <span>+ Renda extra</span>
-            </button>
-            <button data-mf-simple-nav="true" type="button" className="mf-simple-button" onClick={() => openIncomeLauncher('Benefícios', true)}>
-              <span>+ Benefício</span>
-            </button>
-          </div>
-        )}
-      </nav>
+        <div className="mf-side-context">
+          {route.primary === 'organize' && (
+            <>
+              <span className="mf-side-context-title">Planejamento</span>
+              <SideGroup label="Dinheiro">
+                {moneyItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>)}
+              </SideGroup>
+              <SideGroup label="Compromissos">
+                {commitmentItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>)}
+              </SideGroup>
+              <SideGroup label="Futuro">
+                {futureItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>)}
+              </SideGroup>
+            </>
+          )}
+
+          {route.primary === 'analysis' && (
+            <>
+              <span className="mf-side-context-title">Análises</span>
+              <SideGroup label="Entender seus dados">
+                {analysisItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'analysis', sub: item.id })}/>)}
+              </SideGroup>
+            </>
+          )}
+
+          {route.primary === 'home' && (
+            <div className="mf-side-context-title">Visão rápida e próximos passos.</div>
+          )}
+
+          {route.primary === 'movements' && (
+            <div className="mf-side-context-title">Histórico, filtros e importação.</div>
+          )}
+        </div>
+
+        <div className="mf-side-shortcuts" aria-label="Atalhos rápidos">
+          <button type="button" className="mf-side-shortcut" onClick={openStatementImport} title="Importar extrato"><Upload size={14}/></button>
+          <button type="button" className="mf-side-shortcut" onClick={openTransferLauncher} title="Transferência"><ArrowLeftRight size={14}/></button>
+          <button type="button" className="mf-side-shortcut" onClick={() => go({ primary: 'organize', sub: 'calendar' })} title="Calendário"><CalendarDays size={14}/></button>
+        </div>
+        <button type="button" className="mf-side-settings" onClick={() => clickLegacy(['Preferências'])}><Settings size={13}/>Preferências</button>
+      </aside>
     </div>
   );
 }
@@ -449,16 +530,11 @@ function mount() {
   document.body.appendChild(host);
   createRoot(host).render(<SimpleNavigation/>);
 
-  const place = () => {
-    suppressLegacyNavigation();
-    const nav = document.querySelector<HTMLElement>('.mf-nav');
-    if (nav && host.parentElement !== nav) nav.appendChild(host);
-  };
-
-  place();
-  const observer = new MutationObserver(place);
+  const keep = () => suppressLegacyNavigation();
+  keep();
+  const observer = new MutationObserver(keep);
   observer.observe(document.body, { subtree:true, childList:true });
-  const timer = window.setInterval(place, 500);
+  const timer = window.setInterval(keep, 500);
   window.addEventListener('beforeunload', () => {
     observer.disconnect();
     window.clearInterval(timer);
