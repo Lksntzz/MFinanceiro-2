@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 
 type Primary = 'home' | 'movements' | 'organize' | 'analysis';
+type ExpandablePrimary = Exclude<Primary, 'home'>;
 type Subroute =
   | 'history'
   | 'import'
@@ -323,6 +324,7 @@ function Accordion({ open, children, nested = false }: { open: boolean; children
 
 function SimpleNavigation() {
   const [route, setRoute] = useState<RouteState>({ primary: 'home' });
+  const [expandedPrimary, setExpandedPrimary] = useState<ExpandablePrimary | null>(null);
   const [planningMoreOpen, setPlanningMoreOpen] = useState(false);
 
   useEffect(() => {
@@ -333,9 +335,6 @@ function SimpleNavigation() {
       const next = inferRoute();
       syncIncomePayrollLayer(next.primary === 'organize' && next.sub === 'income');
       setRoute(next);
-      if (next.primary === 'organize' && ['calendar', 'subscriptions', 'investments'].includes(String(next.sub))) {
-        setPlanningMoreOpen(true);
-      }
     };
 
     sync();
@@ -356,11 +355,50 @@ function SimpleNavigation() {
     if (route.primary !== 'organize') setPlanningMoreOpen(false);
   }, [route.primary]);
 
-  const goPrimary = (primary: Primary) => {
-    if (primary === 'home') go({ primary: 'home' });
-    else if (primary === 'movements') go({ primary: 'movements', sub: 'history' });
+  const togglePrimary = (primary: Primary) => {
+    if (primary === 'home') {
+      setExpandedPrimary(null);
+      setPlanningMoreOpen(false);
+      go({ primary: 'home' });
+      return;
+    }
+
+    const expandable = primary as ExpandablePrimary;
+    if (expandedPrimary === expandable) {
+      setExpandedPrimary(null);
+      setPlanningMoreOpen(false);
+      return;
+    }
+
+    setExpandedPrimary(expandable);
+    if (primary !== 'organize') setPlanningMoreOpen(false);
+
+    if (route.primary === primary) return;
+    if (primary === 'movements') go({ primary: 'movements', sub: 'history' });
     else if (primary === 'organize') go({ primary: 'organize', sub: 'accounts' });
     else go({ primary: 'analysis', sub: 'summary' });
+  };
+
+  const selectMovement = (sub: 'history' | 'import') => {
+    setExpandedPrimary('movements');
+    go({ primary: 'movements', sub });
+  };
+
+  const selectPlanning = (sub: 'accounts' | 'cards' | 'income') => {
+    setExpandedPrimary('organize');
+    setPlanningMoreOpen(false);
+    go({ primary: 'organize', sub });
+  };
+
+  const selectPlanningMore = (sub: 'calendar' | 'subscriptions' | 'investments') => {
+    setExpandedPrimary('organize');
+    setPlanningMoreOpen(true);
+    go({ primary: 'organize', sub });
+  };
+
+  const selectAnalysis = (sub: 'summary' | 'insights' | 'health' | 'goals') => {
+    setExpandedPrimary('analysis');
+    go({ primary: 'analysis', sub });
   };
 
   return (
@@ -491,49 +529,49 @@ function SimpleNavigation() {
 
         <nav className="mf-side-primary">
           <div className="mf-side-primary-block">
-            <SideItem active={route.primary === 'home'} icon={LayoutDashboard} label="Início" onClick={() => goPrimary('home')}/>
+            <SideItem active={route.primary === 'home'} icon={LayoutDashboard} label="Início" onClick={() => togglePrimary('home')}/>
           </div>
 
           <div className="mf-side-primary-block">
-            <div className={`mf-side-primary-row ${route.primary === 'movements' ? 'open' : ''}`}>
-              <SideItem active={route.primary === 'movements'} icon={Receipt} label="Movimentações" onClick={() => goPrimary('movements')}/>
+            <div className={`mf-side-primary-row ${expandedPrimary === 'movements' ? 'open' : ''}`}>
+              <SideItem active={route.primary === 'movements'} icon={Receipt} label="Movimentações" onClick={() => togglePrimary('movements')}/>
               <span className="mf-side-chevron"><ChevronDown size={13}/></span>
             </div>
-            <Accordion open={route.primary === 'movements'}>
+            <Accordion open={expandedPrimary === 'movements'}>
               {movementItems.map((item) => (
-                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'movements', sub: item.id })}/>
+                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => selectMovement(item.id)}/>
               ))}
             </Accordion>
           </div>
 
           <div className="mf-side-primary-block">
-            <div className={`mf-side-primary-row ${route.primary === 'organize' ? 'open' : ''}`}>
-              <SideItem active={route.primary === 'organize'} icon={Wallet} label="Planejamento" onClick={() => goPrimary('organize')}/>
+            <div className={`mf-side-primary-row ${expandedPrimary === 'organize' ? 'open' : ''}`}>
+              <SideItem active={route.primary === 'organize'} icon={Wallet} label="Planejamento" onClick={() => togglePrimary('organize')}/>
               <span className="mf-side-chevron"><ChevronDown size={13}/></span>
             </div>
-            <Accordion open={route.primary === 'organize'}>
+            <Accordion open={expandedPrimary === 'organize'}>
               {planningItems.map((item) => (
-                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>
+                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => selectPlanning(item.id)}/>
               ))}
               <button type="button" className={`mf-side-more ${planningMoreOpen ? 'open' : ''}`} onClick={() => setPlanningMoreOpen((value) => !value)}>
                 <MoreHorizontal size={13}/><span>Mais ferramentas</span><span className="mf-side-chevron"><ChevronDown size={12}/></span>
               </button>
               <Accordion nested open={planningMoreOpen}>
                 {planningMoreItems.map((item) => (
-                  <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>
+                  <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => selectPlanningMore(item.id)}/>
                 ))}
               </Accordion>
             </Accordion>
           </div>
 
           <div className="mf-side-primary-block">
-            <div className={`mf-side-primary-row ${route.primary === 'analysis' ? 'open' : ''}`}>
-              <SideItem active={route.primary === 'analysis'} icon={BarChart3} label="Análises" onClick={() => goPrimary('analysis')}/>
+            <div className={`mf-side-primary-row ${expandedPrimary === 'analysis' ? 'open' : ''}`}>
+              <SideItem active={route.primary === 'analysis'} icon={BarChart3} label="Análises" onClick={() => togglePrimary('analysis')}/>
               <span className="mf-side-chevron"><ChevronDown size={13}/></span>
             </div>
-            <Accordion open={route.primary === 'analysis'}>
+            <Accordion open={expandedPrimary === 'analysis'}>
               {analysisItems.map((item) => (
-                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'analysis', sub: item.id })}/>
+                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => selectAnalysis(item.id)}/>
               ))}
             </Accordion>
           </div>
@@ -542,9 +580,9 @@ function SimpleNavigation() {
         <button type="button" className="mf-side-launch" onClick={triggerUnifiedLauncher}><Plus size={15}/>Lançar</button>
 
         <div className="mf-side-shortcuts" aria-label="Atalhos rápidos">
-          <button type="button" className="mf-side-shortcut" onClick={openStatementImport} title="Importar extratos"><Upload size={14}/></button>
+          <button type="button" className="mf-side-shortcut" onClick={() => { setExpandedPrimary('movements'); selectMovement('import'); }} title="Importar extratos"><Upload size={14}/></button>
           <button type="button" className="mf-side-shortcut" onClick={openTransferLauncher} title="Transferência"><ArrowLeftRight size={14}/></button>
-          <button type="button" className="mf-side-shortcut" onClick={() => go({ primary: 'organize', sub: 'calendar' })} title="Calendário"><CalendarDays size={14}/></button>
+          <button type="button" className="mf-side-shortcut" onClick={() => selectPlanningMore('calendar')} title="Calendário"><CalendarDays size={14}/></button>
         </div>
         <button type="button" className="mf-side-settings" onClick={() => clickLegacy(['Preferências'])}><Settings size={13}/>Preferências</button>
       </aside>
