@@ -8,14 +8,19 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const allowedTriggerSources = new Set(["initial", "manual", "scheduled", "webhook", "retry"]);
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
 function env(name: string) { return Deno.env.get(name)?.trim() || ""; }
-function isoDate(value: string) { return new Date(value).toISOString().slice(0, 10); }
+function isoDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
 function accountType(account: PluggyAccount) {
-  if (account.type === "CREDIT") return "credit_card";
+  if (account.type === "CREDIT") return "credit";
   if (account.subtype === "SAVINGS_ACCOUNT") return "savings";
   return "checking";
 }
@@ -24,6 +29,11 @@ function transactionType(account: PluggyAccount, transaction: PluggyTransaction)
   if (transaction.type === "CREDIT") return "income";
   if (transaction.type === "DEBIT") return "expense";
   return Number(transaction.amount || 0) >= 0 ? "income" : "expense";
+}
+function triggerSource(value: unknown, callerUserId: string | null) {
+  const source = String(value || "").trim();
+  if (allowedTriggerSources.has(source)) return source;
+  return callerUserId ? "manual" : "webhook";
 }
 
 Deno.serve(async (request: Request) => {
@@ -53,6 +63,7 @@ Deno.serve(async (request: Request) => {
   }
 
   let syncRunId: string | null = null;
+  let lockedConnectionId: string | null = null;
   try {
     const body = await request.json() as { connectionId?: string; itemId?: string; dateFrom?: string; dateTo?: string; triggerSource?: string };
     let connectionQuery = admin.from("mf_bank_connections").select("*").eq("provider", "pluggy");
@@ -64,11 +75,30 @@ Deno.serve(async (request: Request) => {
     const { data: connection, error: connectionError } = await connectionQuery.single();
     if (connectionError || !connection) throw new Error("Conexão Pluggy não encontrada.");
     if (!connection.provider_connection_ref) throw new Error("Conexão sem item Pluggy associado.");
+    if (connection.status === "revoked" || connection.status === "revocation_pending") throw new Error("Essa conexão já foi revogada.");
+
+    // Atomic per-connection lock: webhook + manual refresh may arrive together.
+    const { data: lock, error: lockError } = await admin
+      .from("mf_bank_connections")
+      .update({ sync_status: "syncing", last_error: null })
+      .eq("id", connection.id)
+      .neq("sync_status", "syncing")
+      .select("id")
+      .maybeSingle();
+    if (lockError) throw lockError;
+    if (!lock) {
+      return json({
+        connectionId: connection.id,
+        itemId: connection.provider_connection_ref,
+        alreadySyncing: true,
+      }, 202);
+    }
+    lockedConnectionId = connection.id;
 
     const { data: syncRun, error: runError } = await admin.from("mf_bank_sync_runs").insert({
       user_id: connection.user_id,
       connection_id: connection.id,
-      trigger_source: body.triggerSource || (callerUserId ? "manual" : "webhook"),
+      trigger_source: triggerSource(body.triggerSource, callerUserId),
       status: "running",
       requested_from: body.dateFrom || null,
       requested_to: body.dateTo || null,
@@ -77,38 +107,40 @@ Deno.serve(async (request: Request) => {
     if (runError) throw runError;
     syncRunId = syncRun.id;
 
-    await admin.from("mf_bank_connections").update({ sync_status: "syncing", last_error: null }).eq("id", connection.id);
-
     const apiKey = await createApiKey();
     const accounts = await fetchAccounts(apiKey, connection.provider_connection_ref);
     let receivedCount = 0;
     let importedCount = 0;
     let duplicateCount = 0;
 
-    const { data: categoryRows } = await admin
+    const { data: categoryRows, error: categoryError } = await admin
       .from("mf_transaction_categories")
       .select("id,name,category_type")
       .eq("user_id", connection.user_id)
       .eq("is_active", true);
+    if (categoryError) throw categoryError;
     const categories = categoryRows || [];
 
     for (const providerAccount of accounts) {
-      const { data: existingAccount } = await admin
+      const { data: existingAccount, error: existingAccountError } = await admin
         .from("mf_account_balances")
         .select("id")
         .eq("user_id", connection.user_id)
         .eq("provider", "pluggy")
         .eq("provider_account_ref", providerAccount.id)
         .maybeSingle();
+      if (existingAccountError) throw existingAccountError;
 
       let localAccountId = existingAccount?.id || null;
+      const providerBalance = Number(providerAccount.balance || 0);
+      const safeBalance = Number.isFinite(providerBalance) ? providerBalance : 0;
       const accountPayload = {
         user_id: connection.user_id,
         name: providerAccount.marketingName || providerAccount.name || `${connection.institution_name} · Open Finance`,
         account_type: accountType(providerAccount),
         currency: providerAccount.currencyCode || "BRL",
         institution_name: connection.institution_name,
-        current_balance: Number(providerAccount.balance || 0),
+        current_balance: safeBalance,
         is_active: true,
         provider: "pluggy",
         provider_account_ref: providerAccount.id,
@@ -119,7 +151,7 @@ Deno.serve(async (request: Request) => {
         const { error } = await admin.from("mf_account_balances").update(accountPayload).eq("id", localAccountId).eq("user_id", connection.user_id);
         if (error) throw error;
       } else {
-        const { data, error } = await admin.from("mf_account_balances").insert({ ...accountPayload, opening_balance: Number(providerAccount.balance || 0), is_default: false }).select("id").single();
+        const { data, error } = await admin.from("mf_account_balances").insert({ ...accountPayload, opening_balance: safeBalance, is_default: false }).select("id").single();
         if (error || !data) throw error || new Error("Não foi possível criar a conta Open Finance.");
         localAccountId = data.id;
       }
@@ -128,6 +160,10 @@ Deno.serve(async (request: Request) => {
       receivedCount += transactions.length;
 
       for (const transaction of transactions) {
+        const date = isoDate(transaction.date);
+        const amount = Math.abs(Number(transaction.amount || 0));
+        if (!date || !Number.isFinite(amount) || amount === 0) continue;
+
         const type = transactionType(providerAccount, transaction);
         const providerCategory = String(transaction.category || "Outros").trim() || "Outros";
         const category = categories.find((item: any) => item.name?.toLowerCase() === providerCategory.toLowerCase() && (item.category_type === "both" || item.category_type === type))
@@ -135,20 +171,18 @@ Deno.serve(async (request: Request) => {
           || categories.find((item: any) => item.category_type === "both" || item.category_type === type);
         if (!category) throw new Error("Nenhuma categoria financeira ativa disponível para a sincronização.");
 
-        const amount = Math.abs(Number(transaction.amount || 0));
-        if (!Number.isFinite(amount) || amount === 0) continue;
-
+        const description = transaction.description || transaction.descriptionRaw || "Movimentação Open Finance";
         const payload = {
           user_id: connection.user_id,
           external_id: transaction.id,
-          description: transaction.description || transaction.descriptionRaw || "Movimentação Open Finance",
-          descricao: transaction.description || transaction.descriptionRaw || "Movimentação Open Finance",
+          description,
+          descricao: description,
           category: providerCategory,
           categoria: providerCategory,
           category_id: category.id,
           amount,
           valor: amount,
-          date: isoDate(transaction.date),
+          date,
           data: transaction.date,
           type,
           tipo: type,
@@ -180,29 +214,44 @@ Deno.serve(async (request: Request) => {
         } else importedCount += 1;
       }
 
-      await admin.from("mf_account_balances").update({ current_balance: Number(providerAccount.balance || 0), updated_at: new Date().toISOString() }).eq("id", localAccountId);
+      const { error: balanceError } = await admin
+        .from("mf_account_balances")
+        .update({ current_balance: safeBalance, updated_at: new Date().toISOString() })
+        .eq("id", localAccountId)
+        .eq("user_id", connection.user_id);
+      if (balanceError) throw balanceError;
     }
 
     const finishedAt = new Date().toISOString();
-    await admin.from("mf_bank_sync_runs").update({
+    const { error: finishRunError } = await admin.from("mf_bank_sync_runs").update({
       status: "completed",
       received_count: receivedCount,
       imported_count: importedCount,
       duplicate_count: duplicateCount,
       finished_at: finishedAt,
     }).eq("id", syncRunId);
-    await admin.from("mf_bank_connections").update({
+    if (finishRunError) throw finishRunError;
+
+    const { error: finishConnectionError } = await admin.from("mf_bank_connections").update({
       status: "active",
       sync_status: "idle",
       last_synced_at: finishedAt,
       next_sync_at: null,
       last_error: null,
     }).eq("id", connection.id);
+    if (finishConnectionError) throw finishConnectionError;
+    lockedConnectionId = null;
 
     return json({ connectionId: connection.id, itemId: connection.provider_connection_ref, accounts: accounts.length, receivedCount, importedCount, duplicateCount });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao sincronizar Open Finance.";
-    if (syncRunId) await admin.from("mf_bank_sync_runs").update({ status: "failed", error_message: message, finished_at: new Date().toISOString() }).eq("id", syncRunId);
+    const finishedAt = new Date().toISOString();
+    if (syncRunId) {
+      await admin.from("mf_bank_sync_runs").update({ status: "failed", error_message: message, finished_at: finishedAt }).eq("id", syncRunId);
+    }
+    if (lockedConnectionId) {
+      await admin.from("mf_bank_connections").update({ sync_status: "error", last_error: message }).eq("id", lockedConnectionId);
+    }
     return json({ error: message }, 400);
   }
 });
