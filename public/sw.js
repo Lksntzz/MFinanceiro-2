@@ -1,7 +1,9 @@
-const CACHE_NAME = 'mfinanceiro-v2';
+const CACHE_NAME = 'mfinanceiro-v3-brand';
 const PRECACHE_ASSETS = [
   '/',
-  '/manifest.json'
+  '/manifest.json',
+  '/brand.css',
+  '/mf-app-icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
