@@ -1,58 +1,49 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LogIn, UserPlus, Wallet } from "lucide-react";
+import { Github, KeyRound, LogIn, Mail, ShieldCheck, UserPlus, Wallet } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import {
-  AccessRequestStatus,
-  fetchAccessStatus,
   getAccessStatusMessage,
   mapSignupErrorMessage,
   requestAccess,
+  resolveAccessEntryState,
 } from "../lib/access-control";
 
-type AuthMode = "login" | "request" | "activate";
+type AuthMode = "identify" | "request" | "pending" | "activate" | "login";
 
-const STORAGE_EMAIL = "mf-auth-email";
-const STORAGE_NAME = "mf-auth-name";
-const STORAGE_PENDING = "mf-access-pending";
-const STORAGE_ACCOUNT_READY = "mf-auth-account-ready";
+const ADMIN_LOGIN_PATH = "/admin-login";
+const ADMIN_OAUTH_INTENT = "mf-admin-oauth-intent";
 
-function readStored(key: string) {
-  try {
-    return window.localStorage.getItem(key) || "";
-  } catch {
-    return "";
-  }
+function normalizeEmail(value: string) {
+  return String(value || "").trim().toLowerCase();
 }
 
-function writeStored(key: string, value: string) {
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
+}
+
+function setAdminOAuthIntent(active: boolean) {
   try {
-    if (value) window.localStorage.setItem(key, value);
-    else window.localStorage.removeItem(key);
+    if (active) window.sessionStorage.setItem(ADMIN_OAUTH_INTENT, "1");
+    else window.sessionStorage.removeItem(ADMIN_OAUTH_INTENT);
   } catch {
-    // Storage may be disabled; the auth flow still works for the current session.
+    // OAuth still works even if sessionStorage is unavailable.
   }
 }
 
 export default function Auth() {
-  const rememberedEmail = readStored(STORAGE_EMAIL);
-  const rememberedName = readStored(STORAGE_NAME);
-  const accountReady = readStored(STORAGE_ACCOUNT_READY) === "true";
+  const adminRoute = window.location.pathname.replace(/\/+$/, "") === ADMIN_LOGIN_PATH;
+  const adminDenied = adminRoute && new URLSearchParams(window.location.search).get("denied") === "1";
 
-  const [mode, setMode] = useState<AuthMode>(accountReady ? "login" : "request");
-  const [name, setName] = useState(rememberedName);
-  const [email, setEmail] = useState(rememberedEmail);
+  const [mode, setMode] = useState<AuthMode>("identify");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [signupStatus, setSignupStatus] = useState<AccessRequestStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(adminDenied ? "Esta conta não possui permissão administrativa." : null);
   const [info, setInfo] = useState<string | null>(null);
   const [introDone, setIntroDone] = useState(false);
   const requestInFlightRef = useRef(false);
   const lastRequestAtRef = useRef(0);
-
-  const isLogin = mode === "login";
-  const isRequest = mode === "request";
-  const isActivation = mode === "activate";
 
   useEffect(() => {
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -60,81 +51,87 @@ export default function Auth() {
       setIntroDone(true);
       return;
     }
-    const timer = window.setTimeout(() => setIntroDone(true), 1450);
+    const timer = window.setTimeout(() => setIntroDone(true), 1350);
     return () => window.clearTimeout(timer);
   }, []);
 
-  function rememberIdentity(normalizedEmail: string, normalizedName = name.trim()) {
-    writeStored(STORAGE_EMAIL, normalizedEmail);
-    if (normalizedName) writeStored(STORAGE_NAME, normalizedName);
-  }
+  async function routeEmail(targetEmail = email) {
+    const normalizedEmail = normalizeEmail(targetEmail);
+    if (!isValidEmail(normalizedEmail)) {
+      setError("Informe um e-mail válido.");
+      return;
+    }
 
-  function markAccountReady(normalizedEmail: string) {
-    rememberIdentity(normalizedEmail);
-    writeStored(STORAGE_ACCOUNT_READY, "true");
-    writeStored(STORAGE_PENDING, "");
-  }
-
-  function moveToActivation(normalizedEmail: string) {
-    rememberIdentity(normalizedEmail);
-    setSignupStatus("approved");
-    setMode("activate");
-    setPassword("");
+    setLoading(true);
     setError(null);
-    setInfo("Seu acesso foi aprovado. Crie sua senha para ativar a conta.");
-  }
-
-  async function refreshAccessStatus(normalizedEmail: string, automatic = false) {
-    if (!normalizedEmail) return;
+    setInfo(null);
     try {
-      const status = await fetchAccessStatus(normalizedEmail);
-      setSignupStatus(status);
+      const state = await resolveAccessEntryState(normalizedEmail);
+      setEmail(normalizedEmail);
+      setPassword("");
 
-      if (status === "approved") {
-        const requestedHere = readStored(STORAGE_PENDING) === normalizedEmail;
-        if (requestedHere && readStored(STORAGE_ACCOUNT_READY) !== "true") {
-          moveToActivation(normalizedEmail);
-        } else {
-          rememberIdentity(normalizedEmail);
-          setMode("login");
-          setError(null);
-          if (!automatic) setInfo("Acesso aprovado. Entre com seu e-mail e senha.");
-        }
+      if (state === "existing") {
+        setMode("login");
+        return;
+      }
+      if (state === "pending") {
+        setMode("pending");
+        return;
+      }
+      if (state === "approved") {
+        setMode("activate");
+        setInfo("Seu acesso foi aprovado. Defina sua senha para concluir o primeiro acesso.");
+        return;
+      }
+      if (state === "denied") {
+        setMode("request");
+        setInfo("A solicitação anterior foi negada. Você pode enviar uma nova solicitação.");
         return;
       }
 
-      if (!automatic && status !== "none") setInfo(getAccessStatusMessage(status));
-    } catch {
-      // Background status checks are intentionally silent.
+      setMode("request");
+    } catch (err: any) {
+      setError(String(err?.message || "Não foi possível verificar este e-mail."));
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (!isRequest) return;
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !normalizedEmail.includes("@")) return;
+    if (mode !== "pending") return;
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) return;
 
-    const timer = window.setTimeout(() => {
-      void refreshAccessStatus(normalizedEmail, true);
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [email, isRequest]);
+    let active = true;
+    const check = async () => {
+      try {
+        const state = await resolveAccessEntryState(normalizedEmail);
+        if (!active) return;
+        if (state === "approved") {
+          setMode("activate");
+          setInfo("Seu acesso foi aprovado. Defina sua senha para concluir o primeiro acesso.");
+        } else if (state === "existing") {
+          setMode("login");
+          setInfo("Sua conta já está ativa. Entre com seu e-mail e senha.");
+        } else if (state === "denied") {
+          setMode("request");
+          setInfo("A solicitação foi negada. Você pode enviar uma nova solicitação.");
+        }
+      } catch {
+        // Polling is intentionally silent; the user remains on the pending screen.
+      }
+    };
 
-  useEffect(() => {
-    if (!isRequest) return;
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || readStored(STORAGE_PENDING) !== normalizedEmail) return;
-
-    const check = () => void refreshAccessStatus(normalizedEmail, true);
-    check();
-    const interval = window.setInterval(check, 20000);
-    const onFocus = () => check();
+    void check();
+    const interval = window.setInterval(() => void check(), 20000);
+    const onFocus = () => void check();
     window.addEventListener("focus", onFocus);
     return () => {
+      active = false;
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
     };
-  }, [email, isRequest]);
+  }, [email, mode]);
 
   async function handleRequestAccess() {
     if (requestInFlightRef.current) return;
@@ -144,14 +141,13 @@ export default function Auth() {
     }
 
     const normalizedName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
-
+    const normalizedEmail = normalizeEmail(email);
     if (!normalizedName) {
       setError("Informe seu nome para solicitar acesso.");
       return;
     }
-    if (!normalizedEmail) {
-      setError("Informe seu e-mail para solicitar acesso.");
+    if (!isValidEmail(normalizedEmail)) {
+      setError("Informe um e-mail válido.");
       return;
     }
 
@@ -161,24 +157,23 @@ export default function Auth() {
     setInfo(null);
     try {
       const result = await requestAccess(normalizedName, normalizedEmail);
-      rememberIdentity(normalizedEmail, normalizedName);
-      setSignupStatus(result.status);
-
       if (result.status === "approved") {
-        writeStored(STORAGE_PENDING, normalizedEmail);
-        moveToActivation(normalizedEmail);
-        return;
+        setMode("activate");
+        setInfo("Seu acesso já está aprovado. Crie sua senha para ativar a conta.");
+      } else if (result.status === "pending") {
+        setMode("pending");
+        setInfo(getAccessStatusMessage("pending"));
+      } else if (result.status === "denied") {
+        setInfo(getAccessStatusMessage("denied"));
       }
-
-      if (result.status === "pending") {
-        writeStored(STORAGE_PENDING, normalizedEmail);
-        setInfo("Solicitação enviada. Esta tela mudará automaticamente quando seu acesso for aprovado.");
-        return;
-      }
-
-      setInfo(getAccessStatusMessage(result.status));
     } catch (err: any) {
-      setError(String(err?.message || "Falha ao enviar a solicitação de acesso."));
+      const message = String(err?.message || "Falha ao enviar a solicitação de acesso.");
+      if (message.includes("já possui uma conta")) {
+        setMode("login");
+        setInfo("Esta conta já existe. Digite sua senha para entrar.");
+      } else {
+        setError(message);
+      }
     } finally {
       lastRequestAtRef.current = Date.now();
       requestInFlightRef.current = false;
@@ -186,71 +181,35 @@ export default function Auth() {
     }
   }
 
-  async function handleAuth(event: React.FormEvent) {
-    event.preventDefault();
-
-    if (isRequest) {
-      await handleRequestAccess();
+  async function handleLogin() {
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+      setError("Informe um e-mail válido.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Informe sua senha.");
       return;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
     setLoading(true);
     setError(null);
     setInfo(null);
-
     try {
-      if (isActivation) {
-        const status = signupStatus ?? (await fetchAccessStatus(normalizedEmail));
-        setSignupStatus(status);
-        if (status !== "approved") {
-          setError(getAccessStatusMessage(status));
-          setMode("request");
-          return;
-        }
-
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password,
-          options: { data: { name: name.trim() } },
-        });
-
-        if (signUpError) {
-          const mapped = mapSignupErrorMessage(String(signUpError.message || ""));
-          if (mapped === "Este e-mail já está cadastrado.") {
-            markAccountReady(normalizedEmail);
-            setMode("login");
-            setPassword("");
-            setInfo("Sua conta já está ativa. Digite sua senha para entrar.");
-            return;
-          }
-          throw signUpError;
-        }
-
-        markAccountReady(normalizedEmail);
-        if (!data.session) {
-          setMode("login");
-          setPassword("");
-          setInfo("Conta criada. Confirme seu e-mail e depois entre com sua senha.");
-        }
-        return;
-      }
-
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
-      if (signInError) {
-        const status = await fetchAccessStatus(normalizedEmail);
-        if (status === "approved" && readStored(STORAGE_ACCOUNT_READY) !== "true") {
-          writeStored(STORAGE_PENDING, normalizedEmail);
-          moveToActivation(normalizedEmail);
-          return;
-        }
-        throw signInError;
-      }
+      if (!signInError) return;
 
-      markAccountReady(normalizedEmail);
+      const state = await resolveAccessEntryState(normalizedEmail).catch(() => "existing" as const);
+      if (state === "approved") {
+        setMode("activate");
+        setPassword("");
+        setInfo("Seu acesso está aprovado, mas a conta ainda precisa ser ativada. Crie sua senha abaixo.");
+        return;
+      }
+      throw signInError;
     } catch (err: any) {
       setError(mapSignupErrorMessage(String(err?.message || "Falha na autenticação.")));
     } finally {
@@ -258,30 +217,113 @@ export default function Auth() {
     }
   }
 
-  function openExistingLogin() {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail) rememberIdentity(normalizedEmail);
-    writeStored(STORAGE_PENDING, "");
-    setMode("login");
+  async function handleActivation() {
+    const normalizedEmail = normalizeEmail(email);
+    if (!name.trim()) {
+      setError("Informe seu nome para concluir o primeiro acesso.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Crie uma senha com pelo menos 8 caracteres.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const state = await resolveAccessEntryState(normalizedEmail);
+      if (state === "existing") {
+        setMode("login");
+        setPassword("");
+        setInfo("Sua conta já está ativa. Entre com sua senha.");
+        return;
+      }
+      if (state !== "approved") {
+        setMode(state === "pending" ? "pending" : "identify");
+        setError("Seu acesso ainda não está liberado para ativação.");
+        return;
+      }
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: { data: { name: name.trim() } },
+      });
+      if (signUpError) {
+        const mapped = mapSignupErrorMessage(String(signUpError.message || ""));
+        if (mapped === "Este e-mail já está cadastrado.") {
+          setMode("login");
+          setPassword("");
+          setInfo("Sua conta já está ativa. Digite sua senha para entrar.");
+          return;
+        }
+        throw signUpError;
+      }
+
+      if (!data.session) {
+        setMode("login");
+        setPassword("");
+        setInfo("Conta criada. Confirme seu e-mail e depois entre com sua senha.");
+      }
+    } catch (err: any) {
+      setError(mapSignupErrorMessage(String(err?.message || "Não foi possível ativar a conta.")));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAdminGitHub() {
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    setAdminOAuthIntent(true);
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: window.location.origin },
+    });
+    if (oauthError) {
+      setAdminOAuthIntent(false);
+      setError(String(oauthError.message || "Falha ao iniciar o acesso administrativo."));
+      setLoading(false);
+    }
+  }
+
+  function resetIdentity() {
+    setMode("identify");
+    setName("");
     setPassword("");
-    setSignupStatus(null);
     setError(null);
     setInfo(null);
   }
 
-  function resetForAnotherUser() {
-    writeStored(STORAGE_ACCOUNT_READY, "");
-    writeStored(STORAGE_PENDING, "");
-    writeStored(STORAGE_EMAIL, "");
-    writeStored(STORAGE_NAME, "");
-    setMode("request");
-    setName("");
-    setEmail("");
-    setPassword("");
-    setSignupStatus(null);
-    setError(null);
-    setInfo(null);
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (mode === "identify") await routeEmail();
+    else if (mode === "request") await handleRequestAccess();
+    else if (mode === "activate") await handleActivation();
+    else if (mode === "login") await handleLogin();
   }
+
+  const heading = mode === "identify"
+    ? "Vamos encontrar sua conta"
+    : mode === "request"
+      ? "Solicite seu acesso"
+      : mode === "pending"
+        ? "Solicitação em análise"
+        : mode === "activate"
+          ? "Primeiro acesso"
+          : "Acesse sua conta";
+
+  const description = mode === "identify"
+    ? "Informe seu e-mail. O MFinanceiro identifica automaticamente o próximo passo."
+    : mode === "request"
+      ? "Este e-mail ainda não possui uma conta. Envie seus dados para aprovação."
+      : mode === "pending"
+        ? "Não é necessário verificar manualmente. Assim que houver aprovação, esta tela muda sozinha."
+        : mode === "activate"
+          ? "Seu acesso foi aprovado. Crie sua senha uma única vez para ativar a conta."
+          : "Sua conta já existe. Entre com seu e-mail e senha.";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-[#050505] overflow-hidden">
@@ -296,15 +338,10 @@ export default function Auth() {
           from { opacity: 0; transform: translateY(18px) scale(.985); }
           to { opacity: 1; transform: translateY(0) scale(1); }
         }
-        @keyframes mf-auth-mark-in {
-          from { opacity: 0; transform: scale(1.45); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        .mf-auth-intro { animation: mf-auth-logo-intro 1.45s cubic-bezier(.22,.8,.2,1) forwards; }
+        .mf-auth-intro { animation: mf-auth-logo-intro 1.35s cubic-bezier(.22,.8,.2,1) forwards; }
         .mf-auth-card { animation: mf-auth-card-in .48s cubic-bezier(.22,.8,.2,1) both; }
-        .mf-auth-mark { animation: mf-auth-mark-in .55s cubic-bezier(.22,.8,.2,1) both; }
         @media (prefers-reduced-motion: reduce) {
-          .mf-auth-intro,.mf-auth-card,.mf-auth-mark { animation: none !important; }
+          .mf-auth-intro,.mf-auth-card { animation: none !important; }
         }
       `}</style>
 
@@ -322,108 +359,82 @@ export default function Auth() {
         <div className="mf-auth-card glass-card w-full max-w-md p-8 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary" />
 
-          <div className="flex flex-col items-center mb-8">
-            <div className="mf-auth-mark h-14 w-14 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4 shadow-[0_0_28px_rgba(0,242,255,0.24)]">
-              <Wallet className="text-white" size={28} />
+          <div className="flex flex-col items-center mb-7">
+            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4 shadow-[0_0_28px_rgba(0,242,255,0.24)]">
+              {adminRoute ? <ShieldCheck className="text-white" size={28} /> : <Wallet className="text-white" size={28} />}
             </div>
             <h1 className="text-3xl font-black tracking-tighter">MFinanceiro</h1>
             <p className="text-white/40 mt-2 text-xs uppercase font-bold tracking-widest">Controle Financeiro Inteligente</p>
           </div>
 
-          <div className="mb-5 text-center">
-            <h2 className="text-sm font-bold text-white/85">
-              {isRequest ? "Solicite seu acesso" : isActivation ? "Ative sua conta" : "Acesse sua conta"}
-            </h2>
-            <p className="mt-1 text-[11px] text-white/35">
-              {isRequest
-                ? "Envie seus dados uma única vez. A aprovação é acompanhada automaticamente."
-                : isActivation
-                  ? "Seu acesso foi aprovado. Defina sua senha para concluir o primeiro acesso."
-                  : "Entre com seu e-mail e senha."}
-            </p>
-          </div>
-
-          <form onSubmit={handleAuth} className="space-y-4">
-            {(isRequest || isActivation) && (
-              <div>
-                <label className="block text-sm text-white/60 mb-1">Nome</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={isActivation}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none disabled:opacity-60"
-                  placeholder="Seu nome"
-                />
-              </div>
-            )}
-
+          {adminRoute ? (
             <div>
-              <label className="block text-sm text-white/60 mb-1">E-mail</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setSignupStatus(null); setError(null); }}
-                disabled={isActivation}
-                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none disabled:opacity-60"
-                placeholder="seu@email.com"
-              />
-            </div>
-
-            {(isLogin || isActivation) && (
-              <div>
-                <label className="block text-sm text-white/60 mb-1">Senha</label>
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
-                  placeholder={isActivation ? "Crie uma senha com no mínimo 8 caracteres" : "Sua senha"}
-                />
+              <div className="mb-5 text-center">
+                <h2 className="text-sm font-bold text-white/85">Acesso administrativo</h2>
+                <p className="mt-1 text-[11px] text-white/35">Autentique com o GitHub. O sistema libera a entrada somente se a conta tiver papel de administrador no Supabase.</p>
               </div>
-            )}
+              {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{error}</div>}
+              <button type="button" onClick={handleAdminGitHub} disabled={loading} className="w-full bg-white/8 border border-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/12 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                {loading ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <><Github size={19}/><span>Entrar com GitHub</span></>}
+              </button>
+              <button type="button" onClick={() => window.location.assign("/")} className="mt-6 w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors">Voltar ao acesso normal</button>
+            </div>
+          ) : (
+            <>
+              <div className="mb-5 text-center">
+                <h2 className="text-sm font-bold text-white/85">{heading}</h2>
+                <p className="mt-1 text-[11px] text-white/35">{description}</p>
+              </div>
 
-            {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{error}</div>}
-            {info && <div className="p-3 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-sm rounded-lg">{info}</div>}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]"
-            >
-              {loading ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+              {mode === "pending" ? (
+                <div>
+                  <div className="rounded-xl border border-brand-primary/15 bg-brand-primary/5 p-4 text-center">
+                    <Mail size={20} className="mx-auto text-brand-primary mb-2"/>
+                    <strong className="block text-sm text-white/80">{email}</strong>
+                    <p className="mt-2 text-[11px] text-white/40">Aguardando aprovação. O status é atualizado automaticamente a cada poucos segundos e quando você volta para esta página.</p>
+                  </div>
+                  {info && <div className="mt-4 p-3 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-sm rounded-lg">{info}</div>}
+                  <button type="button" onClick={resetIdentity} className="mt-6 w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors">Usar outro e-mail</button>
+                </div>
               ) : (
-                <>
-                  {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
-                  <span>{isRequest ? "Solicitar acesso" : isActivation ? "Criar senha e ativar" : "Entrar"}</span>
-                </>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {(mode === "request" || mode === "activate") && (
+                    <div>
+                      <label className="block text-sm text-white/60 mb-1">Nome</label>
+                      <input type="text" required value={name} onChange={(event) => setName(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Seu nome" />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm text-white/60 mb-1">E-mail</label>
+                    <input type="email" required value={email} onChange={(event) => { setEmail(event.target.value); setError(null); }} readOnly={mode !== "identify"} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none read-only:opacity-65" placeholder="seu@email.com" />
+                  </div>
+
+                  {(mode === "login" || mode === "activate") && (
+                    <div>
+                      <label className="block text-sm text-white/60 mb-1">Senha</label>
+                      <input type="password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder={mode === "activate" ? "Crie uma senha com no mínimo 8 caracteres" : "Sua senha"} />
+                    </div>
+                  )}
+
+                  {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{error}</div>}
+                  {info && <div className="p-3 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-sm rounded-lg">{info}</div>}
+
+                  <button type="submit" disabled={loading} className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]">
+                    {loading ? (
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                    ) : (
+                      <>
+                        {mode === "identify" ? <Mail size={19}/> : mode === "login" ? <LogIn size={19}/> : mode === "activate" ? <KeyRound size={19}/> : <UserPlus size={19}/>} 
+                        <span>{mode === "identify" ? "Continuar" : mode === "login" ? "Entrar" : mode === "activate" ? "Criar senha e ativar" : "Solicitar acesso"}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {mode !== "identify" && <button type="button" onClick={resetIdentity} className="w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors">Usar outro e-mail</button>}
+                </form>
               )}
-            </button>
-          </form>
-
-          {isRequest && (
-            <button
-              type="button"
-              onClick={openExistingLogin}
-              className="mt-6 w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors"
-            >
-              Já tenho uma conta
-            </button>
-          )}
-
-          {isLogin && rememberedEmail && (
-            <button
-              type="button"
-              onClick={resetForAnotherUser}
-              className="mt-6 w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors"
-            >
-              Trocar usuário
-            </button>
+            </>
           )}
         </div>
       )}

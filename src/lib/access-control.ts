@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 
 export type AccessRequestStatus = "pending" | "approved" | "denied" | "none";
+export type AccessEntryState = "existing" | "pending" | "approved" | "denied" | "new";
 
 function normalizeStatus(raw: unknown): AccessRequestStatus {
   const status = String(raw || "").toLowerCase();
@@ -8,6 +9,28 @@ function normalizeStatus(raw: unknown): AccessRequestStatus {
   if (status === "denied" || status === "negado" || status === "rejected") return "denied";
   if (status === "pending" || status === "pendente") return "pending";
   return "none";
+}
+
+function normalizeEntryState(raw: unknown): AccessEntryState {
+  const state = String(raw || "").toLowerCase();
+  if (state === "existing") return "existing";
+  if (state === "pending") return "pending";
+  if (state === "approved") return "approved";
+  if (state === "denied") return "denied";
+  return "new";
+}
+
+export async function resolveAccessEntryState(email: string): Promise<AccessEntryState> {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return "new";
+
+  const { data, error } = await supabase.rpc("mf_resolve_access_entry", {
+    p_email: normalizedEmail,
+  });
+  if (error) throw error;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return normalizeEntryState(row?.state);
 }
 
 export async function fetchAccessStatus(email: string): Promise<AccessRequestStatus> {
@@ -31,11 +54,11 @@ export async function fetchAccessStatus(email: string): Promise<AccessRequestSta
 export function getAccessStatusMessage(status: AccessRequestStatus): string {
   switch (status) {
     case "approved":
-      return "Seu acesso foi aprovado! Agora você pode finalizar seu cadastro.";
+      return "Seu acesso foi aprovado. Conclua o primeiro acesso para ativar a conta.";
     case "pending":
-      return "Sua solicitação está em análise. Você receberá um e-mail quando for aprovada.";
+      return "Sua solicitação está em análise. Esta tela será atualizada automaticamente quando houver uma decisão.";
     case "denied":
-      return "Sua solicitação de acesso foi negada. Entre em contato com o suporte.";
+      return "Sua solicitação de acesso foi negada. Entre em contato com o suporte ou envie uma nova solicitação.";
     default:
       return "Não encontramos uma solicitação vinculada a este e-mail.";
   }
@@ -57,6 +80,7 @@ export async function requestAccess(name: string, email: string) {
     const message = String(error.message || "").toLowerCase();
     if (message.includes("email_invalido")) throw new Error("Informe um e-mail válido.");
     if (message.includes("nome_obrigatorio")) throw new Error("Informe seu nome.");
+    if (message.includes("conta_existente")) throw new Error("Este e-mail já possui uma conta. Volte e acesse sua conta.");
     throw error;
   }
 

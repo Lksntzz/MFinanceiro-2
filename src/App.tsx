@@ -7,6 +7,9 @@ import ConfigRequired from './components/ConfigRequired';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
 
+const ADMIN_LOGIN_PATH = '/admin-login';
+const ADMIN_OAUTH_INTENT = 'mf-admin-oauth-intent';
+
 function normalizeMaintenanceRow(row: any): MaintenanceConfig {
   return {
     maintenance_mode: row?.maintenance_mode === true,
@@ -16,14 +19,28 @@ function normalizeMaintenanceRow(row: any): MaintenanceConfig {
   };
 }
 
+function hasAdminOAuthIntent() {
+  try {
+    return window.sessionStorage.getItem(ADMIN_OAUTH_INTENT) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function clearAdminOAuthIntent() {
+  try {
+    window.sessionStorage.removeItem(ADMIN_OAUTH_INTENT);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [maintenance, setMaintenance] = useState<MaintenanceConfig | null>(null);
+  const [validatingAdminEntry, setValidatingAdminEntry] = useState(false);
 
-  // The simplified financial sidebar is mounted by a global runtime integration.
-  // Keep it completely hidden until App has confirmed an authenticated session so
-  // navigation never leaks onto login, access-request or maintenance screens.
   useLayoutEffect(() => {
     const styleId = 'mf-auth-navigation-gate';
     let style = document.getElementById(styleId) as HTMLStyleElement | null;
@@ -103,12 +120,10 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
-
       if (event === 'SIGNED_OUT' || !nextSession) {
         setSession(null);
         return;
       }
-
       setSession(nextSession);
     });
 
@@ -117,6 +132,29 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+
+    const adminRoute = window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
+    const oauthIntent = hasAdminOAuthIntent();
+    if (!adminRoute && !oauthIntent) return;
+
+    if (isMaintenanceAdmin(session)) {
+      clearAdminOAuthIntent();
+      if (adminRoute) window.history.replaceState({}, '', '/');
+      setValidatingAdminEntry(false);
+      return;
+    }
+
+    setValidatingAdminEntry(true);
+    clearAdminOAuthIntent();
+    void supabase.auth.signOut().finally(() => {
+      window.history.replaceState({}, '', `${ADMIN_LOGIN_PATH}?denied=1`);
+      setSession(null);
+      setValidatingAdminEntry(false);
+    });
+  }, [session]);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -194,11 +232,24 @@ export default function App() {
   if (!isSupabaseConfigured()) return <ConfigRequired />;
 
   const isAdmin = isMaintenanceAdmin(session);
+  const adminRoute = window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
+  const adminIntent = hasAdminOAuthIntent();
   const maintenanceEnabled = Boolean(maintenance?.maintenance_mode);
   const hiddenAdminLogin = new URLSearchParams(window.location.search).get('maintenance_admin') === '1';
 
+  if (validatingAdminEntry || (session && (adminRoute || adminIntent) && !isAdmin)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#050505]">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" />
+          <p className="mt-4 text-xs font-bold uppercase tracking-widest text-white/35">Validando acesso administrativo</p>
+        </div>
+      </div>
+    );
+  }
+
   if (maintenanceEnabled && !isAdmin) {
-    if (!session && hiddenAdminLogin) return <Auth />;
+    if (!session && (hiddenAdminLogin || adminRoute)) return <Auth />;
     return <MaintenanceScreen message={maintenance?.maintenance_message} />;
   }
 

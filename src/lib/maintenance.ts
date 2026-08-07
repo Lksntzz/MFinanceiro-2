@@ -43,8 +43,6 @@ async function readFromGlobalSettingsTable(
     throw error;
   }
 
-  // Compatibilidade: se nao existir a linha key='global',
-  // tenta ler a linha mais recente da tabela.
   if (!data) {
     const { data: fallback, error: fallbackError } = await db
       .from('mf_global_settings')
@@ -118,35 +116,15 @@ export async function fetchMaintenanceConfig(
   };
 }
 
-function parseAdminEmails(raw: string | undefined): Set<string> {
-  if (!raw) return new Set();
-  return new Set(
-    raw
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
 export function isMaintenanceAdmin(session: Session | null): boolean {
-  // Bypass para ambiente local ou desenvolvimento
-  const isDev = (import.meta as any).env.DEV === true || 
+  const isDev = (import.meta as any).env.DEV === true ||
                 (import.meta as any).env.MODE === 'development' ||
                 window.location.hostname === 'localhost' ||
                 window.location.hostname === '127.0.0.1';
-  
-  if (isDev) return true;
 
+  if (isDev) return true;
   if (!session?.user) return false;
 
   const role = String(session.user.app_metadata?.role || '').toLowerCase();
-  if (role === 'admin' || role === 'owner') return true;
-
-  if (session.user.user_metadata?.is_admin === true) return true;
-
-  const adminEmails = parseAdminEmails(
-    (import.meta as any).env.VITE_MAINTENANCE_ADMIN_EMAILS
-  );
-  const userEmail = String(session.user.email || '').toLowerCase();
-  return userEmail ? adminEmails.has(userEmail) : false;
+  return role === 'admin' || role === 'owner';
 }
