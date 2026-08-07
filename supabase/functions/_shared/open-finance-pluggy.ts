@@ -295,7 +295,7 @@ function connectorFromItem(item: JsonRecord) {
 
 export async function resolvePluggyInstitution(item: JsonRecord) {
   let connector = connectorFromItem(item);
-  if (!asString(connector.name)) {
+  if (!asString(connector.name) || typeof connector.isOpenFinance !== "boolean") {
     connector = await getPluggyConnector(connector.id || item.connectorId);
   }
   return {

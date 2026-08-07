@@ -4,6 +4,7 @@ import {
   createPluggyConnectToken,
   deletePluggyItem,
   getPluggyItem,
+  itemIsReady,
   listOpenFinanceConnectorIds,
   randomSecret,
   resolvePluggyInstitution,
@@ -186,6 +187,7 @@ Deno.serve(async (request: Request) => {
       if (!institution.isOpenFinance) {
         throw new Error("A instituição selecionada não é um conector Open Finance regulado.");
       }
+      const ready = itemIsReady(item);
 
       const { error: updateError } = await admin
         .from("mf_bank_connections")
@@ -194,8 +196,8 @@ Deno.serve(async (request: Request) => {
           institution_id: institution.connectorId ? String(institution.connectorId) : null,
           institution_name: institution.name,
           display_name: institution.name,
-          status: "active",
-          sync_status: "queued",
+          status: ready ? "active" : "authorizing",
+          sync_status: ready ? "queued" : "idle",
           last_error: null,
           metadata: {
             ...(connection.metadata && typeof connection.metadata === "object"
@@ -215,7 +217,8 @@ Deno.serve(async (request: Request) => {
         connectionId,
         itemId,
         institution: institution.name,
-        status: "active",
+        status: ready ? "active" : "authorizing",
+        ready,
       });
     }
 

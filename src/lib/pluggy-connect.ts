@@ -1,5 +1,5 @@
 const PLUGGY_CONNECT_SCRIPT_ID = 'mf-pluggy-connect-sdk';
-const PLUGGY_CONNECT_SCRIPT_URL = 'https://cdn.pluggy.ai/pluggy-connect/v1.3.1/pluggy-connect.js';
+const PLUGGY_CONNECT_SCRIPT_URL = 'https://cdn.pluggy.ai/pluggy-connect/v2.7.0/pluggy-connect.js';
 
 export type PluggyConnectItem = {
   id: string;
