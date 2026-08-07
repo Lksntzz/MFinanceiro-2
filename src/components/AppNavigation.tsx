@@ -60,8 +60,9 @@ function NavigationLink({ item, compact = false }: { item: NavigationItem; compa
       end={item.end}
       className={({ isActive }) => `mf-side-item ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}
       title={item.label}
+      aria-label={item.label}
     >
-      <Icon size={compact ? 14 : 16} /><span>{item.label}</span>
+      <Icon size={compact ? 14 : 16} aria-hidden="true" /><span>{item.label}</span>
     </NavLink>
   );
 }
@@ -73,39 +74,39 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
 
   return (
     <aside className="mf-side-panel" aria-label="Navegação financeira">
-      <div className="mf-side-brand">
-        <div className="mf-side-brand-mark">M</div>
-        <div className="mf-side-brand-copy"><strong>MFinanceiro</strong><small>Central financeira</small></div>
+      <div className="mf-side-brand" aria-label="MF Financeiro">
+        <div className="mf-side-brand-mark" aria-hidden="true">M</div>
+        <div className="mf-side-brand-copy"><strong>MF Financeiro</strong><small>Controle financeiro inteligente</small></div>
       </div>
 
-      <nav className="mf-side-primary">
+      <nav className="mf-side-primary" aria-label="Seções principais">
         {primaryItems.map((item) => <NavigationLink key={item.to} item={item} />)}
       </nav>
 
-      <button type="button" className="mf-side-launch" onClick={onLaunch}><Plus size={15} />Lançar</button>
+      <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
       <div className="mf-side-context">
         {inPlanning && (
-          <section className="mf-side-group">
-            <span className="mf-side-group-label">Planejamento</span>
-            <div className="mf-side-group-items">{planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>
+          <section className="mf-side-group" aria-labelledby="mf-planning-navigation-label">
+            <span id="mf-planning-navigation-label" className="mf-side-group-label">Planejamento</span>
+            <nav className="mf-side-group-items" aria-label="Navegação de planejamento">{planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</nav>
           </section>
         )}
         {inAnalysis && (
-          <section className="mf-side-group">
-            <span className="mf-side-group-label">Entender seus dados</span>
-            <div className="mf-side-group-items">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>
+          <section className="mf-side-group" aria-labelledby="mf-analysis-navigation-label">
+            <span id="mf-analysis-navigation-label" className="mf-side-group-label">Entender seus dados</span>
+            <nav className="mf-side-group-items" aria-label="Navegação de análises">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</nav>
           </section>
         )}
         {!inPlanning && !inAnalysis && <p className="mf-side-context-copy">Visão rápida, histórico e próximos passos.</p>}
       </div>
 
-      <div className="mf-side-shortcuts" aria-label="Atalhos rápidos">
-        <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato"><Upload size={14} /></NavLink>
-        <NavLink to="/app/planejamento/automacoes" className="mf-side-shortcut" title="Automações"><Bot size={14} /></NavLink>
-        <NavLink to="/app/planejamento/calendario" className="mf-side-shortcut" title="Calendário"><CalendarDays size={14} /></NavLink>
-      </div>
-      <NavLink to="/app/preferencias" className="mf-side-settings"><Settings size={13} />Preferências</NavLink>
+      <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
+        <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
+        <NavLink to="/app/planejamento/automacoes" className="mf-side-shortcut" title="Automações" aria-label="Automações e Open Finance"><Bot size={14} aria-hidden="true" /></NavLink>
+        <NavLink to="/app/planejamento/calendario" className="mf-side-shortcut" title="Calendário" aria-label="Calendário financeiro"><CalendarDays size={14} aria-hidden="true" /></NavLink>
+      </nav>
+      <NavLink to="/app/preferencias" className="mf-side-settings"><Settings size={13} aria-hidden="true" />Preferências</NavLink>
     </aside>
   );
 }
