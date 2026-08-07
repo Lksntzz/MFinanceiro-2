@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
-import { addDays, format, isAfter, subDays } from 'date-fns';
+import { addDays, format, isAfter, startOfDay, startOfMonth, startOfWeek, subDays } from 'date-fns';
 
 import { supabase } from '../lib/supabase';
 import { calculateFinanceSummary } from '../lib/finance-calculations';
@@ -94,10 +94,18 @@ function normalizeTransaction(row: any): Transaction | null {
   } as Transaction;
 }
 
+function parseTransactionDate(rawDate: string): Date | null {
+  const value = String(rawDate || '').trim();
+  if (!value) return null;
+
+  const dateOnly = value.match(/^(\d{4}-\d{2}-\d{2})/i)?.[1];
+  const parsed = dateOnly ? new Date(`${dateOnly}T12:00:00`) : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function transactionDay(rawDate: string): string {
-  const parsed = new Date(rawDate);
-  if (Number.isNaN(parsed.getTime())) return '';
-  return format(parsed, 'yyyy-MM-dd');
+  const parsed = parseTransactionDate(rawDate);
+  return parsed ? format(parsed, 'yyyy-MM-dd') : '';
 }
 
 export default function Dashboard({
@@ -280,14 +288,17 @@ export default function Dashboard({
 
   const historicalWindow = useMemo(() => {
     const validDates = transactions
-      .map((transaction) => new Date(transaction.date))
-      .filter((date) => !Number.isNaN(date.getTime()))
-      .sort((a, b) => b.getTime() - a.getTime());
+      .map((transaction) => parseTransactionDate(transaction.date))
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => a.getTime() - b.getTime());
 
-    const latestTransaction = validDates[0];
-    const now = new Date();
-    const anchor = latestTransaction && now.getTime() - latestTransaction.getTime() > 7 * 86400000 ? latestTransaction : now;
-    const start = subDays(anchor, 29);
+    const now = startOfDay(new Date());
+    const earliestTransaction = validDates[0];
+    const latestTransaction = validDates[validDates.length - 1];
+    const latestDay = latestTransaction ? startOfDay(latestTransaction) : now;
+    const anchor = latestTransaction && now.getTime() - latestDay.getTime() > 7 * 86400000 ? latestDay : now;
+    const startCandidate = earliestTransaction ? startOfDay(earliestTransaction) : subDays(anchor, 29);
+    const start = isAfter(startCandidate, anchor) ? anchor : startCandidate;
 
     const keys: string[] = [];
     for (let day = start; !isAfter(day, anchor); day = addDays(day, 1)) {
@@ -315,6 +326,7 @@ export default function Dashboard({
     }
 
     return {
+      keys,
       labels: keys.map((key) => format(new Date(`${key}T12:00:00`), 'dd/MM')),
       balances,
       incomes: keys.map((key) => Number((dailyIncome.get(key) || 0).toFixed(2))),
@@ -339,13 +351,52 @@ export default function Dashboard({
     ],
   };
 
-  const selectedRhythm = summary?.rhythm?.[rhythmFilter];
-  const rhythmChartData = {
-    labels: selectedRhythm?.labels || historicalWindow.labels,
+  const rhythmChartData = useMemo(() => {
+    if (rhythmFilter === 'day') {
+      return {
+        labels: historicalWindow.labels,
+        expenses: historicalWindow.expenses,
+        incomes: historicalWindow.incomes,
+      };
+    }
+
+    const buckets = new Map<string, { label: string; expense: number; income: number }>();
+
+    historicalWindow.keys.forEach((key, index) => {
+      const date = new Date(`${key}T12:00:00`);
+      const bucketStart = rhythmFilter === 'week'
+        ? startOfWeek(date, { weekStartsOn: 1 })
+        : startOfMonth(date);
+      const bucketKey = format(bucketStart, 'yyyy-MM-dd');
+      const existing = buckets.get(bucketKey);
+
+      if (existing) {
+        existing.expense += historicalWindow.expenses[index] || 0;
+        existing.income += historicalWindow.incomes[index] || 0;
+        return;
+      }
+
+      buckets.set(bucketKey, {
+        label: format(date, 'dd/MM'),
+        expense: historicalWindow.expenses[index] || 0,
+        income: historicalWindow.incomes[index] || 0,
+      });
+    });
+
+    const grouped = [...buckets.values()];
+    return {
+      labels: grouped.map((item) => item.label),
+      expenses: grouped.map((item) => Number(item.expense.toFixed(2))),
+      incomes: grouped.map((item) => Number(item.income.toFixed(2))),
+    };
+  }, [historicalWindow, rhythmFilter]);
+
+  const rhythmLineData = {
+    labels: rhythmChartData.labels,
     datasets: [
       {
         label: 'Saídas',
-        data: selectedRhythm?.data || historicalWindow.expenses,
+        data: rhythmChartData.expenses,
         borderColor: '#ef4444',
         backgroundColor: 'rgba(239,68,68,.06)',
         fill: true,
@@ -355,7 +406,7 @@ export default function Dashboard({
       },
       {
         label: 'Entradas',
-        data: selectedRhythm?.incomeData || historicalWindow.incomes,
+        data: rhythmChartData.incomes,
         borderColor: '#22c55e',
         backgroundColor: 'rgba(34,197,94,.06)',
         fill: true,
@@ -748,7 +799,7 @@ export default function Dashboard({
                   ))}
                 </div>
               </div>
-              <div className="mf-chart"><Line data={rhythmChartData} options={chartOptions} /></div>
+              <div className="mf-chart"><Line data={rhythmLineData} options={chartOptions} /></div>
             </article>
 
             <section className="mf-bottom-grid">
