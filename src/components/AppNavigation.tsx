@@ -32,6 +32,7 @@ type NavigationItem = {
 
 type InvestmentSection = 'portfolio' | 'income' | 'planning';
 
+// Investments stays top-level in the primary navigation while the legacy route remains compatible.
 const primaryItems: NavigationItem[] = [
   { to: '/app', label: 'Início', icon: LayoutDashboard, end: true },
   { to: '/app/movimentacoes', label: 'Movimentações', icon: Receipt },
