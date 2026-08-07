@@ -15,11 +15,12 @@ import {
   Info,
   Loader2,
   ArrowRightLeft,
-  ShieldCheck
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 
 interface ImportarExtratosProps {
-  onImport: (transactions: ImportedTransaction[], newBalance?: number) => void;
+  onImport: (transactions: ImportedTransaction[], newBalance?: number) => Promise<number>;
   onCancel: () => void;
   accountHolderName?: string;
   internalAccountAliases?: string[];
@@ -831,6 +832,9 @@ export default function ImportarExtratos({
   const [importDiagnostics, setImportDiagnostics] = useState<ImportDiagnostics | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [shouldCalibrateBalance, setShouldCalibrateBalance] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [committedCount, setCommittedCount] = useState(0);
   const readyItemsCount = importedData.filter(i => i.status === 'ready').length;
   const canConfirmImport = readyItemsCount > 0;
 
@@ -913,6 +917,8 @@ export default function ImportarExtratos({
     setImportedData([]);
     setImportDiagnostics(null);
     setShouldCalibrateBalance(false);
+    setImportError(null);
+    setCommittedCount(0);
     setStep(targetStep);
   }, []);
 
@@ -926,6 +932,8 @@ export default function ImportarExtratos({
     setImportDiagnostics(null);
     setStep('processing');
     setShouldCalibrateBalance(false);
+    setImportError(null);
+    setCommittedCount(0);
 
     try {
       const detection = detectFileFormat(fileSnapshot);
@@ -1107,8 +1115,8 @@ export default function ImportarExtratos({
     setImportedData(prev => prev.filter(item => item.id !== id));
   };
 
-  const handleFinalImport = () => {
-    if (!canConfirmImport) return;
+  const handleFinalImport = async () => {
+    if (!canConfirmImport || isImporting) return;
 
     const readyItems = importedData.filter(item =>
       item.status === 'ready' &&
@@ -1117,9 +1125,24 @@ export default function ImportarExtratos({
     );
     
     const calibrationBalance = shouldCalibrateBalance && balanceValidation ? balanceValidation.statementFinal : undefined;
-    
-    onImport(readyItems, calibrationBalance);
-    setStep('success');
+
+    setIsImporting(true);
+    setImportError(null);
+
+    try {
+      const insertedCount = await onImport(readyItems, calibrationBalance);
+      setCommittedCount(insertedCount);
+      setStep('success');
+    } catch (error) {
+      console.error('Falha ao importar lançamentos:', error);
+      setImportError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Não foi possível concluir a importação. Nenhum sucesso foi confirmado.'
+      );
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   if (step === 'success') {
@@ -1131,7 +1154,7 @@ export default function ImportarExtratos({
         <div className="text-center space-y-2">
           <h2 className="text-2xl font-bold">Importacao Concluida!</h2>
           <p className="text-white/40 text-sm max-w-xs mx-auto">
-            {importedData.filter(i => i.status === 'ready').length} lancamentos foram adicionados ao seu ledger com sucesso.
+            {committedCount} lancamentos foram adicionados ao seu ledger com sucesso.
           </p>
         </div>
         <button
@@ -1153,7 +1176,11 @@ export default function ImportarExtratos({
           </h2>
           <p className="text-xs text-white/40">Traga suas movimentacoes bancarias para o MFinanceiro de forma inteligente.</p>
         </div>
-        <button onClick={onCancel} className="p-2 text-white/20 hover:text-white transition-colors">
+        <button
+          onClick={onCancel}
+          disabled={isImporting}
+          className="p-2 text-white/20 hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+        >
           <X size={20} />
         </button>
       </div>
@@ -1322,23 +1349,38 @@ export default function ImportarExtratos({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => resetImportState('upload')}
-                  className="px-4 py-2 bg-white/10 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-white/20 transition-all"
+                  disabled={isImporting}
+                  className="px-4 py-2 bg-white/10 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-white/20 transition-all disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Novo Arquivo
                 </button>
                 <button
                   onClick={handleFinalImport}
-                  disabled={!canConfirmImport}
+                  disabled={!canConfirmImport || isImporting}
                   className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 ${
-                    canConfirmImport
+                    canConfirmImport && !isImporting
                       ? 'bg-brand-primary text-white hover:bg-brand-primary/80'
                       : 'bg-white/10 text-white/40 cursor-not-allowed'
                   }`}
                 >
-                  Confirmar Importacao <ChevronRight size={14} />
+                  {isImporting ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> Importando...
+                    </>
+                  ) : (
+                    <>
+                      Confirmar Importacao <ChevronRight size={14} />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
+            {importError && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200" role="alert">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>A importação não foi concluída: {importError}</span>
+              </div>
+            )}
           </div>
 
           {importDiagnostics && (

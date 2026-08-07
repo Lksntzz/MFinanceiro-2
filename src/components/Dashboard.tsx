@@ -19,6 +19,7 @@ import {
   TrendingUp,
   Wallet,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
@@ -60,6 +61,16 @@ ChartJS.register(...registerables);
 type ActiveTab = 'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests';
 type AnalysisTab = 'stats' | 'insights' | 'health' | 'goals';
 type AccountsTab = 'bills' | 'calendar' | 'subscriptions' | 'investments';
+type StatementBalanceMode = 'keep' | 'apply_new' | 'statement';
+
+interface StatementImportRpcResult {
+  inserted_count: number;
+  duplicate_count: number;
+  net_new: number;
+  balance_before: number;
+  balance_after: number;
+  balance_mode: StatementBalanceMode;
+}
 
 function normalizeTransaction(row: any): Transaction | null {
   const rawDate = row.date || row.data || row.created_at;
@@ -459,26 +470,70 @@ export default function Dashboard({
     const entries = imported
       .filter((item) => item.description && Number(item.amount) > 0)
       .map((item) => ({
-        user_id: user.id,
         date: item.date,
         description: item.description,
         category: item.category || 'Geral',
-        amount: item.type === 'expense' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount)),
+        amount: Math.abs(Number(item.amount)),
         type: item.type,
-        source: item.bank_source || 'Importado',
-        status: 'paid',
+        source: item.bank_source || item.source || 'Importado',
+        external_id: item.source_id
+          ? `statement:${item.bank_source || item.source || 'unknown'}:${item.source_id}`
+          : null,
+        metadata: {
+          original_description: item.original_description,
+          confidence: item.confidence,
+        },
       }));
 
-    if (entries.length) {
-      const insertion = await db.from('mf_finance_ledger_entries').insert(entries);
-      if (insertion.error) throw insertion.error;
+    if (!entries.length) {
+      throw new Error('Nenhum lançamento válido foi selecionado para importação.');
     }
 
-    if (typeof newBalance === 'number' && Number.isFinite(newBalance)) {
-      const balanceUpdate = await db.from('mf_user_settings').update({ current_balance: newBalance }).eq('user_id', user.id);
-      if (balanceUpdate.error) throw balanceUpdate.error;
+    const rawApproval = (window as any).__mfStatementImportApproval as {
+      reviewedAt?: number;
+      mode?: StatementBalanceMode;
+    } | undefined;
+    const approvalIsFresh = Number(rawApproval?.reviewedAt || 0) > Date.now() - 10 * 60_000;
+    const approvedMode = approvalIsFresh && ['keep', 'apply_new', 'statement'].includes(String(rawApproval?.mode))
+      ? rawApproval?.mode as StatementBalanceMode
+      : undefined;
+    const balanceMode: StatementBalanceMode = approvedMode
+      || (typeof newBalance === 'number' && Number.isFinite(newBalance) ? 'statement' : 'keep');
+
+    const { data, error: rpcError } = await db.rpc('mf_commit_statement_import', {
+      p_entries: entries,
+      p_balance_mode: balanceMode,
+      p_statement_balance: balanceMode === 'statement' ? newBalance : null,
+    });
+
+    if (rpcError) {
+      console.error('Statement import RPC failed:', rpcError);
+      throw new Error(rpcError.message || 'O banco recusou a importação.');
     }
+
+    const result = data as StatementImportRpcResult | null;
+    const insertedCount = Number(result?.inserted_count);
+    if (!result || !Number.isInteger(insertedCount) || insertedCount < 0) {
+      throw new Error('O banco não confirmou quantos lançamentos foram importados.');
+    }
+
+    const dates = entries.map((entry) => entry.date).filter(Boolean).sort();
+    window.dispatchEvent(new CustomEvent('mf:statement-import-result', {
+      detail: {
+        insertedCount,
+        duplicateCount: Number(result.duplicate_count || 0),
+        periodStart: dates[0] || null,
+        periodEnd: dates[dates.length - 1] || null,
+        netNew: Number(result.net_new || 0),
+        mode: result.balance_mode,
+        balanceBefore: Number(result.balance_before || 0),
+        balanceAfter: Number(result.balance_after || 0),
+      },
+    }));
+    delete (window as any).__mfStatementImportApproval;
+
     await fetchData();
+    return insertedCount;
   }
 
   async function handleUpdateSettings(nextSettings: UserSettings) {
@@ -612,15 +667,18 @@ export default function Dashboard({
     else await fetchData();
   }
 
-  const toolGroups = [
+  const toolGroups: Array<{ id: ActiveTab; label: string; icon: LucideIcon }> = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'history', label: 'Histórico', icon: HistoryIcon },
     { id: 'cards', label: 'Cartões', icon: CreditCardIcon },
     { id: 'analysis', label: 'Análises', icon: BarChart2 },
     { id: 'accounts', label: 'Contas', icon: Wallet },
     { id: 'settings', label: 'Preferências', icon: Settings },
-    ...(isAdmin ? [{ id: 'admin_requests', label: 'Admin', icon: ShieldAlert }] : []),
-  ] as const;
+  ];
+
+  if (isAdmin) {
+    toolGroups.push({ id: 'admin_requests', label: 'Admin', icon: ShieldAlert });
+  }
 
   const balanceValue = Number(settings?.current_balance ?? summary?.currentBalance ?? 0);
   const dailyLimit = Number(summary?.dailyLimit || 0);
