@@ -2,7 +2,8 @@ import { ExtractedPdfTransaction, PdfParserContext } from './types';
 import { looksLikeNoiseLine, normalizeHeader } from './utils';
 
 const DATE_REGEX = /\b(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
-const AMOUNT_REGEX = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/g;
+// Keep monetary values contiguous so a document/NSU column cannot be merged into the amount.
+const AMOUNT_REGEX = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
 
 function inferStatementYear(text: string): number | null {
   const explicitDates = [...text.matchAll(/\b\d{2}[./-]\d{2}[./-](20\d{2})\b/g)]
