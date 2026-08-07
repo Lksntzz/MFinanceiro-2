@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 
 export type AccessRequestStatus = "pending" | "approved" | "denied" | "none";
-export type AccessEntryState = "existing" | "pending" | "approved" | "denied" | "new";
+export type ResolvedAuthState = "account" | "pending" | "approved" | "denied" | "new";
 
 function normalizeStatus(raw: unknown): AccessRequestStatus {
   const status = String(raw || "").toLowerCase();
@@ -11,26 +11,30 @@ function normalizeStatus(raw: unknown): AccessRequestStatus {
   return "none";
 }
 
-function normalizeEntryState(raw: unknown): AccessEntryState {
-  const state = String(raw || "").toLowerCase();
-  if (state === "existing") return "existing";
-  if (state === "pending") return "pending";
-  if (state === "approved") return "approved";
-  if (state === "denied") return "denied";
-  return "new";
+function normalizeResolvedState(raw: unknown): ResolvedAuthState | null {
+  const state = String(raw || "").trim().toLowerCase();
+  if (state === "account" || state === "pending" || state === "approved" || state === "denied" || state === "new") {
+    return state;
+  }
+  return null;
 }
 
-export async function resolveAccessEntryState(email: string): Promise<AccessEntryState> {
+export async function resolveAuthState(email: string): Promise<ResolvedAuthState> {
   const normalizedEmail = String(email || "").trim().toLowerCase();
-  if (!normalizedEmail) return "new";
+  if (!normalizedEmail) throw new Error("Informe seu e-mail para continuar.");
 
-  const { data, error } = await supabase.rpc("mf_resolve_access_entry", {
-    p_email: normalizedEmail,
+  const { data, error } = await supabase.functions.invoke("resolve-auth-state", {
+    body: { email: normalizedEmail },
   });
-  if (error) throw error;
 
-  const row = Array.isArray(data) ? data[0] : data;
-  return normalizeEntryState(row?.state);
+  if (error) {
+    console.error("Error resolving auth state:", error);
+    throw new Error("Não foi possível verificar sua conta agora. Tente novamente em instantes.");
+  }
+
+  const state = normalizeResolvedState((data as any)?.state);
+  if (!state) throw new Error("Não foi possível identificar o estado da sua conta.");
+  return state;
 }
 
 export async function fetchAccessStatus(email: string): Promise<AccessRequestStatus> {
@@ -54,11 +58,11 @@ export async function fetchAccessStatus(email: string): Promise<AccessRequestSta
 export function getAccessStatusMessage(status: AccessRequestStatus): string {
   switch (status) {
     case "approved":
-      return "Seu acesso foi aprovado. Conclua o primeiro acesso para ativar a conta.";
+      return "Seu acesso foi aprovado. Agora você pode ativar sua conta.";
     case "pending":
       return "Sua solicitação está em análise. Esta tela será atualizada automaticamente quando houver uma decisão.";
     case "denied":
-      return "Sua solicitação de acesso foi negada. Entre em contato com o suporte ou envie uma nova solicitação.";
+      return "Sua solicitação de acesso foi negada. Entre em contato com o suporte.";
     default:
       return "Não encontramos uma solicitação vinculada a este e-mail.";
   }
@@ -80,7 +84,6 @@ export async function requestAccess(name: string, email: string) {
     const message = String(error.message || "").toLowerCase();
     if (message.includes("email_invalido")) throw new Error("Informe um e-mail válido.");
     if (message.includes("nome_obrigatorio")) throw new Error("Informe seu nome.");
-    if (message.includes("conta_existente")) throw new Error("Este e-mail já possui uma conta. Volte e acesse sua conta.");
     throw error;
   }
 
