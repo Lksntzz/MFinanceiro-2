@@ -2,7 +2,9 @@ import { ExtractedPdfTransaction, PdfBankParser } from './types';
 import { looksLikeNoiseLine, parseByDateAndCurrencyLines, parseByBlockRegex } from './utils';
 
 const DATE_AT_START = /^(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
-const AMOUNT_REGEX = /(?:R\$\s*)?\d[\d.\s]*[,.]\d{2}-?/g;
+// Santander PDF text extraction places document/NSU and amount in adjacent cells.
+// Do not allow whitespace inside a monetary token or those cells can be concatenated.
+const AMOUNT_REGEX = /(?:R\$\s*)?(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
 
 function cleanDescription(value: string): string {
   return value
