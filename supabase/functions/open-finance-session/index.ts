@@ -1,5 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import {
+  createPluggyConnectToken,
+  deletePluggyItem,
+  getPluggyItem,
+  listOpenFinanceConnectorIds,
+  randomSecret,
+  resolvePluggyInstitution,
+  sha256Hex,
+} from "../_shared/open-finance-pluggy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,10 +32,15 @@ function readSupabaseKey(jsonName: string, directName: string, legacyName: strin
       const keys = JSON.parse(encoded) as Record<string, unknown>;
       if (typeof keys.default === "string") return keys.default;
     } catch {
-      // Fall through to the legacy environment variable.
+      // Fall through.
     }
   }
   return Deno.env.get(legacyName) || "";
+}
+
+function publicFunctionUrl(slug: string) {
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+  return `${supabaseUrl}/functions/v1/${slug}`;
 }
 
 Deno.serve(async (request: Request) => {
@@ -48,121 +62,216 @@ Deno.serve(async (request: Request) => {
     "SUPABASE_SECRET_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
   );
-  const providerApiUrl = Deno.env.get("OPEN_FINANCE_CONNECT_API_URL") || "";
-  const providerApiKey = Deno.env.get("OPEN_FINANCE_PROVIDER_API_KEY") || "";
-  const providerName = Deno.env.get("OPEN_FINANCE_PROVIDER") || "aggregator";
-  const redirectUri = Deno.env.get("OPEN_FINANCE_REDIRECT_URI") || "";
-  if (!supabaseUrl || !publishableKey) return json({ error: "Supabase não configurado na função." }, 500);
+  if (!supabaseUrl || !publishableKey || !secretKey) {
+    return json({ error: "Supabase não configurado na função." }, 500);
+  }
 
   const supabase = createClient(supabaseUrl, publishableKey, {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const admin = createClient(supabaseUrl, secretKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Sessão inválida." }, 401);
+  const user = userData.user;
 
   try {
     const body = await request.json() as {
-      action?: "connect" | "revoke";
+      action?: "connect" | "complete" | "revoke";
       connectionId?: string;
-      institutionId?: string;
-      institutionName?: string;
-      scopes?: string[];
+      itemId?: string;
     };
     const action = body.action || "connect";
-    if (action !== "connect" && action !== "revoke") throw new Error("Ação Open Finance inválida.");
-    if (action === "revoke") {
+
+    if (action === "connect") {
+      let connectionId = String(body.connectionId || "");
+      let providerItemId: string | null = null;
+      let connectionMetadata: Record<string, unknown> = {};
+
+      if (connectionId) {
+        const { data: existing, error } = await supabase
+          .from("mf_bank_connections")
+          .select("id,provider,provider_connection_ref,status,metadata")
+          .eq("id", connectionId)
+          .eq("user_id", user.id)
+          .single();
+        if (error || !existing) throw new Error("Conexão não encontrada.");
+        if (existing.provider !== "pluggy") throw new Error("Esta conexão usa outro provedor.");
+        providerItemId = existing.provider_connection_ref || null;
+        connectionMetadata = existing.metadata && typeof existing.metadata === "object"
+          ? existing.metadata as Record<string, unknown>
+          : {};
+      } else {
+        const { data: prepared, error: prepareError } = await supabase.rpc("mf_prepare_bank_connection", {
+          p_provider: "pluggy",
+          p_institution_id: null,
+          p_institution_name: "Open Finance",
+          p_scopes: ["ACCOUNTS", "CREDIT_CARDS", "TRANSACTIONS"],
+        });
+        if (prepareError) throw prepareError;
+        connectionId = String((prepared as Record<string, unknown>)?.connection_id || "");
+        if (!connectionId) throw new Error("Não foi possível preparar a conexão.");
+      }
+
+      const redirectUri = (Deno.env.get("OPEN_FINANCE_REDIRECT_URI") || "").trim();
+      if (!redirectUri.startsWith("https://")) {
+        throw new Error("Configure OPEN_FINANCE_REDIRECT_URI com uma URL HTTPS do MF Financeiro.");
+      }
+
+      const webhookSecret = randomSecret();
+      const webhookHash = await sha256Hex(webhookSecret);
+      const webhookUrl = new URL(publicFunctionUrl("open-finance-webhook"));
+      webhookUrl.searchParams.set("connectionId", connectionId);
+      webhookUrl.searchParams.set("token", webhookSecret);
+
+      const connectToken = await createPluggyConnectToken({
+        clientUserId: user.id,
+        webhookUrl: webhookUrl.toString(),
+        oauthRedirectUri: redirectUri,
+        itemId: providerItemId,
+      });
+      const connectorIds = await listOpenFinanceConnectorIds();
+
+      const { error: updateError } = await admin
+        .from("mf_bank_connections")
+        .update({
+          provider: "pluggy",
+          status: "authorizing",
+          sync_status: "idle",
+          last_error: null,
+          metadata: {
+            ...connectionMetadata,
+            webhook_token_sha256: webhookHash,
+            connect_token_created_at: new Date().toISOString(),
+            open_finance_only: true,
+          },
+        })
+        .eq("id", connectionId)
+        .eq("user_id", user.id);
+      if (updateError) throw updateError;
+
+      return json({
+        provider: "pluggy",
+        connectionId,
+        connectToken,
+        connectorIds,
+        updateItem: providerItemId,
+      });
+    }
+
+    if (action === "complete") {
       const connectionId = String(body.connectionId || "");
-      if (!/^[0-9a-f-]{36}$/i.test(connectionId)) throw new Error("Identificador da conexão inválido.");
-      if (!secretKey) throw new Error("Atualização segura do Open Finance não configurada no servidor.");
+      const itemId = String(body.itemId || "");
+      if (!connectionId || !itemId) throw new Error("Conexão ou Item inválido.");
 
       const { data: connection, error: connectionError } = await supabase
         .from("mf_bank_connections")
-        .select("id,status")
+        .select("id,user_id,provider,provider_connection_ref,metadata")
         .eq("id", connectionId)
-        .eq("user_id", userData.user.id)
+        .eq("user_id", user.id)
         .single();
       if (connectionError || !connection) throw new Error("Conexão não encontrada.");
-      if (["revoked", "revocation_pending"].includes(connection.status)) {
-        return json({ connectionId, status: connection.status, alreadyRequested: true });
+      if (connection.provider !== "pluggy") throw new Error("Provedor da conexão inválido.");
+
+      const item = await getPluggyItem(itemId);
+      const itemClientUserId = typeof item.clientUserId === "string" ? item.clientUserId : "";
+      if (itemClientUserId && itemClientUserId !== user.id) {
+        throw new Error("O Item retornado pela Pluggy não pertence a este usuário.");
       }
 
-      const supabaseAdmin = createClient(supabaseUrl, secretKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data: updated, error: updateError } = await supabaseAdmin
+      const institution = await resolvePluggyInstitution(item);
+      if (!institution.isOpenFinance) {
+        throw new Error("A instituição selecionada não é um conector Open Finance regulado.");
+      }
+
+      const { error: updateError } = await admin
         .from("mf_bank_connections")
-        .update({ status: "revocation_pending", sync_status: "idle" })
+        .update({
+          provider_connection_ref: itemId,
+          institution_id: institution.connectorId ? String(institution.connectorId) : null,
+          institution_name: institution.name,
+          display_name: institution.name,
+          status: "active",
+          sync_status: "queued",
+          last_error: null,
+          metadata: {
+            ...(connection.metadata && typeof connection.metadata === "object"
+              ? connection.metadata as Record<string, unknown>
+              : {}),
+            completed_at: new Date().toISOString(),
+            execution_status: typeof item.executionStatus === "string" ? item.executionStatus : null,
+            open_finance_only: true,
+          },
+        })
         .eq("id", connectionId)
-        .eq("user_id", userData.user.id)
-        .select("id")
-        .single();
-      if (updateError || !updated) throw new Error("Não foi possível registrar a revogação.");
-      return json({ connectionId, status: "revocation_pending", alreadyRequested: false });
-    }
+        .eq("user_id", user.id);
+      if (updateError) throw updateError;
 
-    const institutionName = String(body.institutionName || "").trim();
-    if (institutionName.length < 2) throw new Error("Selecione uma instituição válida.");
-
-    const { data: prepared, error: prepareError } = await supabase.rpc("mf_prepare_bank_connection", {
-      p_provider: providerName,
-      p_institution_id: String(body.institutionId || "").trim() || null,
-      p_institution_name: institutionName,
-      p_scopes: Array.isArray(body.scopes) && body.scopes.length
-        ? body.scopes
-        : ["ACCOUNTS_READ", "RESOURCES_READ"],
-    });
-    if (prepareError) throw prepareError;
-    const connectionId = String((prepared as Record<string, unknown>)?.connection_id || "");
-    if (!connectionId) throw new Error("Não foi possível preparar a conexão.");
-
-    if (!providerApiUrl || !providerApiKey || !redirectUri) {
       return json({
+        provider: "pluggy",
         connectionId,
-        status: "pending",
-        configured: false,
-        message: "A base está pronta; falta configurar o participante/agregador Open Finance no servidor.",
-      }, 202);
+        itemId,
+        institution: institution.name,
+        status: "active",
+      });
     }
-    if (!secretKey) throw new Error("Atualização segura do Open Finance não configurada no servidor.");
 
-    const providerResponse = await fetch(providerApiUrl, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${providerApiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customerReference: userData.user.id,
-        connectionReference: connectionId,
-        institutionId: body.institutionId || null,
-        institutionName,
-        scopes: body.scopes || ["ACCOUNTS_READ", "RESOURCES_READ"],
-        redirectUri,
-      }),
-    });
-    if (!providerResponse.ok) throw new Error(`O provedor Open Finance recusou a sessão (${providerResponse.status}).`);
-    const providerPayload = await providerResponse.json() as Record<string, unknown>;
-    const authorizationUrl = String(providerPayload.authorization_url || providerPayload.connect_url || "");
-    const providerReference = String(providerPayload.connection_id || providerPayload.id || "");
-    if (!authorizationUrl.startsWith("https://")) throw new Error("O provedor não retornou uma URL segura de autorização.");
+    if (action === "revoke") {
+      const connectionId = String(body.connectionId || "");
+      if (!connectionId) throw new Error("Identificador da conexão inválido.");
 
-    const supabaseAdmin = createClient(supabaseUrl, secretKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from("mf_bank_connections")
-      .update({
-        status: "authorizing",
-        provider_connection_ref: providerReference || null,
-        metadata: { session_created_at: new Date().toISOString() },
-      })
-      .eq("id", connectionId)
-      .eq("user_id", userData.user.id)
-      .eq("status", "pending")
-      .select("id")
-      .single();
-    if (updateError || !updated) throw new Error("Não foi possível registrar a autorização do provedor.");
+      const { data: connection, error: connectionError } = await supabase
+        .from("mf_bank_connections")
+        .select("id,user_id,provider,provider_connection_ref,status,metadata")
+        .eq("id", connectionId)
+        .eq("user_id", user.id)
+        .single();
+      if (connectionError || !connection) throw new Error("Conexão não encontrada.");
+      if (connection.provider !== "pluggy") throw new Error("Provedor da conexão inválido.");
 
-    return json({ connectionId, status: "authorizing", configured: true, authorizationUrl });
+      if (connection.status === "revoked") {
+        return json({ connectionId, status: "revoked", alreadyRevoked: true });
+      }
+
+      const providerItemId = String(connection.provider_connection_ref || "");
+      if (providerItemId) await deletePluggyItem(providerItemId);
+
+      const revokedAt = new Date().toISOString();
+      const { error: updateError } = await admin
+        .from("mf_bank_connections")
+        .update({
+          status: "revoked",
+          sync_status: "idle",
+          next_sync_at: null,
+          last_error: null,
+          metadata: {
+            ...(connection.metadata && typeof connection.metadata === "object"
+              ? connection.metadata as Record<string, unknown>
+              : {}),
+            revoked_at: revokedAt,
+            revoked_via: "mf_financeiro",
+            open_finance_only: true,
+          },
+        })
+        .eq("id", connectionId)
+        .eq("user_id", user.id);
+      if (updateError) throw updateError;
+
+      await admin
+        .from("mf_bank_account_links")
+        .update({ status: "disconnected" })
+        .eq("connection_id", connectionId)
+        .eq("user_id", user.id);
+
+      return json({ connectionId, status: "revoked", alreadyRevoked: false });
+    }
+
+    throw new Error("Ação Open Finance inválida.");
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Falha ao preparar o Open Finance." }, 400);
+    console.error("open-finance-session", error);
+    return json({ error: error instanceof Error ? error.message : "Falha no Open Finance." }, 400);
   }
 });

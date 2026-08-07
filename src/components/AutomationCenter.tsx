@@ -5,16 +5,19 @@ import {
   CheckCircle2,
   Clock3,
   Landmark,
+  Link2,
   Loader2,
   Plus,
   RefreshCw,
   Save,
   ShieldCheck,
   Trash2,
+  Unplug,
   WandSparkles,
   X,
 } from 'lucide-react';
 
+import { openPluggyConnect, type PluggyConnectItem } from '../lib/pluggy-connect';
 import { supabase } from '../lib/supabase';
 import {
   BankConnection,
@@ -39,6 +42,39 @@ type RuleForm = {
   accountId: string;
   categoryId: string;
   priority: string;
+};
+
+type OpenFinanceConnection = BankConnection & {
+  provider_connection_ref?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type OpenFinanceSyncRun = BankSyncRun & {
+  updated_count?: number;
+  mapping_required_count?: number;
+};
+
+type BankAccountLink = {
+  id: string;
+  user_id: string;
+  connection_id: string;
+  provider_account_ref: string;
+  provider_account_type: 'BANK' | 'CREDIT';
+  provider_account_subtype?: string | null;
+  account_name: string;
+  masked_number?: string | null;
+  currency: string;
+  provider_balance?: number | null;
+  provider_credit_limit?: number | null;
+  provider_available_credit_limit?: number | null;
+  financial_account_id?: string | null;
+  card_id?: string | null;
+  mapping_source?: 'manual' | 'created' | 'automatic' | null;
+  status: 'discovered' | 'mapped' | 'active' | 'error' | 'disconnected';
+  last_synced_at?: string | null;
+  local_balance_at_sync?: number | null;
+  balance_delta?: number | null;
+  metadata?: Record<string, unknown>;
 };
 
 const emptyRule = (categories: TransactionCategory[]): RuleForm => ({
@@ -67,19 +103,30 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('pt-BR') : '—';
 }
 
+function money(value?: number | null, currency = 'BRL') {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: currency || 'BRL' });
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function AutomationCenter({ userId, accounts, categories }: AutomationCenterProps) {
   const [activeTab, setActiveTab] = useState<'rules' | 'connections'>('rules');
   const [rules, setRules] = useState<CategorizationRule[]>([]);
-  const [connections, setConnections] = useState<BankConnection[]>([]);
-  const [syncRuns, setSyncRuns] = useState<BankSyncRun[]>([]);
+  const [connections, setConnections] = useState<OpenFinanceConnection[]>([]);
+  const [syncRuns, setSyncRuns] = useState<OpenFinanceSyncRun[]>([]);
+  const [accountLinks, setAccountLinks] = useState<BankAccountLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [openingPluggy, setOpeningPluggy] = useState(false);
+  const [syncingConnectionId, setSyncingConnectionId] = useState<string | null>(null);
+  const [mappingLinkId, setMappingLinkId] = useState<string | null>(null);
+  const [mappingTargets, setMappingTargets] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [ruleForm, setRuleForm] = useState<RuleForm>(() => emptyRule(categories));
   const [showRuleForm, setShowRuleForm] = useState(false);
-  const [institutionName, setInstitutionName] = useState('');
-  const [preparingConnection, setPreparingConnection] = useState(false);
 
   const categoryNames = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
@@ -92,7 +139,7 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [rulesResult, connectionsResult, runsResult] = await Promise.all([
+    const [rulesResult, connectionsResult, runsResult, linksResult] = await Promise.all([
       supabase
         .from('mf_categorization_rules')
         .select('*')
@@ -106,17 +153,24 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
         .order('updated_at', { ascending: false }),
       supabase
         .from('mf_bank_sync_runs')
-        .select('id,connection_id,status,trigger_source,received_count,imported_count,duplicate_count,error_message,started_at,finished_at,created_at')
+        .select('id,connection_id,status,trigger_source,received_count,imported_count,duplicate_count,updated_count,mapping_required_count,error_message,started_at,finished_at,created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(20),
+        .limit(30),
+      supabase
+        .from('mf_bank_account_links')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false }),
     ]);
-    const firstError = rulesResult.error || connectionsResult.error || runsResult.error;
-    if (firstError) setError(firstError.message);
-    else {
+    const firstError = rulesResult.error || connectionsResult.error || runsResult.error || linksResult.error;
+    if (firstError) {
+      setError(firstError.message);
+    } else {
       setRules((rulesResult.data || []) as CategorizationRule[]);
-      setConnections((connectionsResult.data || []) as BankConnection[]);
-      setSyncRuns((runsResult.data || []) as BankSyncRun[]);
+      setConnections((connectionsResult.data || []) as OpenFinanceConnection[]);
+      setSyncRuns((runsResult.data || []) as OpenFinanceSyncRun[]);
+      setAccountLinks((linksResult.data || []) as BankAccountLink[]);
     }
     setLoading(false);
   }, [userId]);
@@ -128,6 +182,7 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_categorization_rules', filter: `user_id=eq.${userId}` }, () => void load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_bank_connections', filter: `user_id=eq.${userId}` }, () => void load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_bank_sync_runs', filter: `user_id=eq.${userId}` }, () => void load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_bank_account_links', filter: `user_id=eq.${userId}` }, () => void load())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [load, userId]);
@@ -162,7 +217,7 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
       setMessage('Regra criada. Ela será sugerida na revisão e aplicada a lançamentos não categorizados.');
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar a regra.');
+      setError(errorMessage(saveError, 'Não foi possível salvar a regra.'));
     } finally {
       setSaving(false);
     }
@@ -189,42 +244,128 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
     else await load();
   }
 
-  async function prepareOpenFinance() {
-    if (institutionName.trim().length < 2 || preparingConnection) return;
-    setPreparingConnection(true);
+  async function syncConnection(connectionId: string, quiet = false) {
+    setSyncingConnectionId(connectionId);
+    setError(null);
+    if (!quiet) setMessage(null);
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke('open-finance-sync', {
+        body: { connectionId },
+      });
+      if (functionError || data?.error) throw new Error(functionError?.message || String(data?.error));
+      const mappingRequired = Number(data?.mappingRequired || 0);
+      const imported = Number(data?.imported || 0);
+      const updated = Number(data?.updated || 0);
+      if (!quiet) {
+        setMessage(
+          mappingRequired > 0
+            ? `${mappingRequired} conta(s) encontrada(s). Escolha onde cada uma deve entrar no MF Financeiro para concluir a sincronização.`
+            : `Open Finance sincronizado: ${imported} novo(s) e ${updated} atualizado(s).`,
+        );
+      }
+      window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
+      await load();
+      return data;
+    } catch (syncError) {
+      setError(errorMessage(syncError, 'Não foi possível sincronizar o Open Finance.'));
+      return null;
+    } finally {
+      setSyncingConnectionId(null);
+    }
+  }
+
+  async function completePluggyConnection(connectionId: string, item: PluggyConnectItem) {
+    const { data, error: completeError } = await supabase.functions.invoke('open-finance-session', {
+      body: { action: 'complete', connectionId, itemId: item.id },
+    });
+    if (completeError || data?.error) throw new Error(completeError?.message || String(data?.error));
+    setMessage(`Instituição ${data?.institution || 'Open Finance'} conectada. Sincronizando contas...`);
+    await load();
+    await syncConnection(connectionId, true);
+  }
+
+  async function openOpenFinance(connection?: OpenFinanceConnection) {
+    if (openingPluggy) return;
+    setOpeningPluggy(true);
     setError(null);
     setMessage(null);
     try {
       const { data, error: functionError } = await supabase.functions.invoke('open-finance-session', {
-        body: {
-          institutionName: institutionName.trim(),
-          scopes: ['ACCOUNTS_READ', 'RESOURCES_READ'],
+        body: { action: 'connect', connectionId: connection?.id || undefined },
+      });
+      if (functionError || data?.error) throw new Error(functionError?.message || String(data?.error));
+      const connectionId = String(data?.connectionId || '');
+      const connectToken = String(data?.connectToken || '');
+      if (!connectionId || !connectToken) throw new Error('O servidor não retornou os dados para abrir o Open Finance.');
+
+      await openPluggyConnect({
+        connectToken,
+        updateItem: data?.updateItem ? String(data.updateItem) : null,
+        connectorIds: Array.isArray(data?.connectorIds) ? data.connectorIds.map(Number).filter(Number.isFinite) : [],
+        onSuccess: async (item) => {
+          setOpeningPluggy(false);
+          try {
+            await completePluggyConnection(connectionId, item);
+          } catch (connectError) {
+            setError(errorMessage(connectError, 'A instituição conectou, mas a sincronização não foi concluída.'));
+          }
+        },
+        onError: async (widgetMessage) => {
+          setError(widgetMessage);
+          await load();
+        },
+        onClose: async () => {
+          setOpeningPluggy(false);
+          await load();
         },
       });
-      if (functionError) throw functionError;
-      if (data?.authorizationUrl) {
-        window.location.assign(String(data.authorizationUrl));
-        return;
-      }
-      setMessage(String(data?.message || 'Conexão preparada. A ativação depende da configuração do participante Open Finance.'));
-      setInstitutionName('');
-      await load();
     } catch (connectionError) {
-      setError(connectionError instanceof Error ? connectionError.message : 'Não foi possível preparar a conexão.');
-    } finally {
-      setPreparingConnection(false);
+      setError(errorMessage(connectionError, 'Não foi possível abrir o Open Finance.'));
+      setOpeningPluggy(false);
     }
   }
 
-  async function requestRevocation(connection: BankConnection) {
-    if (!window.confirm(`Solicitar revogação do consentimento de ${connection.institution_name}?`)) return;
-    const { data, error: functionError } = await supabase.functions.invoke('open-finance-session', {
-      body: { action: 'revoke', connectionId: connection.id },
-    });
-    if (functionError || data?.error) setError(functionError?.message || String(data.error));
-    else {
-      setMessage('Revogação registrada. O conector do provedor deverá cancelar o consentimento antes de remover os dados.');
+  async function mapAccount(link: BankAccountLink, createNew: boolean) {
+    const targetAccountId = mappingTargets[link.id] || '';
+    if (!createNew && !targetAccountId) {
+      setError('Selecione a conta financeira que corresponde à conta do banco.');
+      return;
+    }
+    setMappingLinkId(link.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc('mf_map_open_finance_account', {
+        p_link_id: link.id,
+        p_financial_account_id: createNew ? null : targetAccountId,
+        p_create_new: createNew,
+      });
+      if (rpcError) throw rpcError;
+      setMessage(createNew ? 'Conta criada e vinculada. Sincronizando movimentações...' : 'Conta vinculada. Sincronizando movimentações...');
+      setMappingTargets((current) => ({ ...current, [link.id]: '' }));
       await load();
+      await syncConnection(link.connection_id, true);
+      if (data) window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
+    } catch (mappingError) {
+      setError(errorMessage(mappingError, 'Não foi possível vincular a conta.'));
+    } finally {
+      setMappingLinkId(null);
+    }
+  }
+
+  async function requestRevocation(connection: OpenFinanceConnection) {
+    if (!window.confirm(`Revogar o consentimento Open Finance de ${connection.institution_name}? A conexão com a instituição será encerrada.`)) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke('open-finance-session', {
+        body: { action: 'revoke', connectionId: connection.id },
+      });
+      if (functionError || data?.error) throw new Error(functionError?.message || String(data?.error));
+      setMessage('Consentimento revogado na instituição. O histórico já importado foi preservado no MF Financeiro.');
+      await load();
+    } catch (revokeError) {
+      setError(errorMessage(revokeError, 'Não foi possível revogar o consentimento.'));
     }
   }
 
@@ -237,7 +378,7 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-black"><Bot size={19} className="text-brand-primary" /> Automação e conexões</h2>
-          <p className="mt-1 text-[10px] text-white/35">Regras determinísticas, consentimentos e histórico de sincronização auditável.</p>
+          <p className="mt-1 text-[10px] text-white/35">Regras determinísticas, Open Finance regulado e histórico de sincronização auditável.</p>
         </div>
         <button type="button" onClick={() => void load()} className="rounded-xl border border-white/10 p-2 text-white/45" aria-label="Atualizar automações"><RefreshCw size={15} /></button>
       </div>
@@ -245,7 +386,7 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
       {(error || message) && (
         <div className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs ${error ? 'border-red-500/25 bg-red-500/10 text-red-200' : 'border-green-500/25 bg-green-500/10 text-green-200'}`} role={error ? 'alert' : 'status'}>
           <span className="flex items-start gap-2">{error ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}{error || message}</span>
-          <button type="button" onClick={() => { setError(null); setMessage(null); }}><X size={14} /></button>
+          <button type="button" onClick={() => { setError(null); setMessage(null); }} aria-label="Fechar mensagem"><X size={14} /></button>
         </div>
       )}
 
@@ -303,29 +444,97 @@ export default function AutomationCenter({ userId, accounts, categories }: Autom
           </section>
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(300px,.8fr)_minmax(0,1.2fr)]">
-          <section className="glass-card space-y-4">
-            <div><h3 className="flex items-center gap-2 text-sm font-bold"><Landmark size={16} className="text-brand-primary" /> Preparar instituição</h3><p className="mt-1 text-[10px] leading-relaxed text-white/40">O navegador nunca recebe senha bancária ou token do provedor. A autorização acontece no ambiente da instituição.</p></div>
-            <label className="block text-[9px] font-bold uppercase text-white/35">Instituição financeira<input value={institutionName} onChange={(event) => setInstitutionName(event.target.value)} placeholder="Ex.: Banco Inter" className="mt-1 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-xs text-white" /></label>
-            <div className="rounded-xl border border-white/8 bg-white/[0.025] p-3 text-[10px] text-white/45"><ShieldCheck size={14} className="mb-2 text-green-300" />Escopos mínimos preparados: leitura de contas e recursos. Novos escopos exigem novo consentimento explícito.</div>
-            <button type="button" disabled={institutionName.trim().length < 2 || preparingConnection} onClick={() => void prepareOpenFinance()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-primary px-4 py-3 text-xs font-black text-black disabled:opacity-40">{preparingConnection ? <Loader2 size={15} className="animate-spin" /> : <Landmark size={15} />} Preparar conexão</button>
+        <div className="space-y-4">
+          <section className="glass-card grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-bold"><Landmark size={16} className="text-brand-primary" /> Open Finance regulado</h3>
+              <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-white/40">Conecte a instituição pelo ambiente seguro do provedor. O MF Financeiro recebe somente os dados autorizados; senha bancária e credenciais da instituição não passam pelo aplicativo.</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[9px] text-white/40">
+                <span className="rounded-full border border-white/10 px-2.5 py-1">Contas</span>
+                <span className="rounded-full border border-white/10 px-2.5 py-1">Cartões</span>
+                <span className="rounded-full border border-white/10 px-2.5 py-1">Transações</span>
+                <span className="rounded-full border border-green-500/20 bg-green-500/5 px-2.5 py-1 text-green-300"><ShieldCheck size={10} className="mr-1 inline" /> Consentimento revogável</span>
+              </div>
+            </div>
+            <button type="button" disabled={openingPluggy} onClick={() => void openOpenFinance()} className="flex min-w-48 items-center justify-center gap-2 rounded-xl bg-brand-primary px-4 py-3 text-xs font-black text-black disabled:opacity-40">{openingPluggy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Conectar instituição</button>
           </section>
 
           <section className="glass-card !p-0 overflow-hidden">
-            <div className="border-b border-white/10 p-4"><h3 className="text-sm font-bold">Conexões e sincronizações</h3><p className="mt-1 text-[9px] text-white/35">Estado do consentimento separado do estado da última sincronização.</p></div>
+            <div className="border-b border-white/10 p-4"><h3 className="text-sm font-bold">Conexões e sincronizações</h3><p className="mt-1 text-[9px] text-white/35">Cada conta encontrada é vinculada explicitamente antes de alterar seu histórico financeiro.</p></div>
             <div className="divide-y divide-white/5">
               {connections.map((connection) => {
                 const lastRun = syncRuns.find((run) => run.connection_id === connection.id);
+                const links = accountLinks.filter((link) => link.connection_id === connection.id);
+                const canSync = connection.status === 'active' && Boolean(connection.provider_connection_ref);
+                const canReconnect = ['error', 'expired', 'expiring', 'authorizing'].includes(connection.status);
                 return (
-                  <div key={connection.id} className="p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><strong className="text-xs">{connection.display_name || connection.institution_name}</strong><span className={`rounded-full px-2 py-0.5 text-[8px] font-bold ${connection.status === 'active' ? 'bg-green-500/10 text-green-300' : connection.status === 'error' ? 'bg-red-500/10 text-red-300' : 'bg-yellow-500/10 text-yellow-200'}`}>{statusLabels[connection.status]}</span></div><p className="mt-1 text-[9px] text-white/35">Provedor: {connection.provider} · consentimento até {formatDate(connection.consent_expires_at)}</p></div>{!['revoked', 'revocation_pending'].includes(connection.status) && <button type="button" onClick={() => void requestRevocation(connection)} className="rounded-lg border border-red-500/15 px-3 py-2 text-[9px] text-red-300">Revogar</button>}</div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-[9px] sm:grid-cols-4"><div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Sincronização</span><strong className="block mt-1">{connection.sync_status}</strong></div><div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Última</span><strong className="block mt-1">{formatDate(connection.last_synced_at)}</strong></div><div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Recebidos</span><strong className="block mt-1">{lastRun?.received_count || 0}</strong></div><div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Importados</span><strong className="block mt-1">{lastRun?.imported_count || 0}</strong></div></div>
-                    {lastRun && <p className="mt-2 flex items-center gap-1 text-[9px] text-white/30"><Clock3 size={11} /> Última execução: {lastRun.status} · {formatDate(lastRun.finished_at || lastRun.created_at)}</p>}
+                  <article key={connection.id} className="p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="text-xs">{connection.display_name || connection.institution_name}</strong>
+                          <span className={`rounded-full px-2 py-0.5 text-[8px] font-bold ${connection.status === 'active' ? 'bg-green-500/10 text-green-300' : connection.status === 'error' ? 'bg-red-500/10 text-red-300' : connection.status === 'revoked' ? 'bg-white/5 text-white/30' : 'bg-yellow-500/10 text-yellow-200'}`}>{statusLabels[connection.status]}</span>
+                        </div>
+                        <p className="mt-1 text-[9px] text-white/35">Open Finance · {connection.provider === 'pluggy' ? 'Pluggy' : connection.provider} · consentimento até {formatDate(connection.consent_expires_at)}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {canSync && <button type="button" disabled={syncingConnectionId === connection.id} onClick={() => void syncConnection(connection.id)} className="flex items-center gap-1.5 rounded-lg border border-brand-primary/20 px-3 py-2 text-[9px] text-brand-primary disabled:opacity-40">{syncingConnectionId === connection.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Sincronizar</button>}
+                        {canReconnect && connection.status !== 'revoked' && <button type="button" onClick={() => void openOpenFinance(connection)} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-[9px] text-white/60"><Link2 size={12} /> Reautorizar</button>}
+                        {!['revoked', 'revocation_pending'].includes(connection.status) && <button type="button" onClick={() => void requestRevocation(connection)} className="flex items-center gap-1.5 rounded-lg border border-red-500/15 px-3 py-2 text-[9px] text-red-300"><Unplug size={12} /> Revogar</button>}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[9px] sm:grid-cols-5">
+                      <div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Sincronização</span><strong className="mt-1 block">{connection.sync_status}</strong></div>
+                      <div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Última</span><strong className="mt-1 block">{formatDate(connection.last_synced_at)}</strong></div>
+                      <div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Recebidos</span><strong className="mt-1 block">{lastRun?.received_count || 0}</strong></div>
+                      <div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Novos</span><strong className="mt-1 block">{lastRun?.imported_count || 0}</strong></div>
+                      <div className="rounded-lg bg-white/5 p-2"><span className="text-white/30">Atualizados</span><strong className="mt-1 block">{lastRun?.updated_count || 0}</strong></div>
+                    </div>
+
+                    {links.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-[9px] font-black uppercase tracking-wider text-white/30">Contas encontradas</p>
+                        {links.map((link) => {
+                          const compatibleAccounts = accounts.filter((account) => account.is_active && (
+                            link.provider_account_type === 'CREDIT' ? account.account_type === 'credit' : account.account_type !== 'credit'
+                          ));
+                          const mappedName = link.financial_account_id ? accountNames.get(link.financial_account_id) : null;
+                          const needsMapping = !link.financial_account_id && link.status !== 'disconnected';
+                          return (
+                            <div key={link.id} className="rounded-xl border border-white/8 bg-black/20 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex items-center gap-2"><strong className="text-xs">{link.account_name}</strong><span className="rounded-full bg-white/5 px-2 py-0.5 text-[8px] text-white/40">{link.provider_account_type === 'CREDIT' ? 'Cartão' : 'Conta bancária'}</span></div>
+                                  <p className="mt-1 text-[9px] text-white/35">{link.masked_number || 'Número protegido'} · saldo informado {money(link.provider_balance, link.currency)}</p>
+                                  {mappedName && <p className="mt-1 text-[9px] text-green-300">Vinculada a: {mappedName}</p>}
+                                  {typeof link.balance_delta === 'number' && Math.abs(link.balance_delta) >= 0.01 && <p className="mt-1 text-[9px] text-amber-300">Diferença para o banco: {money(link.balance_delta, link.currency)}. Revise o saldo antes de calibrar.</p>}
+                                </div>
+                                {!needsMapping && link.status !== 'disconnected' && <span className="flex items-center gap-1 text-[9px] text-green-300"><CheckCircle2 size={12} /> Mapeada</span>}
+                              </div>
+
+                              {needsMapping && (
+                                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                                  <select value={mappingTargets[link.id] || ''} onChange={(event) => setMappingTargets((current) => ({ ...current, [link.id]: event.target.value }))} className="rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-[10px] text-white">
+                                    <option value="">Escolher conta existente</option>
+                                    {compatibleAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {money(account.current_balance, account.currency)}</option>)}
+                                  </select>
+                                  <button type="button" disabled={mappingLinkId === link.id || !mappingTargets[link.id]} onClick={() => void mapAccount(link, false)} className="rounded-lg border border-brand-primary/20 px-3 py-2 text-[9px] font-bold text-brand-primary disabled:opacity-40">{mappingLinkId === link.id ? 'Vinculando...' : 'Vincular'}</button>
+                                  <button type="button" disabled={mappingLinkId === link.id} onClick={() => void mapAccount(link, true)} className="rounded-lg bg-brand-primary px-3 py-2 text-[9px] font-black text-black disabled:opacity-40">{mappingLinkId === link.id ? 'Criando...' : 'Criar nova conta'}</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {lastRun && <p className="mt-3 flex items-center gap-1 text-[9px] text-white/30"><Clock3 size={11} /> Última execução: {lastRun.status} · {formatDate(lastRun.finished_at || lastRun.created_at)}{Number(lastRun.mapping_required_count || 0) > 0 ? ` · ${lastRun.mapping_required_count} aguardando vínculo` : ''}</p>}
                     {(connection.last_error || lastRun?.error_message) && <p className="mt-2 text-[9px] text-red-300">{connection.last_error || lastRun?.error_message}</p>}
-                  </div>
+                  </article>
                 );
               })}
-              {connections.length === 0 && <div className="py-16 text-center text-xs text-white/30">Nenhuma conexão preparada.</div>}
+              {connections.length === 0 && <div className="py-16 text-center text-xs text-white/30">Nenhuma instituição conectada.</div>}
             </div>
           </section>
         </div>
