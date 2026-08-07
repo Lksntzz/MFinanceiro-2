@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { addMonths, endOfMonth, eachDayOfInterval, format, getDay, isToday, startOfMonth } from 'date-fns';
+import React, { useEffect, useMemo, useState } from 'react';
+import { addMonths, eachDayOfInterval, endOfMonth, format, getDay, getDaysInMonth, isToday, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ArrowDownCircle, ArrowUpCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, DollarSign } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface CalendarEvent {
   id: string;
@@ -12,45 +13,139 @@ interface CalendarEvent {
   status: string;
 }
 
+type BillOccurrence = {
+  id: string;
+  due_date: string;
+  amount: number;
+  status: string;
+  fixed_bill?: { name?: string | null } | null;
+};
+
+function monthKey(date: Date) {
+  return format(startOfMonth(date), 'yyyy-MM-01');
+}
+
+function safeRecurringDay(raw: unknown, reference: Date) {
+  const requested = Math.max(1, Math.min(31, Math.round(Number(raw || 1))));
+  return Math.min(requested, getDaysInMonth(reference));
+}
+
 export default function FinancialCalendar({ fixedBills = [], settings }: { fixedBills: any[]; settings: any }) {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [occurrences, setOccurrences] = useState<BillOccurrence[]>([]);
+  const [occurrencesLoaded, setOccurrencesLoaded] = useState(false);
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const userId = String(settings?.user_id || '');
+
+  useEffect(() => {
+    let active = true;
+    if (!userId) {
+      setOccurrences([]);
+      setOccurrencesLoaded(false);
+      return () => { active = false; };
+    }
+
+    async function loadOccurrences() {
+      setOccurrencesLoaded(false);
+      const { error: ensureError } = await supabase.rpc('mf_ensure_fixed_bill_occurrences', { p_months_ahead: 12 });
+      if (ensureError) {
+        console.warn('Não foi possível preparar as ocorrências do calendário:', ensureError);
+        if (active) setOccurrencesLoaded(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('mf_fixed_bill_occurrences')
+        .select('id,due_date,amount,status,fixed_bill:mf_fixed_bills(name)')
+        .eq('user_id', userId)
+        .eq('competence', monthKey(currentDate))
+        .order('due_date', { ascending: true });
+
+      if (!active) return;
+      if (error) {
+        console.warn('Não foi possível carregar as ocorrências do calendário:', error);
+        setOccurrencesLoaded(false);
+        return;
+      }
+
+      setOccurrences((data || []).map((row: any) => ({
+        ...row,
+        amount: Math.abs(Number(row.amount || 0)),
+        fixed_bill: Array.isArray(row.fixed_bill) ? row.fixed_bill[0] : row.fixed_bill,
+      })) as BillOccurrence[]);
+      setOccurrencesLoaded(true);
+    }
+
+    void loadOccurrences();
+    const channel = supabase
+      .channel(`financial-calendar-${userId}-${format(currentDate, 'yyyy-MM')}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_fixed_bill_occurrences', filter: `user_id=eq.${userId}` }, () => void loadOccurrences())
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, currentDate.getFullYear(), currentDate.getMonth()]);
 
   const events = useMemo<CalendarEvent[]>(() => {
-    const list: CalendarEvent[] = fixedBills
-      .filter((bill) => Number(bill.due_day) >= 1 && Number(bill.due_day) <= 31)
-      .map((bill) => ({
-        id: `bill-${bill.id}`,
-        day: Number(bill.due_day),
-        name: String(bill.name || 'Conta fixa'),
-        amount: Math.abs(Number(bill.amount || 0)),
-        type: 'expense' as const,
-        status: String(bill.status || 'pending'),
-      }));
+    const billEvents: CalendarEvent[] = occurrencesLoaded
+      ? occurrences
+          .filter((row) => row.status !== 'skipped')
+          .map((row) => {
+            const dueDate = new Date(`${String(row.due_date).slice(0, 10)}T12:00:00`);
+            return {
+              id: `occurrence-${row.id}`,
+              day: Number.isNaN(dueDate.getTime()) ? 1 : dueDate.getDate(),
+              name: String(row.fixed_bill?.name || 'Conta fixa'),
+              amount: Math.abs(Number(row.amount || 0)),
+              type: 'expense' as const,
+              status: String(row.status || 'pending'),
+            };
+          })
+      : fixedBills
+          .filter((bill) => bill.active !== false)
+          .map((bill) => ({
+            id: `bill-${bill.id}`,
+            day: safeRecurringDay(bill.default_due_day ?? bill.due_day, currentDate),
+            name: String(bill.name || 'Conta fixa'),
+            amount: Math.abs(Number(bill.default_amount ?? bill.amount ?? 0)),
+            type: 'expense' as const,
+            status: String(bill.status || 'pending'),
+          }));
 
+    const list = [...billEvents];
     const netSalary = Math.max(0, Number(settings?.net_salary_estimated || 0));
     const firstPayday = Number(settings?.payday_1 || 0);
-    const secondPayday = Number(settings?.payday_2 || 0);
+    const secondPayday = settings?.payday_cycle === 'biweekly' ? Number(settings?.payday_2 || 0) : 0;
     const firstPercentage = Number(settings?.payday_1_percentage ?? (secondPayday ? 50 : 100));
     const secondPercentage = Number(settings?.payday_2_percentage ?? (secondPayday ? 50 : 0));
 
     if (firstPayday >= 1 && firstPayday <= 31 && netSalary > 0) {
       list.push({
-        id: 'income-1', day: firstPayday, name: secondPayday ? 'Salário (1ª parte)' : 'Salário',
-        amount: (netSalary * firstPercentage) / 100, type: 'income', status: 'ready',
+        id: 'income-1',
+        day: safeRecurringDay(firstPayday, currentDate),
+        name: secondPayday ? 'Salário (1ª parte)' : 'Salário',
+        amount: (netSalary * firstPercentage) / 100,
+        type: 'income',
+        status: 'ready',
       });
     }
     if (secondPayday >= 1 && secondPayday <= 31 && netSalary > 0) {
       list.push({
-        id: 'income-2', day: secondPayday, name: 'Salário (2ª parte)',
-        amount: (netSalary * secondPercentage) / 100, type: 'income', status: 'ready',
+        id: 'income-2',
+        day: safeRecurringDay(secondPayday, currentDate),
+        name: 'Salário (2ª parte)',
+        amount: (netSalary * secondPercentage) / 100,
+        type: 'income',
+        status: 'ready',
       });
     }
 
     return list.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name));
-  }, [fixedBills, settings]);
+  }, [fixedBills, settings, occurrences, occurrencesLoaded, currentDate]);
 
   const summary = useMemo(() => {
     const pendingExpenses = events.filter((event) => event.type === 'expense' && event.status !== 'paid');
@@ -73,9 +168,9 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
           <div><h2 className="text-xl font-black capitalize">{format(currentDate, 'MMMM yyyy', { locale: ptBR })}</h2><p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Calendário de obrigações</p></div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setCurrentDate((value) => addMonths(value, -1))} className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"><ChevronLeft size={20} /></button>
+          <button aria-label="Mês anterior" onClick={() => setCurrentDate((value) => addMonths(value, -1))} className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"><ChevronLeft size={20} /></button>
           <button onClick={() => setCurrentDate(new Date())} className="rounded-lg bg-white/5 px-3 py-2 text-[10px] font-bold text-white/50">Hoje</button>
-          <button onClick={() => setCurrentDate((value) => addMonths(value, 1))} className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"><ChevronRight size={20} /></button>
+          <button aria-label="Próximo mês" onClick={() => setCurrentDate((value) => addMonths(value, 1))} className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"><ChevronRight size={20} /></button>
         </div>
       </div>
 
