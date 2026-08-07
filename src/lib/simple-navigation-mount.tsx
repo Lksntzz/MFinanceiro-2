@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   BarChart3,
   CalendarDays,
+  ChevronDown,
   CircleDollarSign,
   CreditCard,
   FileText,
@@ -12,6 +13,7 @@ import {
   LayoutDashboard,
   Lightbulb,
   ListChecks,
+  MoreHorizontal,
   Plus,
   Receipt,
   Settings,
@@ -22,6 +24,8 @@ import {
 
 type Primary = 'home' | 'movements' | 'organize' | 'analysis';
 type Subroute =
+  | 'history'
+  | 'import'
   | 'accounts'
   | 'cards'
   | 'income'
@@ -141,7 +145,8 @@ function go(route: RouteState) {
 
   if (route.primary === 'movements') {
     clickLegacy(['Histórico']);
-    delayed(['Movimentações'], 90);
+    if (route.sub === 'import') delayed(['Importar extrato'], 120);
+    else delayed(['Movimentações'], 90);
     return;
   }
 
@@ -221,9 +226,7 @@ function openTransferLauncher() {
 }
 
 function openStatementImport() {
-  sessionStorage.setItem('mf-simple-route', JSON.stringify({ primary: 'movements' } satisfies RouteState));
-  clickLegacy(['Histórico']);
-  delayed(['Importar extrato'], 120);
+  go({ primary: 'movements', sub: 'import' });
 }
 
 function inferRoute(): RouteState {
@@ -235,7 +238,13 @@ function inferRoute(): RouteState {
   const top = normalize(activeTop?.textContent);
   const activeSubs = Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-content button.active')).map((button) => normalize(button.textContent));
 
-  if (top.includes('historico')) return { primary: 'movements' };
+  if (top.includes('historico')) {
+    if (activeSubs.some((item) => item.includes('importar extrato'))) return { primary: 'movements', sub: 'import' };
+    if (activeSubs.some((item) => item.includes('moviment'))) return { primary: 'movements', sub: 'history' };
+    if (saved?.primary === 'movements') return saved.sub ? saved : { primary: 'movements', sub: 'history' };
+    return { primary: 'movements', sub: 'history' };
+  }
+
   if (top.includes('cartoes')) return { primary: 'organize', sub: 'cards' };
   if (top.includes('renda e folha') || top.includes('preferencias')) return { primary: 'organize', sub: 'income' };
 
@@ -260,25 +269,20 @@ function inferRoute(): RouteState {
   return { primary: 'home' };
 }
 
-const primaryItems = [
-  { id: 'home' as const, label: 'Início', icon: LayoutDashboard },
-  { id: 'movements' as const, label: 'Movimentações', icon: Receipt },
-  { id: 'organize' as const, label: 'Planejamento', icon: Wallet },
-  { id: 'analysis' as const, label: 'Análises', icon: BarChart3 },
+const movementItems = [
+  { id: 'history' as const, label: 'Movimentos', icon: Receipt },
+  { id: 'import' as const, label: 'Importar extratos', icon: Upload },
 ];
 
-const moneyItems = [
+const planningItems = [
   { id: 'accounts' as const, label: 'Contas', icon: CircleDollarSign },
   { id: 'cards' as const, label: 'Cartões e parcelas', icon: CreditCard },
   { id: 'income' as const, label: 'Renda', icon: FileText },
 ];
 
-const commitmentItems = [
+const planningMoreItems = [
   { id: 'calendar' as const, label: 'Calendário', icon: CalendarDays },
   { id: 'subscriptions' as const, label: 'Assinaturas', icon: ListChecks },
-];
-
-const futureItems = [
   { id: 'investments' as const, label: 'Investimentos', icon: Landmark },
 ];
 
@@ -294,36 +298,32 @@ function SideItem({
   icon: Icon,
   label,
   onClick,
+  nested = false,
 }: {
   active?: boolean;
   icon: React.ComponentType<{ size?: number }>;
   label: string;
   onClick: () => void;
+  nested?: boolean;
 }) {
   return (
-    <button type="button" className={`mf-side-item ${active ? 'active' : ''}`} onClick={onClick} title={label}>
-      <Icon size={16}/><span>{label}</span>
+    <button type="button" className={`mf-side-item ${nested ? 'nested' : ''} ${active ? 'active' : ''}`} onClick={onClick} title={label}>
+      <Icon size={nested ? 13 : 16}/><span>{label}</span>
     </button>
   );
 }
 
-function SideGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Accordion({ open, children, nested = false }: { open: boolean; children: React.ReactNode; nested?: boolean }) {
   return (
-    <section className="mf-side-group">
-      <span className="mf-side-group-label">{label}</span>
-      <div className="mf-side-group-items">{children}</div>
-    </section>
+    <div className={`mf-side-accordion ${nested ? 'nested' : ''} ${open ? 'open' : ''}`} aria-hidden={!open}>
+      <div className="mf-side-accordion-inner">{children}</div>
+    </div>
   );
 }
 
 function SimpleNavigation() {
   const [route, setRoute] = useState<RouteState>({ primary: 'home' });
+  const [planningMoreOpen, setPlanningMoreOpen] = useState(false);
 
   useEffect(() => {
     document.body.classList.add('mf-sidebar-navigation-active');
@@ -333,6 +333,9 @@ function SimpleNavigation() {
       const next = inferRoute();
       syncIncomePayrollLayer(next.primary === 'organize' && next.sub === 'income');
       setRoute(next);
+      if (next.primary === 'organize' && ['calendar', 'subscriptions', 'investments'].includes(String(next.sub))) {
+        setPlanningMoreOpen(true);
+      }
     };
 
     sync();
@@ -348,6 +351,17 @@ function SimpleNavigation() {
       window.removeEventListener('resize', sync);
     };
   }, []);
+
+  useEffect(() => {
+    if (route.primary !== 'organize') setPlanningMoreOpen(false);
+  }, [route.primary]);
+
+  const goPrimary = (primary: Primary) => {
+    if (primary === 'home') go({ primary: 'home' });
+    else if (primary === 'movements') go({ primary: 'movements', sub: 'history' });
+    else if (primary === 'organize') go({ primary: 'organize', sub: 'accounts' });
+    else go({ primary: 'analysis', sub: 'summary' });
+  };
 
   return (
     <div id="mf-simple-navigation-root">
@@ -374,7 +388,7 @@ function SimpleNavigation() {
           width:184px;
           display:flex;
           flex-direction:column;
-          gap:13px;
+          gap:10px;
           padding:14px 11px 12px;
           border:1px solid rgba(255,255,255,.07);
           border-radius:18px;
@@ -389,7 +403,14 @@ function SimpleNavigation() {
         .mf-side-brand-copy strong { color:#fff; font-size:12px; letter-spacing:-.01em; }
         .mf-side-brand-copy small { color:rgba(255,255,255,.3); font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 
-        .mf-side-primary { display:flex; flex-direction:column; gap:4px; }
+        .mf-side-primary { min-height:0; flex:1 1 auto; display:flex; flex-direction:column; gap:3px; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
+        .mf-side-primary::-webkit-scrollbar { display:none; }
+        .mf-side-primary-block { display:flex; flex-direction:column; }
+        .mf-side-primary-row { position:relative; }
+        .mf-side-primary-row > .mf-side-item { padding-right:30px; }
+        .mf-side-chevron { position:absolute; top:50%; right:9px; width:16px; height:16px; display:grid; place-items:center; pointer-events:none; color:rgba(255,255,255,.28); transform:translateY(-50%) rotate(-90deg); transition:transform .2s ease, color .2s ease; }
+        .mf-side-primary-row.open .mf-side-chevron { color:var(--brand-primary,#00f2ff); transform:translateY(-50%) rotate(0deg); }
+
         .mf-side-item {
           width:100%; min-height:35px; display:flex; align-items:center; gap:9px; padding:8px 9px; border:1px solid transparent; border-radius:10px;
           background:transparent; color:rgba(255,255,255,.55); font-size:10.5px; font-weight:820; text-align:left; transition:.16s ease;
@@ -398,6 +419,20 @@ function SimpleNavigation() {
         .mf-side-item.active { color:#ecfeff; border-color:rgba(0,242,255,.18); background:rgba(0,242,255,.085); box-shadow:inset 2px 0 0 var(--brand-primary,#00f2ff); }
         .mf-side-item svg { flex:0 0 auto; opacity:.82; }
         .mf-side-item.active svg { color:var(--brand-primary,#00f2ff); opacity:1; }
+        .mf-side-item.nested { min-height:28px; padding:5px 8px 5px 24px; border-radius:8px; font-size:9.2px; color:rgba(255,255,255,.43); }
+        .mf-side-item.nested.active { color:#dffcff; background:rgba(0,242,255,.06); border-color:rgba(0,242,255,.13); }
+
+        .mf-side-accordion { display:grid; grid-template-rows:0fr; opacity:0; transform:translateY(-4px); transition:grid-template-rows .24s ease, opacity .18s ease, transform .24s ease; }
+        .mf-side-accordion.open { grid-template-rows:1fr; opacity:1; transform:translateY(0); }
+        .mf-side-accordion-inner { min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:2px; padding-left:7px; }
+        .mf-side-accordion.open > .mf-side-accordion-inner { padding-top:3px; padding-bottom:4px; }
+        .mf-side-accordion.nested .mf-side-accordion-inner { padding-left:13px; border-left:1px solid rgba(255,255,255,.055); margin-left:10px; }
+
+        .mf-side-more { position:relative; width:100%; min-height:28px; display:flex; align-items:center; gap:8px; padding:5px 27px 5px 24px; border:0; border-radius:8px; background:transparent; color:rgba(255,255,255,.4); font-size:9.2px; font-weight:820; text-align:left; transition:.16s ease; }
+        .mf-side-more:hover { color:#fff; background:rgba(255,255,255,.035); }
+        .mf-side-more svg:first-child { flex:0 0 auto; opacity:.75; }
+        .mf-side-more .mf-side-chevron { right:7px; }
+        .mf-side-more.open .mf-side-chevron { color:var(--brand-primary,#00f2ff); transform:translateY(-50%) rotate(0deg); }
 
         .mf-side-launch {
           width:100%; min-height:38px; display:flex; align-items:center; justify-content:center; gap:7px; padding:9px; border:0; border-radius:11px;
@@ -405,17 +440,7 @@ function SimpleNavigation() {
         }
         .mf-side-launch:hover { filter:brightness(1.06); }
 
-        .mf-side-context { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; padding-right:1px; }
-        .mf-side-context::-webkit-scrollbar { display:none; }
-        .mf-side-context-title { display:block; margin:2px 6px 8px; color:rgba(255,255,255,.78); font-size:10px; font-weight:900; }
-        .mf-side-group { margin-top:11px; }
-        .mf-side-group:first-of-type { margin-top:0; }
-        .mf-side-group-label { display:block; margin:0 8px 4px; color:rgba(255,255,255,.25); font-size:7.5px; font-weight:950; letter-spacing:.11em; text-transform:uppercase; }
-        .mf-side-group-items { display:flex; flex-direction:column; gap:2px; }
-        .mf-side-group .mf-side-item { min-height:30px; padding:6px 8px; font-size:9.5px; border-radius:9px; }
-        .mf-side-group .mf-side-item svg { width:14px; height:14px; }
-
-        .mf-side-shortcuts { margin-top:auto; padding-top:10px; border-top:1px solid rgba(255,255,255,.06); display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+        .mf-side-shortcuts { padding-top:8px; border-top:1px solid rgba(255,255,255,.06); display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
         .mf-side-shortcut { min-width:0; height:31px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.065); border-radius:9px; color:rgba(255,255,255,.48); background:rgba(255,255,255,.025); }
         .mf-side-shortcut:hover { color:var(--brand-primary,#00f2ff); border-color:rgba(0,242,255,.18); background:rgba(0,242,255,.055); }
         .mf-side-settings { width:100%; min-height:30px; display:flex; align-items:center; gap:8px; padding:6px 8px; border:0; border-radius:9px; color:rgba(255,255,255,.38); background:transparent; font-size:9px; font-weight:800; }
@@ -426,17 +451,16 @@ function SimpleNavigation() {
           .mf-side-panel { width:156px; padding-inline:9px; }
           .mf-side-brand-copy strong { font-size:11px; }
           .mf-side-item { font-size:9.5px; padding-inline:8px; }
-          .mf-side-group .mf-side-item { font-size:9px; }
+          .mf-side-item.nested,.mf-side-more { font-size:8.7px; }
         }
 
         @media (max-height:720px) and (min-width:821px) {
-          .mf-side-panel { gap:8px; padding-top:10px; padding-bottom:9px; }
+          .mf-side-panel { gap:7px; padding-top:10px; padding-bottom:9px; }
           .mf-side-brand { min-height:31px; padding-bottom:6px; }
-          .mf-side-primary { gap:2px; }
+          .mf-side-primary { gap:1px; }
           .mf-side-item { min-height:29px; padding-block:5px; }
+          .mf-side-item.nested,.mf-side-more { min-height:24px; padding-block:3px; }
           .mf-side-launch { min-height:32px; padding-block:6px; }
-          .mf-side-group { margin-top:6px; }
-          .mf-side-group .mf-side-item { min-height:25px; padding-block:4px; }
           .mf-side-shortcuts { padding-top:6px; }
           .mf-side-shortcut { height:27px; }
         }
@@ -451,8 +475,9 @@ function SimpleNavigation() {
             position:fixed; left:8px; right:8px; bottom:max(8px, env(safe-area-inset-bottom)); top:auto; width:auto; height:auto;
             padding:6px; border-radius:15px; display:block; overflow:visible;
           }
-          .mf-side-brand,.mf-side-context,.mf-side-shortcuts,.mf-side-settings,.mf-side-launch { display:none; }
-          .mf-side-primary { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; }
+          .mf-side-brand,.mf-side-accordion,.mf-side-shortcuts,.mf-side-settings,.mf-side-launch,.mf-side-chevron { display:none; }
+          .mf-side-primary { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; overflow:visible; }
+          .mf-side-primary-block { display:block; }
           .mf-side-primary .mf-side-item { min-height:48px; flex-direction:column; justify-content:center; gap:3px; padding:5px 2px; font-size:8px; text-align:center; }
           .mf-side-primary .mf-side-item.active { box-shadow:inset 0 -2px 0 var(--brand-primary,#00f2ff); }
         }
@@ -465,55 +490,59 @@ function SimpleNavigation() {
         </div>
 
         <nav className="mf-side-primary">
-          {primaryItems.map((item) => (
-            <SideItem
-              key={item.id}
-              active={route.primary === item.id}
-              icon={item.icon}
-              label={item.label}
-              onClick={() => go({ primary: item.id, sub: item.id === 'organize' ? 'accounts' : item.id === 'analysis' ? 'summary' : undefined })}
-            />
-          ))}
+          <div className="mf-side-primary-block">
+            <SideItem active={route.primary === 'home'} icon={LayoutDashboard} label="Início" onClick={() => goPrimary('home')}/>
+          </div>
+
+          <div className="mf-side-primary-block">
+            <div className={`mf-side-primary-row ${route.primary === 'movements' ? 'open' : ''}`}>
+              <SideItem active={route.primary === 'movements'} icon={Receipt} label="Movimentações" onClick={() => goPrimary('movements')}/>
+              <span className="mf-side-chevron"><ChevronDown size={13}/></span>
+            </div>
+            <Accordion open={route.primary === 'movements'}>
+              {movementItems.map((item) => (
+                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'movements', sub: item.id })}/>
+              ))}
+            </Accordion>
+          </div>
+
+          <div className="mf-side-primary-block">
+            <div className={`mf-side-primary-row ${route.primary === 'organize' ? 'open' : ''}`}>
+              <SideItem active={route.primary === 'organize'} icon={Wallet} label="Planejamento" onClick={() => goPrimary('organize')}/>
+              <span className="mf-side-chevron"><ChevronDown size={13}/></span>
+            </div>
+            <Accordion open={route.primary === 'organize'}>
+              {planningItems.map((item) => (
+                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>
+              ))}
+              <button type="button" className={`mf-side-more ${planningMoreOpen ? 'open' : ''}`} onClick={() => setPlanningMoreOpen((value) => !value)}>
+                <MoreHorizontal size={13}/><span>Mais ferramentas</span><span className="mf-side-chevron"><ChevronDown size={12}/></span>
+              </button>
+              <Accordion nested open={planningMoreOpen}>
+                {planningMoreItems.map((item) => (
+                  <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>
+                ))}
+              </Accordion>
+            </Accordion>
+          </div>
+
+          <div className="mf-side-primary-block">
+            <div className={`mf-side-primary-row ${route.primary === 'analysis' ? 'open' : ''}`}>
+              <SideItem active={route.primary === 'analysis'} icon={BarChart3} label="Análises" onClick={() => goPrimary('analysis')}/>
+              <span className="mf-side-chevron"><ChevronDown size={13}/></span>
+            </div>
+            <Accordion open={route.primary === 'analysis'}>
+              {analysisItems.map((item) => (
+                <SideItem key={item.id} nested active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'analysis', sub: item.id })}/>
+              ))}
+            </Accordion>
+          </div>
         </nav>
 
         <button type="button" className="mf-side-launch" onClick={triggerUnifiedLauncher}><Plus size={15}/>Lançar</button>
 
-        <div className="mf-side-context">
-          {route.primary === 'organize' && (
-            <>
-              <span className="mf-side-context-title">Planejamento</span>
-              <SideGroup label="Dinheiro">
-                {moneyItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>)}
-              </SideGroup>
-              <SideGroup label="Compromissos">
-                {commitmentItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>)}
-              </SideGroup>
-              <SideGroup label="Futuro">
-                {futureItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'organize', sub: item.id })}/>)}
-              </SideGroup>
-            </>
-          )}
-
-          {route.primary === 'analysis' && (
-            <>
-              <span className="mf-side-context-title">Análises</span>
-              <SideGroup label="Entender seus dados">
-                {analysisItems.map((item) => <SideItem key={item.id} active={route.sub === item.id} icon={item.icon} label={item.label} onClick={() => go({ primary: 'analysis', sub: item.id })}/>)}
-              </SideGroup>
-            </>
-          )}
-
-          {route.primary === 'home' && (
-            <div className="mf-side-context-title">Visão rápida e próximos passos.</div>
-          )}
-
-          {route.primary === 'movements' && (
-            <div className="mf-side-context-title">Histórico, filtros e importação.</div>
-          )}
-        </div>
-
         <div className="mf-side-shortcuts" aria-label="Atalhos rápidos">
-          <button type="button" className="mf-side-shortcut" onClick={openStatementImport} title="Importar extrato"><Upload size={14}/></button>
+          <button type="button" className="mf-side-shortcut" onClick={openStatementImport} title="Importar extratos"><Upload size={14}/></button>
           <button type="button" className="mf-side-shortcut" onClick={openTransferLauncher} title="Transferência"><ArrowLeftRight size={14}/></button>
           <button type="button" className="mf-side-shortcut" onClick={() => go({ primary: 'organize', sub: 'calendar' })} title="Calendário"><CalendarDays size={14}/></button>
         </div>
