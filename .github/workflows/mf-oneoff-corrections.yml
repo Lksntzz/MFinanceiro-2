@@ -1,0 +1,329 @@
+name: MF one-off corrections
+
+on:
+  push:
+    branches: [mega-update-stage]
+    paths:
+      - .github/workflows/mf-oneoff-corrections.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mega-update-stage
+          fetch-depth: 0
+      - name: Apply final analytics and import fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f'missing patch anchor: {label}')
+              return text.replace(old, new, 1)
+
+          dashboard_path = Path('src/components/Dashboard.tsx')
+          dashboard = dashboard_path.read_text()
+
+          dashboard = replace_once(
+              dashboard,
+              "  const [summary, setSummary] = useState<FinanceSummary | null>(null);\n\n  const [loading, setLoading] = useState(true);",
+              "  const [summary, setSummary] = useState<FinanceSummary | null>(null);\n  const [analyticsTransactions, setAnalyticsTransactions] = useState<Transaction[]>([]);\n  const [analyticsLoading, setAnalyticsLoading] = useState(false);\n  const [analyticsComplete, setAnalyticsComplete] = useState(false);\n  const analyticsRequestRef = useRef(0);\n\n  const [loading, setLoading] = useState(true);",
+              'dashboard analytics state',
+          )
+
+          analytics_helper = r'''  async function hydrateAnalyticsLedger(seed: LedgerPage) {
+            const requestId = ++analyticsRequestRef.current;
+            let rows = seed.items;
+            let hasMore = seed.has_more;
+            let cursor = seed.next_cursor;
+
+            setAnalyticsLoading(hasMore);
+            setAnalyticsComplete(!hasMore);
+
+            try {
+              while (hasMore) {
+                if (!cursor) throw new Error('O ledger informou mais páginas sem fornecer cursor.');
+                const { data, error: pageError } = await db.rpc('mf_get_ledger_page', {
+                  p_page_size: 250,
+                  p_cursor_date: cursor.date,
+                  p_cursor_created_at: cursor.created_at,
+                  p_cursor_id: cursor.id,
+                });
+                if (pageError) throw pageError;
+
+                const page = normalizeLedgerPage(data);
+                rows = mergeLedgerRows(rows, page.items);
+                hasMore = page.has_more;
+                cursor = page.next_cursor;
+              }
+
+              if (requestId === analyticsRequestRef.current) {
+                setAnalyticsTransactions(rows);
+                setAnalyticsComplete(true);
+              }
+            } catch (analyticsError) {
+              console.warn('Falha ao consolidar o histórico completo para análises:', analyticsError);
+              if (requestId === analyticsRequestRef.current) {
+                setAnalyticsTransactions(rows);
+                setAnalyticsComplete(false);
+              }
+            } finally {
+              if (requestId === analyticsRequestRef.current) setAnalyticsLoading(false);
+            }
+          }
+
+          async function fetchData() {'''
+          dashboard = replace_once(
+              dashboard,
+              "  async function fetchData() {",
+              analytics_helper,
+              'dashboard analytics hydrator',
+          )
+
+          dashboard = replace_once(
+              dashboard,
+              "      setHasMoreTransactions(ledgerPage.has_more);\n      setLedgerCursor(ledgerPage.next_cursor);\n      setCards((cardsResult.data || []) as CreditCard[]);",
+              "      setHasMoreTransactions(ledgerPage.has_more);\n      setLedgerCursor(ledgerPage.next_cursor);\n      void hydrateAnalyticsLedger(ledgerPage);\n      setCards((cardsResult.data || []) as CreditCard[]);",
+              'start analytics hydration',
+          )
+
+          realtime_anchor = r'''        setTransactions((current) => {
+          if (payload.eventType === 'DELETE') {
+            return current.filter((item) => item.id !== rowId);
+          }
+          const normalized = normalizeTransaction(payload.new);
+          if (!normalized) return current;
+          return mergeLedgerRows(current, [normalized]);
+        });
+        void refreshFinancialState().catch((refreshError) => console.warn('Falha ao atualizar saldos:', refreshError));'''
+          realtime_replacement = r'''        setTransactions((current) => {
+          if (payload.eventType === 'DELETE') {
+            return current.filter((item) => item.id !== rowId);
+          }
+          const normalized = normalizeTransaction(payload.new);
+          if (!normalized) return current;
+          return mergeLedgerRows(current, [normalized]);
+        });
+        setAnalyticsTransactions((current) => {
+          if (current.length === 0) return current;
+          if (payload.eventType === 'DELETE') {
+            return current.filter((item) => item.id !== rowId);
+          }
+          const normalized = normalizeTransaction(payload.new);
+          if (!normalized) return current;
+          return mergeLedgerRows(current, [normalized]);
+        });
+        void refreshFinancialState().catch((refreshError) => console.warn('Falha ao atualizar saldos:', refreshError));'''
+          dashboard = replace_once(dashboard, realtime_anchor, realtime_replacement, 'analytics realtime mirror')
+
+          summary_anchor = r'''  useEffect(() => {
+    if (!settings) {
+      setSummary(null);
+      return;
+    }
+
+    try {
+      setSummary(calculateFinanceSummary(transactions, settings, fixedBills, cards, installments));
+    } catch (err) {
+      console.error('Summary calculation failed:', err);
+      setSummary(null);
+    }
+  }, [transactions, settings, fixedBills, cards, installments]);'''
+          summary_replacement = r'''  const financeTransactions = analyticsComplete ? analyticsTransactions : transactions;
+  const analyticsIncomplete = !analyticsLoading
+    && !analyticsComplete
+    && transactionCount > transactions.length;
+
+  useEffect(() => {
+    if (!settings) {
+      setSummary(null);
+      return;
+    }
+
+    try {
+      setSummary(calculateFinanceSummary(financeTransactions, settings, fixedBills, cards, installments));
+    } catch (err) {
+      console.error('Summary calculation failed:', err);
+      setSummary(null);
+    }
+  }, [financeTransactions, settings, fixedBills, cards, installments]);'''
+          dashboard = replace_once(dashboard, summary_anchor, summary_replacement, 'full-history summary')
+
+          dashboard = replace_once(
+              dashboard,
+              "    transactions\n      .filter((transaction) => transaction.type === 'expense')",
+              "    financeTransactions\n      .filter((transaction) => transaction.type === 'expense')",
+              'overview categories source',
+          )
+          dashboard = replace_once(dashboard, "  }, [transactions]);\n\n  const latestOverviewTransactions", "  }, [financeTransactions]);\n\n  const latestOverviewTransactions", 'overview categories dependency')
+          dashboard = replace_once(dashboard, "    const validDates = transactions\n", "    const validDates = financeTransactions\n", 'history dates source')
+          dashboard = replace_once(dashboard, "    transactions.forEach((transaction) => {\n      const key = transactionDay(transaction.date);", "    financeTransactions.forEach((transaction) => {\n      const key = transactionDay(transaction.date);", 'history values source')
+          dashboard = replace_once(dashboard, "  }, [transactions, settings?.current_balance]);", "  }, [financeTransactions, settings?.current_balance]);", 'history dependency')
+
+          import_result_anchor = r'''    const result = data as StatementImportRpcResult | null;
+    const insertedCount = Number(result?.inserted_count);
+    if (!result || !Number.isInteger(insertedCount) || insertedCount < 0) {
+      throw new Error('O banco não confirmou quantos lançamentos foram importados.');
+    }
+
+    await fetchData();
+    return insertedCount;'''
+          import_result_replacement = r'''    const result = data as StatementImportRpcResult | null;
+    if (!result) throw new Error('O banco não retornou o resumo da importação.');
+
+    const insertedCount = Number(result.inserted_count);
+    const duplicateCount = Number(result.duplicate_count);
+    const rejectedCount = Number(result.rejected_count);
+    const ignoredCount = Number(result.ignored_count);
+    const counts = [insertedCount, duplicateCount, rejectedCount, ignoredCount];
+    if (counts.some((count) => !Number.isInteger(count) || count < 0)) {
+      throw new Error('O banco retornou uma contagem inválida para a importação.');
+    }
+
+    const normalizedResult: StatementImportRpcResult = {
+      ...result,
+      inserted_count: insertedCount,
+      duplicate_count: duplicateCount,
+      rejected_count: rejectedCount,
+      ignored_count: ignoredCount,
+      net_new: Number(result.net_new || 0),
+      balance_before: Number(result.balance_before || 0),
+      balance_after: Number(result.balance_after || 0),
+    };
+
+    await fetchData();
+    return normalizedResult;'''
+          dashboard = replace_once(dashboard, import_result_anchor, import_result_replacement, 'rich import result')
+
+          dashboard = dashboard.replace("<Details transactions={transactions} summary={summary} />", "<Details transactions={financeTransactions} summary={summary} />", 1)
+          dashboard = dashboard.replace("<Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />", "<Insights summary={summary} transactions={financeTransactions} fixedBills={fixedBills} />", 1)
+          dashboard = dashboard.replace(
+              "<FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, item) => sum + Number(item.amount || 0), 0), categoryCount: new Set(transactions.map((item) => item.category)).size }} />",
+              "<FinancialHealth transactions={financeTransactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, item) => sum + Number(item.amount || 0), 0), categoryCount: new Set(financeTransactions.map((item) => item.category)).size }} />",
+              1,
+          )
+
+          dashboard = replace_once(
+              dashboard,
+              "          {loading && <div className=\"mf-loading\">Atualizando dados...</div>}",
+              "          {(loading || analyticsLoading) && <div className=\"mf-loading\">{loading ? 'Atualizando dados...' : 'Consolidando histórico completo...'}</div>}\n          {analyticsIncomplete && <div className=\"mf-error\" role=\"status\"><AlertCircle size={16} />As análises estão usando apenas os lançamentos recentes porque o histórico completo não pôde ser consolidado. Atualize a página para tentar novamente.</div>}",
+              'dashboard analytics status',
+          )
+          dashboard = replace_once(
+              dashboard,
+              "            </div>\n            {analysisSubTab === 'stats' && <Details transactions={financeTransactions} summary={summary} />}",
+              "            </div>\n            {analyticsLoading && <div className=\"mf-loading\">Consolidando histórico completo...</div>}\n            {analyticsIncomplete && <div className=\"mf-error\" role=\"status\"><AlertCircle size={16} />Não foi possível consolidar todo o histórico. Os indicadores abaixo estão temporariamente limitados aos lançamentos recentes.</div>}\n            {analysisSubTab === 'stats' && <Details transactions={financeTransactions} summary={summary} />}",
+              'analysis analytics status',
+          )
+
+          dashboard_path.write_text(dashboard)
+
+          importer_path = Path('src/components/ImportarExtratos.tsx')
+          importer = importer_path.read_text()
+
+          importer = replace_once(
+              importer,
+              "interface ImportarExtratosProps {",
+              "interface StatementImportResult {\n  batch_id: string;\n  inserted_count: number;\n  duplicate_count: number;\n  rejected_count: number;\n  ignored_count: number;\n}\n\ninterface ImportarExtratosProps {",
+              'import result interface',
+          )
+          importer = replace_once(importer, ") => Promise<number>;", ") => Promise<StatementImportResult>;", 'import callback return type')
+          importer = replace_once(importer, "  const [committedCount, setCommittedCount] = useState(0);", "  const [commitResult, setCommitResult] = useState<StatementImportResult | null>(null);", 'import result state')
+          importer = importer.replace("    setCommittedCount(0);", "    setCommitResult(null);")
+          importer = replace_once(
+              importer,
+              "      const insertedCount = await onImport(importedData, calibrationBalance, {",
+              "      const importResult = await onImport(importedData, calibrationBalance, {",
+              'capture rich import result',
+          )
+          importer = replace_once(importer, "      setCommittedCount(insertedCount);", "      setCommitResult(importResult);", 'store rich import result')
+
+          success_anchor = r'''  if (step === 'success') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
+        <div className="h-20 w-20 rounded-full bg-green-500/20 flex items-center justify-center text-green-500">
+          <CheckCircle2 size={48} />
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold">Importacao Concluida!</h2>
+          <p className="text-white/40 text-sm max-w-xs mx-auto">
+            {committedCount} lancamentos foram adicionados ao seu ledger com sucesso.
+          </p>
+        </div>
+        <button
+          onClick={onCancel}
+          className="px-8 py-3 bg-brand-primary text-white rounded-xl font-bold uppercase tracking-widest hover:bg-brand-primary/80 transition-all"
+        >
+          Voltar ao Dashboard
+        </button>
+      </div>
+    );
+  }'''
+          success_replacement = r'''  if (step === 'success') {
+    const inserted = Number(commitResult?.inserted_count || 0);
+    const duplicates = Number(commitResult?.duplicate_count || 0);
+    const rejected = Number(commitResult?.rejected_count || 0);
+    const ignored = Number(commitResult?.ignored_count || 0);
+    const noNewRows = inserted === 0;
+    const onlyDuplicates = noNewRows && duplicates > 0 && rejected === 0 && ignored === 0;
+    const hasWarnings = rejected > 0 || ignored > 0;
+    const title = inserted > 0
+      ? hasWarnings ? 'Importação concluída com ressalvas' : 'Importação concluída'
+      : onlyDuplicates
+        ? 'Nenhum lançamento novo'
+        : 'Importação sem novos lançamentos';
+    const description = inserted > 0
+      ? `${inserted} lançamento(s) novo(s) foram adicionados ao ledger.`
+      : onlyDuplicates
+        ? `Os ${duplicates} lançamento(s) identificado(s) já existiam e não foram duplicados.`
+        : rejected > 0
+          ? `Nenhum lançamento foi adicionado. ${rejected} item(ns) foram rejeitados; consulte Lotes e conciliação para revisar os motivos.`
+          : ignored > 0
+            ? `Nenhum lançamento foi adicionado. ${ignored} item(ns) foram ignorados pelas regras de importação.`
+            : 'O arquivo foi processado, mas não produziu alterações no ledger.';
+
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-5 animate-fade-in">
+        <div className={`h-20 w-20 rounded-full flex items-center justify-center ${hasWarnings && noNewRows ? 'bg-amber-500/20 text-amber-300' : 'bg-green-500/20 text-green-500'}`}>
+          {hasWarnings && noNewRows ? <AlertCircle size={48} /> : <CheckCircle2 size={48} />}
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold">{title}</h2>
+          <p className="text-white/50 text-sm max-w-md mx-auto">{description}</p>
+        </div>
+        <div className="grid w-full max-w-xl grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="glass-card !p-3 text-center"><span className="block text-[9px] uppercase text-white/35">Inseridos</span><strong className="text-green-400">{inserted}</strong></div>
+          <div className="glass-card !p-3 text-center"><span className="block text-[9px] uppercase text-white/35">Duplicados</span><strong className="text-yellow-300">{duplicates}</strong></div>
+          <div className="glass-card !p-3 text-center"><span className="block text-[9px] uppercase text-white/35">Rejeitados</span><strong className={rejected > 0 ? 'text-red-300' : ''}>{rejected}</strong></div>
+          <div className="glass-card !p-3 text-center"><span className="block text-[9px] uppercase text-white/35">Ignorados</span><strong>{ignored}</strong></div>
+        </div>
+        <button
+          onClick={onCancel}
+          className="px-8 py-3 bg-brand-primary text-white rounded-xl font-bold uppercase tracking-widest hover:bg-brand-primary/80 transition-all"
+        >
+          Voltar às movimentações
+        </button>
+      </div>
+    );
+  }'''
+          importer = replace_once(importer, success_anchor, success_replacement, 'accurate import completion screen')
+          importer_path.write_text(importer)
+          PY
+      - name: Validate TypeScript build
+        run: npm ci && npm run build
+      - name: Commit corrections
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/mf-oneoff-corrections.yml
+          git add src/components/Dashboard.tsx src/components/ImportarExtratos.tsx
+          git commit -m "fix: finalize analytics and import reconciliation"
+          git push origin HEAD:mega-update-stage
