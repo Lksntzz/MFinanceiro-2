@@ -83,6 +83,15 @@ body {
   box-shadow: none !important;
 }
 
+/* Investments is a dedicated workspace: its sidebar owns the local navigation. */
+body.mf-investments-workspace .mf-content > .mf-tab-shell > .mf-subnav {
+  display: none;
+}
+
+body.mf-investments-workspace .mf-content > .mf-tab-shell {
+  gap: 0;
+}
+
 .mf-latest-list > div,
 .mf-category-item {
   content-visibility: auto;
