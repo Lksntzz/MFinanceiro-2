@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Auth from './components/Auth';
@@ -20,6 +20,44 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [maintenance, setMaintenance] = useState<MaintenanceConfig | null>(null);
+
+  // The simplified financial sidebar is mounted by a global runtime integration.
+  // Keep it completely hidden until App has confirmed an authenticated session so
+  // navigation never leaks onto login, access-request or maintenance screens.
+  useLayoutEffect(() => {
+    const styleId = 'mf-auth-navigation-gate';
+    let style = document.getElementById(styleId) as HTMLStyleElement | null;
+    let ownsStyle = false;
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        body:not([data-mf-authenticated="true"]) #mf-simple-navigation-app {
+          display: none !important;
+        }
+      `;
+      document.head.appendChild(style);
+      ownsStyle = true;
+    }
+
+    return () => {
+      delete document.body.dataset.mfAuthenticated;
+      document.body.classList.remove('mf-sidebar-navigation-active');
+      if (ownsStyle) style?.remove();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (session) {
+      document.body.dataset.mfAuthenticated = 'true';
+      document.body.classList.add('mf-sidebar-navigation-active');
+      return;
+    }
+
+    delete document.body.dataset.mfAuthenticated;
+    document.body.classList.remove('mf-sidebar-navigation-active');
+  }, [session]);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
