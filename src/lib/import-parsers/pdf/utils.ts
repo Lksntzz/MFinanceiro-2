@@ -1,8 +1,10 @@
 import { ExtractedPdfTransaction, PdfParserContext } from './types';
 
 const DATE_TOKEN_REGEX = /\b(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
-const AMOUNT_TOKEN_REGEX = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/g;
-const AMOUNT_TOKEN_TEST_REGEX = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/;
+// Monetary tokens must be contiguous. Allowing arbitrary spaces inside the numeric body
+// can concatenate a document/NSU column with the actual amount in PDF table extraction.
+const AMOUNT_TOKEN_REGEX = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
+const AMOUNT_TOKEN_TEST_REGEX = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/;
 
 export function normalizeHeader(value: string): string {
   return value
@@ -158,7 +160,7 @@ export function parseByDateAndCurrencyLines(context: PdfParserContext): Extracte
 export function parseByBlockRegex(context: PdfParserContext): ExtractedPdfTransaction[] {
   const normalizedText = context.fullText.replace(/\s+/g, ' ').trim();
   const extracted: ExtractedPdfTransaction[] = [];
-  const blockRegex = /(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\s+(.+?)\s+((?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?)(?:\s+(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?)?/g;
+  const blockRegex = /(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\s+(.+?)\s+((?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?)(?:\s+(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?)?/g;
   let match: RegExpExecArray | null;
 
   while ((match = blockRegex.exec(normalizedText)) !== null) {
