@@ -12,9 +12,8 @@ function vendorChunk(id: string) {
   if (id.includes('/xlsx/')) return 'vendor-spreadsheet';
   if (id.includes('/pdfjs-dist/')) return 'vendor-pdf';
   if (id.includes('/date-fns/')) return 'vendor-date';
-  if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/react-router/')) return 'vendor-react';
 
-  return 'vendor-common';
+  return undefined;
 }
 
 export default defineConfig(() => {
