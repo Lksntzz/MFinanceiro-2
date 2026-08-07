@@ -1,5 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import {
+  BASE_REVIEW_THRESHOLD,
+  buildAdaptivePatternMap,
+  calibrateConfidence,
+  clampConfidence,
+  merchantKey,
+  normalizeLearningKey,
+} from "../_shared/adaptive-learning.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,11 +72,6 @@ function readSupabaseKey(jsonName: string, directName: string, legacyName: strin
   return Deno.env.get(legacyName) || "";
 }
 
-function clampConfidence(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0;
-}
-
 function isoDate(value: unknown): string | null {
   const text = String(value || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
@@ -98,6 +101,15 @@ function interactionText(payload: Record<string, unknown>): string {
     if (typeof textPart?.text === "string") return textPart.text;
   }
   throw new Error("O provedor de IA não retornou o JSON esperado.");
+}
+
+function numericConfidenceMap(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    result[key] = clampConfidence(raw);
+  }
+  return result;
 }
 
 Deno.serve(async (request: Request) => {
@@ -168,6 +180,7 @@ Deno.serve(async (request: Request) => {
               "Extraia apenas transações realmente visíveis neste extrato financeiro brasileiro.",
               "Não invente datas, descrições, valores, saldos ou identificadores.",
               "Use amount positivo e type income/expense. Preserve o texto do estabelecimento.",
+              "A categoria é apenas uma sugestão e nunca deve alterar data, valor, descrição ou tipo.",
               "Dê confiança de 0 a 1 por linha e por campo. Se houver dúvida, reduza a confiança.",
               "Itens com confiança baixa serão obrigatoriamente revisados por uma pessoa.",
             ].join(" "),
@@ -188,28 +201,89 @@ Deno.serve(async (request: Request) => {
     const transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     if (transactions.length > 2000) throw new Error("O documento excedeu o limite de 2.000 lançamentos.");
 
+    const institutionKey = normalizeLearningKey(parsed.institution_name || "desconhecida") || "desconhecida";
+    const [qualityResult, patternResult] = await Promise.all([
+      supabase
+        .from("mf_ocr_quality_profiles")
+        .select("institution_key,reviewed_item_count,review_threshold,correction_rate")
+        .eq("user_id", userData.user.id)
+        .in("institution_key", institutionKey === "*" ? ["*"] : [institutionKey, "*"]),
+      supabase
+        .from("mf_adaptive_category_patterns")
+        .select("merchant_key,transaction_type,category_id,category_name,confidence_score,confirmation_count")
+        .eq("user_id", userData.user.id)
+        .eq("auto_apply", true)
+        .eq("suppressed", false)
+        .limit(2000),
+    ]);
+
+    const qualityRows = qualityResult.error ? [] : (qualityResult.data || []);
+    const specificProfile = qualityRows.find((row) => row.institution_key === institutionKey);
+    const globalProfile = qualityRows.find((row) => row.institution_key === "*");
+    const chosenProfile = specificProfile && Number(specificProfile.reviewed_item_count || 0) >= 10
+      ? specificProfile
+      : globalProfile || specificProfile;
+    const reviewThreshold = Math.min(
+      0.98,
+      Math.max(0.75, Number(chosenProfile?.review_threshold || BASE_REVIEW_THRESHOLD)),
+    );
+    const qualityProfileSampleSize = Math.max(0, Number(chosenProfile?.reviewed_item_count || 0));
+    const adaptivePatterns = buildAdaptivePatternMap(patternResult.error ? [] : (patternResult.data || []));
+    let adaptiveCategoryMatches = 0;
+
     const items = transactions.map((raw, index) => {
       const item = raw as Record<string, unknown>;
       const amount = Math.abs(Number(item.amount || 0));
       const type = item.type === "income" || item.type === "expense" ? item.type : null;
-      const confidence = clampConfidence(item.confidence);
-      const valid = Boolean(isoDate(item.date) && String(item.description || "").trim() && amount > 0 && type);
+      const description = String(item.description || "").trim().slice(0, 240);
+      const rawConfidence = clampConfidence(item.confidence);
+      const calibratedConfidence = calibrateConfidence(rawConfidence, reviewThreshold);
+      const valid = Boolean(isoDate(item.date) && description && amount > 0 && type);
+      const adaptivePattern = type ? adaptivePatterns.get(`${type}:${merchantKey(description)}`) : undefined;
+      if (adaptivePattern) adaptiveCategoryMatches += 1;
+      const categoryName = String(adaptivePattern?.category_name || item.category || "Geral").trim().slice(0, 120) || "Geral";
+      const fieldConfidence = numericConfidenceMap(item.field_confidence);
+
       return {
         extraction_id: extractionId,
         user_id: userData.user.id,
         line_number: index + 1,
         transaction_date: isoDate(item.date),
-        description: String(item.description || "").trim().slice(0, 240) || null,
+        description: description || null,
         signed_amount: valid ? (type === "expense" ? -amount : amount) : null,
         transaction_type: type,
         source_name: String(item.source || parsed.institution_name || "OCR/IA").trim().slice(0, 120),
         external_id: String(item.external_id || "").trim().slice(0, 240) || null,
         running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : null,
-        category_name: String(item.category || "Geral").trim().slice(0, 120),
-        overall_confidence: valid ? confidence : Math.min(confidence, 0.4),
-        field_confidence: item.field_confidence && typeof item.field_confidence === "object" ? item.field_confidence : {},
+        category_id: adaptivePattern?.category_id || null,
+        category_name: categoryName,
+        overall_confidence: valid ? calibratedConfidence : Math.min(calibratedConfidence, 0.4),
+        field_confidence: {
+          ...fieldConfidence,
+          model_overall_confidence: rawConfidence,
+          calibrated_overall_confidence: calibratedConfidence,
+          review_threshold: reviewThreshold,
+          adaptive_category_confidence: adaptivePattern?.confidence_score || 0,
+        },
         review_status: "pending",
-        raw_payload: item,
+        raw_payload: {
+          ...item,
+          learning: {
+            merchant_key: merchantKey(description),
+            model_confidence: rawConfidence,
+            calibrated_confidence: calibratedConfidence,
+            review_threshold: reviewThreshold,
+            quality_profile_sample_size: qualityProfileSampleSize,
+            adaptive_category: adaptivePattern
+              ? {
+                category_id: adaptivePattern.category_id,
+                category_name: adaptivePattern.category_name,
+                confidence: adaptivePattern.confidence_score,
+                confirmations: adaptivePattern.confirmation_count,
+              }
+              : null,
+          },
+        },
       };
     });
 
@@ -224,19 +298,24 @@ Deno.serve(async (request: Request) => {
       const { data: insertedItems, error: insertError } = await supabase
         .from("mf_document_extraction_items")
         .insert(items)
-        .select("id,line_number,transaction_date,description,signed_amount,transaction_type,source_name,external_id,running_balance,category_name,overall_confidence,field_confidence,review_status");
+        .select("id,line_number,transaction_date,description,signed_amount,transaction_type,source_name,external_id,running_balance,category_id,category_name,overall_confidence,field_confidence,review_status");
       if (insertError) throw insertError;
       storedItems = insertedItems || [];
     }
 
     const metadata = {
       institution_name: parsed.institution_name || null,
+      institution_key: institutionKey,
       period_start: isoDate(parsed.period_start),
       period_end: isoDate(parsed.period_end),
       statement_balance: Number.isFinite(Number(parsed.statement_balance)) ? Number(parsed.statement_balance) : null,
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20) : [],
       item_count: items.length,
       requires_human_review: true,
+      review_threshold: reviewThreshold,
+      quality_profile_sample_size: qualityProfileSampleSize,
+      quality_profile_correction_rate: Number(chosenProfile?.correction_rate || 0),
+      adaptive_category_matches: adaptiveCategoryMatches,
     };
     const { error: completeError } = await supabase
       .from("mf_document_extractions")
@@ -254,6 +333,9 @@ Deno.serve(async (request: Request) => {
       extractionId,
       status: "reviewing",
       documentConfidence: clampConfidence(parsed.document_confidence),
+      reviewThreshold,
+      qualityProfileSampleSize,
+      adaptiveCategoryMatches,
       warnings: metadata.warnings,
       items: storedItems,
     });
