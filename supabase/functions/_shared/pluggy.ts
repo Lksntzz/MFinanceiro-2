@@ -1,5 +1,19 @@
 const PLUGGY_API = 'https://api.pluggy.ai';
 
+export type PluggyConnector = {
+  id?: number | string | null;
+  name?: string | null;
+  isOpenFinance?: boolean | null;
+};
+
+export type PluggyItem = {
+  id: string;
+  clientUserId?: string | null;
+  status?: string | null;
+  executionStatus?: string | null;
+  connector?: PluggyConnector | null;
+};
+
 export type PluggyAccount = {
   id: string;
   type: 'BANK' | 'CREDIT' | string;
@@ -81,6 +95,12 @@ export async function createConnectToken(apiKey: string, userId: string, webhook
   const accessToken = String(payload.accessToken || payload.connectToken || payload.token || '');
   if (!accessToken) throw new Error('Pluggy não retornou Connect Token.');
   return accessToken;
+}
+
+export async function fetchItem(apiKey: string, itemId: string): Promise<PluggyItem> {
+  const payload = await pluggyFetch(`/items/${encodeURIComponent(itemId)}`, apiKey) as PluggyItem;
+  if (!payload?.id) throw new Error('Pluggy não retornou o Item solicitado.');
+  return payload;
 }
 
 export async function deleteItem(apiKey: string, itemId: string) {
