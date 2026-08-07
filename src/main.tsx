@@ -1,4 +1,4 @@
-// Bootstrap contains only active consolidated runtime integrations.
+// Bootstrap contains only active consolidated runtime integrations. Production retry for the approved UI batch.
 import './lib/admin-maintenance-mount';
 import './lib/bank-excel-parser-guard';
 import './lib/bank-csv-parser-guard';
