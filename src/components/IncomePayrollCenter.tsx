@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
   CalendarDays,
@@ -18,14 +17,14 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { calculatePayrollFromGross } from './payroll-tax';
+import { calculatePayrollFromGross } from '../lib/payroll-tax';
 import {
   analyzePayrollPdf,
   PayrollItem,
   PayrollItemCategory,
   PayrollItemKind,
-} from './payroll-pdf-parser';
-import { supabase } from './supabase';
+} from '../lib/payroll-pdf-parser';
+import { supabase } from '../lib/supabase';
 
 type SettingsRow = {
   user_id: string;
@@ -237,11 +236,8 @@ function emptyForm(settings: SettingsRow | null, competence = monthKey()): Edito
   };
 }
 
-function IncomePayrollCenter() {
+export default function IncomePayrollCenter({ userId }: { userId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [visible, setVisible] = useState(false);
-  const [top, setTop] = useState(72);
-  const [userId, setUserId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsRow | null>(null);
   const [rows, setRows] = useState<PayrollRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -260,52 +256,6 @@ function IncomePayrollCenter() {
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [analysisWarnings, setAnalysisWarnings] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getUser().then(({ data }) => {
-      if (mounted) setUserId(data.user?.id || null);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => setUserId(session?.user?.id || null));
-    return () => {
-      mounted = false;
-      data.subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    const detect = () => {
-      const navButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-nav button'));
-      navButtons.forEach((button) => {
-        const label = button.querySelector<HTMLSpanElement>('span');
-        if (label?.textContent?.trim() === 'Preferências') label.textContent = 'Renda e Folha';
-      });
-
-      const activeButton = navButtons.find((button) => button.classList.contains('active'));
-      const activeLabel = activeButton?.textContent?.trim().toLowerCase() || '';
-      const active = activeLabel.includes('renda e folha') || activeLabel.includes('preferências');
-      setVisible(active);
-
-      const header = document.querySelector<HTMLElement>('.mf-topbar');
-      setTop(Math.ceil(header?.getBoundingClientRect().bottom || 64) + 8);
-
-      const standaloneButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
-        (button) => button.textContent?.trim().toLowerCase() === 'folha de pagamento',
-      );
-      if (standaloneButton) standaloneButton.style.display = active ? 'none' : '';
-    };
-
-    detect();
-    const observer = new MutationObserver(detect);
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-    const interval = window.setInterval(detect, 400);
-    window.addEventListener('resize', detect);
-    return () => {
-      observer.disconnect();
-      window.clearInterval(interval);
-      window.removeEventListener('resize', detect);
-    };
-  }, []);
 
   async function loadData() {
     if (!userId) return;
@@ -327,7 +277,7 @@ function IncomePayrollCenter() {
   }
 
   useEffect(() => {
-    if (!visible || !userId) return;
+    if (!userId) return;
     void loadData();
 
     const channel = supabase
@@ -344,7 +294,7 @@ function IncomePayrollCenter() {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, userId, dirty]);
+  }, [userId, dirty]);
 
   const gross = numberValue(form.grossSalary);
   const normalizedItems = useMemo(
@@ -632,10 +582,8 @@ function IncomePayrollCenter() {
     setAnalysisWarnings([]);
   }
 
-  if (!visible || !userId) return null;
-
   return (
-    <div className="fixed z-[49] overflow-hidden rounded-2xl border border-white/10 bg-[#050505] shadow-2xl" style={{ top, left: 12, right: 12, bottom: 12 }}>
+    <div className="min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050505] shadow-2xl">
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 md:px-5">
           <div>
@@ -1007,19 +955,3 @@ function SummaryRow({ label, value, highlight }: { label: string; value: string;
 function CycleCard({ day, value, percent, primary }: { day: string; value: number; percent: number; primary?: boolean }) {
   return <div className={`rounded-2xl border p-4 ${primary ? 'border-brand-primary/25 bg-brand-primary/5' : 'border-white/10 bg-white/[0.02]'}`}><div className="flex items-center justify-between"><span className="text-[9px] font-bold uppercase text-white/30">Dia {day}</span><span className="rounded-full bg-white/5 px-2 py-1 text-[9px] text-white/40">{percent.toFixed(2)}%</span></div><div className={`mt-2 text-xl font-black ${primary ? 'text-brand-primary' : ''}`}>{money(value)}</div></div>;
 }
-
-function mountIncomePayrollCenter() {
-  if (document.getElementById('mf-income-payroll-center-root')) return;
-  const host = document.createElement('div');
-  host.id = 'mf-income-payroll-center-root';
-  document.body.appendChild(host);
-  createRoot(host).render(<IncomePayrollCenter />);
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mountIncomePayrollCenter, { once: true });
-} else {
-  mountIncomePayrollCenter();
-}
-
-export {};

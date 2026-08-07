@@ -24,7 +24,8 @@ O MFinanceiro reúne em uma única interface:
 - **Hospedagem:** Vercel
 - **Gráficos:** Chart.js, Recharts e react-chartjs-2
 - **Arquivos e relatórios:** XLSX, PapaParse, jsPDF e PDF.js
-- **IA:** integração opcional com Gemini
+- **IA:** OCR opcional com Gemini em Supabase Edge Function, confiança por linha e revisão humana
+- **Navegação:** React Router com URLs reais sob `/app`
 
 ## Segurança do acesso
 
@@ -57,7 +58,6 @@ A aplicação será iniciada normalmente em `http://localhost:3000`.
 ```env
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-publicavel-ou-anon
-VITE_GEMINI_API_KEY=sua-chave-gemini
 VITE_APP_URL=http://localhost:3000
 ```
 
@@ -81,8 +81,12 @@ Configure no Vercel, para os ambientes Production, Preview e Development:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
-- `VITE_GEMINI_API_KEY`, caso a IA esteja habilitada
 - `VITE_APP_URL`
+
+Os segredos `GEMINI_API_KEY`, `GEMINI_OCR_MODEL`, `OPEN_FINANCE_CONNECT_API_URL`,
+`OPEN_FINANCE_PROVIDER_API_KEY`, `OPEN_FINANCE_PROVIDER` e `OPEN_FINANCE_REDIRECT_URI`
+devem ser configurados somente nas Supabase Edge Functions. Nunca use o prefixo
+`VITE_` para essas credenciais.
 
 O domínio principal do projeto é `mfinanceiro.com.br`.
 
@@ -93,6 +97,23 @@ O banco possui tabelas para perfis, lançamentos, cartões, parcelas, contas, me
 Todas as tabelas de dados pessoais devem manter RLS ativado e restringir operações ao proprietário através de `user_id = auth.uid()`.
 
 Alterações estruturais devem ser registradas como migrations na pasta `supabase/migrations` e aplicadas pelo fluxo de migrations do Supabase.
+
+### Automação, OCR e Open Finance
+
+A migration `20260807023936_operational_automation_and_open_finance.sql` adiciona regras de
+categorização, revisão de OCR, desfazer de lotes e o estado auditável das conexões e
+sincronizações Open Finance. Antes de habilitar esses recursos em produção:
+
+```bash
+supabase db push
+supabase functions deploy statement-ocr
+supabase functions deploy open-finance-session
+```
+
+Configure `GEMINI_API_KEY` e os segredos `OPEN_FINANCE_*` com `supabase secrets set`.
+A função de Open Finance prepara a autorização e o estado do consentimento; callback,
+troca de tokens e sincronização efetiva devem ser implementados no adaptador do
+participante/agregador escolhido, sempre no servidor.
 
 ## Fluxo de acesso
 

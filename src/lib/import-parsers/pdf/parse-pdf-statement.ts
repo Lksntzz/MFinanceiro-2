@@ -5,7 +5,6 @@ import { ImportedTransaction } from '../../../types';
 import { getPdfBankParser, resolvePdfBank } from './index';
 import { parseAmount, parsePdfDateToIso, normalizeHeader, looksLikeNoiseLine } from './utils';
 import { ExtractedPdfTransaction, PdfParserContext } from './types';
-import { requestPdfPassword } from './pdf-password-prompt';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -71,6 +70,7 @@ export interface PdfParseResult {
 export interface PdfClassificationOptions {
   accountHolderName?: string;
   internalAccountAliases?: string[];
+  requestPassword?: (options: { fileName?: string; incorrect?: boolean }) => Promise<string | null>;
 }
 
 function normalizeText(value: string): string {
@@ -290,13 +290,22 @@ function emptyPdfResult(selectedBank: string, reason: string, scanned = false): 
   };
 }
 
-async function openPdfWithPassword(bytes: Uint8Array, fileName: string) {
+async function openPdfWithPassword(
+  bytes: Uint8Array,
+  fileName: string,
+  requestPassword?: PdfClassificationOptions['requestPassword'],
+) {
   const loadingTask = getDocument({ data: bytes });
   let passwordCancelled = false;
 
   loadingTask.onPassword = (updatePassword: (password: string) => void, reason: number) => {
     const incorrect = reason === 2;
-    void requestPdfPassword({ fileName, incorrect }).then((password) => {
+    if (!requestPassword) {
+      passwordCancelled = true;
+      void loadingTask.destroy();
+      return;
+    }
+    void requestPassword({ fileName, incorrect }).then((password) => {
       if (password === null) {
         passwordCancelled = true;
         void loadingTask.destroy();
@@ -329,7 +338,7 @@ export async function parsePdfStatementWithDebug(
 
   let pdf: any;
   try {
-    const opened = await openPdfWithPassword(bytes, file.name);
+    const opened = await openPdfWithPassword(bytes, file.name, options?.requestPassword);
     if (opened.passwordCancelled || !opened.pdf) {
       return emptyPdfResult(selectedBank, 'Leitura cancelada. A senha do PDF é necessária para importar este extrato.');
     }

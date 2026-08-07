@@ -1,6 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { createRoot } from 'react-dom/client';
 import {
   CalendarDays,
   CheckCircle2,
@@ -17,8 +15,8 @@ import {
 } from 'lucide-react';
 import { addMonths, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CATEGORIES } from './constants';
-import { supabase } from './supabase';
+import { CATEGORIES } from '../lib/constants';
+import { supabase } from '../lib/supabase';
 
 type OccurrenceStatus = 'pending' | 'paid' | 'skipped';
 
@@ -45,13 +43,6 @@ type Occurrence = {
 
 type EditScope = 'month' | 'future';
 
-const normalize = (value?: string | null) =>
-  String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-
 const money = (value: number) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const monthKey = (date: Date) => format(startOfMonth(date), 'yyyy-MM-01');
 const monthLabel = (value: string) => {
@@ -59,29 +50,7 @@ const monthLabel = (value: string) => {
   return label.charAt(0).toUpperCase() + label.slice(1);
 };
 
-function activeLegacyTopLabel() {
-  const active = Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-nav > button[data-mf-hierarchy-original="true"], .mf-nav > button:not([data-mf-simple-nav])'))
-    .find((button) => !button.closest('#mf-hierarchy-nav-host') && button.classList.contains('active'));
-  return normalize(active?.textContent);
-}
-
-function fixedBillsPageActive() {
-  if (!activeLegacyTopLabel().includes('contas')) return false;
-  const activeLabels = Array.from(document.querySelectorAll<HTMLButtonElement>('.mf-content button.active')).map((button) => normalize(button.textContent));
-  return activeLabels.some((label) => label.includes('contas fixas'));
-}
-
-function findLegacyAccountsShell(): HTMLElement | null {
-  return Array.from(document.querySelectorAll<HTMLElement>('.mf-content > .mf-tab-shell')).find((shell) => {
-    const text = normalize(shell.textContent);
-    return text.includes('gestao de contas') && text.includes('contas fixas');
-  }) || null;
-}
-
-function MonthlyFixedBills() {
-  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
-  const [visible, setVisible] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+export default function MonthlyFixedBills({ userId, onDataChanged }: { userId: string; onDataChanged?: () => void }) {
   const [rows, setRows] = useState<Occurrence[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()));
   const [loading, setLoading] = useState(false);
@@ -100,50 +69,8 @@ function MonthlyFixedBills() {
     return { key: monthKey(date), label: monthLabel(monthKey(date)) };
   }), []);
 
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getUser().then(({ data }) => { if (mounted) setUserId(data.user?.id || null); });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => setUserId(session?.user?.id || null));
-    return () => { mounted = false; data.subscription.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
-    const sync = () => {
-      const content = document.querySelector<HTMLElement>('.mf-content');
-      if (content) {
-        let host = content.querySelector<HTMLElement>('#mf-monthly-fixed-bills-host');
-        if (!host) {
-          host = document.createElement('div');
-          host.id = 'mf-monthly-fixed-bills-host';
-          host.style.minHeight = '0';
-          host.style.flex = '1';
-          content.appendChild(host);
-        }
-        setPortalHost(host);
-      }
-
-      const isVisible = fixedBillsPageActive();
-      setVisible(isVisible);
-      const legacy = findLegacyAccountsShell();
-      if (legacy) legacy.style.display = isVisible ? 'none' : '';
-      const host = document.querySelector<HTMLElement>('#mf-monthly-fixed-bills-host');
-      if (host) host.style.display = isVisible ? 'flex' : 'none';
-    };
-
-    sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-    const timer = window.setInterval(sync, 400);
-    return () => {
-      observer.disconnect();
-      window.clearInterval(timer);
-      const legacy = findLegacyAccountsShell();
-      if (legacy) legacy.style.display = '';
-    };
-  }, []);
-
   async function load() {
-    if (!userId || !visible) return;
+    if (!userId) return;
     setLoading(true);
     setError(null);
     try {
@@ -174,7 +101,7 @@ function MonthlyFixedBills() {
     }
   }
 
-  useEffect(() => { void load(); }, [userId, visible]);
+  useEffect(() => { void load(); }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -184,7 +111,7 @@ function MonthlyFixedBills() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_fixed_bills', filter: `user_id=eq.${userId}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [userId, visible]);
+  }, [userId]);
 
   const selectedRows = rows.filter((row) => row.competence === selectedMonth && row.status !== 'skipped');
   const ignoredRows = rows.filter((row) => row.competence === selectedMonth && row.status === 'skipped');
@@ -195,7 +122,7 @@ function MonthlyFixedBills() {
   function announce(text: string) {
     setMessage(text);
     setError(null);
-    window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
+    onDataChanged?.();
   }
 
   async function createRecurring(event: React.FormEvent) {
@@ -330,9 +257,7 @@ function MonthlyFixedBills() {
       .sort((a, b) => a.competence.localeCompare(b.competence))[0];
   }
 
-  if (!portalHost || !visible) return null;
-
-  return createPortal(
+  return (
     <div className="mf-monthly-bills-page">
       <style>{`
         #mf-monthly-fixed-bills-host { width:100%; min-width:0; }
@@ -487,20 +412,6 @@ function MonthlyFixedBills() {
           </div>
         </div>
       )}
-    </div>,
-    portalHost,
+    </div>
   );
 }
-
-function mount() {
-  if (document.getElementById('mf-monthly-fixed-bills-root')) return;
-  const host = document.createElement('div');
-  host.id = 'mf-monthly-fixed-bills-root';
-  document.body.appendChild(host);
-  createRoot(host).render(<MonthlyFixedBills />);
-}
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
-else mount();
-
-export {};

@@ -280,14 +280,12 @@ export default function App() {
       if (next) applyMaintenance(next);
     };
 
-    const fallbackInterval = window.setInterval(() => void refreshMaintenance(), 30000);
     window.addEventListener('focus', onFocus);
     window.addEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       active = false;
-      window.clearInterval(fallbackInterval);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
       document.removeEventListener('visibilitychange', onVisibilityChange);

@@ -32,7 +32,6 @@ interface HeaderMatch {
   type: number;
 }
 
-const originalSheetToCsv = XLSX.utils.sheet_to_csv.bind(XLSX.utils);
 const MAX_TRANSACTION_VALUE = 100_000_000;
 
 const COMMON_DATE = ['data', 'date', 'datalancamento', 'datamovimento', 'datatransacao', 'releasedate'];
@@ -383,7 +382,7 @@ function movementForRow(row: Row, header: HeaderMatch): { credit: number; debit:
   return { credit, debit };
 }
 
-function standardizeBankSheet(sheet: XLSX.WorkSheet): string | null {
+export function standardizeBankSheet(sheet: XLSX.WorkSheet): string | null {
   const rows = XLSX.utils.sheet_to_json<Row>(sheet, {
     header: 1,
     raw: true,
@@ -434,17 +433,3 @@ function standardizeBankSheet(sheet: XLSX.WorkSheet): string | null {
 
   return output.length > 1 ? output.join('\n') : null;
 }
-
-// The legacy importer converts every spreadsheet into CSV before parsing it.
-// This guard recognizes the layouts of every bank exposed in the interface,
-// emits one canonical CSV shape and leaves unknown worksheets untouched.
-XLSX.utils.sheet_to_csv = ((sheet: XLSX.WorkSheet, options?: XLSX.Sheet2CSVOpts) => {
-  try {
-    const standardized = standardizeBankSheet(sheet);
-    if (standardized) return standardized;
-  } catch (error) {
-    console.warn('Falha ao normalizar planilha bancária; usando parser genérico.', error);
-  }
-
-  return originalSheetToCsv(sheet, options);
-}) as typeof XLSX.utils.sheet_to_csv;

@@ -44,6 +44,11 @@ export interface UserSettings {
   payday_1_percentage?: number;
   payday_2_percentage?: number;
   balance_confirmed?: boolean;
+  display_name?: string | null;
+  workspace_name?: string | null;
+  avatar_url?: string | null;
+  onboarding_seen?: boolean | null;
+  onboarding_completed?: boolean | null;
 }
 
 export interface RhythmData {
@@ -100,6 +105,7 @@ export interface CardInstallment {
 
 export interface ImportedTransaction {
   id: string;
+  extraction_item_id?: string;
   date: string;
   description: string;
   amount: number;
@@ -113,6 +119,7 @@ export interface ImportedTransaction {
   original_description: string;
   bank_source?: string;
   running_balance?: number;
+  review_status?: 'pending' | 'accepted' | 'edited' | 'rejected';
 }
 
 export type FinancialAccountType = 'checking' | 'savings' | 'cash' | 'investment' | 'credit' | 'other';
@@ -163,6 +170,7 @@ export interface LedgerPage {
 
 export interface StatementImportOptions {
   accountId: string;
+  balanceMode?: 'keep' | 'apply_new' | 'statement';
   fileName?: string;
   fileType?: string;
   fileSize?: number;
@@ -193,6 +201,8 @@ export interface StatementImportBatch {
   error_message?: string | null;
   created_at: string;
   completed_at?: string | null;
+  reverted_at?: string | null;
+  revert_reason?: string | null;
 }
 
 export interface StatementImportRow {
@@ -203,9 +213,101 @@ export interface StatementImportRow {
   description?: string | null;
   category_name?: string | null;
   signed_amount?: number | null;
-  status: 'parsed' | 'imported' | 'duplicate' | 'rejected' | 'ignored' | 'reconciled';
+  status: 'parsed' | 'imported' | 'duplicate' | 'rejected' | 'ignored' | 'reconciled' | 'reverted';
   error_message?: string | null;
   ledger_entry_id?: string | null;
+}
+
+export interface CategorizationRule {
+  id: string;
+  user_id: string;
+  name: string;
+  priority: number;
+  match_field: 'description' | 'source' | 'description_or_source';
+  match_operator: 'contains' | 'starts_with' | 'exact';
+  match_value: string;
+  transaction_type?: 'income' | 'expense' | null;
+  minimum_amount?: number | null;
+  maximum_amount?: number | null;
+  account_id?: string | null;
+  category_id: string;
+  is_active: boolean;
+  hit_count: number;
+  last_matched_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentExtraction {
+  id: string;
+  user_id: string;
+  account_id?: string | null;
+  source_file_path: string;
+  source_file_name: string;
+  source_mime_type: string;
+  source_file_size: number;
+  source_file_hash?: string | null;
+  document_type: 'statement' | 'payroll' | 'other';
+  status: 'uploaded' | 'processing' | 'reviewing' | 'completed' | 'failed' | 'cancelled';
+  provider?: string | null;
+  model?: string | null;
+  document_confidence?: number | null;
+  result_metadata: Record<string, unknown>;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentExtractionItem {
+  id: string;
+  extraction_id: string;
+  user_id: string;
+  line_number: number;
+  transaction_date?: string | null;
+  description?: string | null;
+  signed_amount?: number | null;
+  transaction_type?: 'income' | 'expense' | null;
+  source_name?: string | null;
+  external_id?: string | null;
+  running_balance?: number | null;
+  category_id?: string | null;
+  category_name?: string | null;
+  overall_confidence: number;
+  field_confidence: Record<string, number>;
+  review_status: 'pending' | 'accepted' | 'edited' | 'rejected';
+  reviewer_notes?: string | null;
+}
+
+export interface BankConnection {
+  id: string;
+  user_id: string;
+  provider: string;
+  institution_id?: string | null;
+  institution_name: string;
+  display_name?: string | null;
+  status: 'pending' | 'authorizing' | 'active' | 'expiring' | 'expired' | 'revocation_pending' | 'revoked' | 'error';
+  sync_status: 'idle' | 'queued' | 'syncing' | 'completed' | 'partial' | 'error';
+  scopes: string[];
+  consent_expires_at?: string | null;
+  last_synced_at?: string | null;
+  next_sync_at?: string | null;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BankSyncRun {
+  id: string;
+  connection_id: string;
+  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  trigger_source: 'initial' | 'manual' | 'scheduled' | 'webhook' | 'retry';
+  received_count: number;
+  imported_count: number;
+  duplicate_count: number;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at: string;
 }
 
 export interface FinanceSummary {

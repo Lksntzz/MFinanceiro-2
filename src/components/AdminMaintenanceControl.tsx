@@ -9,27 +9,13 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { fetchMaintenanceConfig, type MaintenanceConfig } from '../lib/maintenance';
 
 const DEFAULT_MESSAGE =
   'Estamos realizando melhorias importantes. O MFinanceiro estará disponível novamente em breve.';
 
-function isAdminSession(session: Session | null): boolean {
-  const role = String(session?.user?.app_metadata?.role || '').toLowerCase();
-  return role === 'admin' || role === 'owner' || session?.user?.user_metadata?.is_admin === true;
-}
-
-function isAdminTabActive(): boolean {
-  return Array.from(document.querySelectorAll('.mf-nav button.active')).some(
-    (button) => button.textContent?.trim().toLowerCase() === 'admin',
-  );
-}
-
 export default function AdminMaintenanceControl() {
-  const [authorized, setAuthorized] = useState(false);
-  const [visible, setVisible] = useState(false);
   const [open, setOpen] = useState(false);
   const [config, setConfig] = useState<MaintenanceConfig>({
     maintenance_mode: false,
@@ -40,50 +26,6 @@ export default function AdminMaintenanceControl() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    const syncSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-      const allowed = isAdminSession(data.session);
-      setAuthorized(allowed);
-      setVisible(allowed && isAdminTabActive());
-    };
-
-    void syncSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
-      const allowed = isAdminSession(session);
-      setAuthorized(allowed);
-      setVisible(allowed && isAdminTabActive());
-      if (!allowed) setOpen(false);
-    });
-
-    return () => {
-      active = false;
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!authorized) return;
-
-    const syncVisibility = () => setVisible(isAdminTabActive());
-    syncVisibility();
-
-    const observer = new MutationObserver(syncVisibility);
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  }, [authorized]);
 
   const loadConfig = async () => {
     setLoading(true);
@@ -99,9 +41,7 @@ export default function AdminMaintenanceControl() {
     }
   };
 
-  useEffect(() => {
-    if (visible) void loadConfig();
-  }, [visible]);
+  useEffect(() => { void loadConfig(); }, []);
 
   const saveMode = async (enabled: boolean) => {
     const normalizedMessage = message.trim() || DEFAULT_MESSAGE;
@@ -137,8 +77,6 @@ export default function AdminMaintenanceControl() {
       setSaving(false);
     }
   };
-
-  if (!authorized || !visible) return null;
 
   return (
     <>

@@ -1,6 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FinancialAccount, ImportedTransaction, StatementImportOptions } from '../types';
 import { identifyCompany } from '../lib/company-aliases';
+import { standardizeBankCsv } from '../lib/bank-csv-normalizer';
+import { standardizeBankSheet } from '../lib/bank-excel-normalizer';
+import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import {
   Upload,
@@ -59,6 +62,8 @@ interface ImportDiagnostics {
   reason?: string;
   debugNote?: string;
   baseTextPreview?: string;
+  ocrExtractionId?: string;
+  ocrDocumentConfidence?: number;
 }
 
 interface DelimitedAnalysis {
@@ -87,6 +92,104 @@ async function hashImportFile(file: File): Promise<string | undefined> {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
+}
+
+async function extractStatementWithOcr(file: File, accountId: string): Promise<{
+  extractionId: string;
+  transactions: ImportedTransaction[];
+  documentConfidence: number;
+  warnings: string[];
+}> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) throw new Error('Sua sessão expirou antes do OCR. Entre novamente.');
+  if (!accountId) throw new Error('Selecione a conta financeira antes de usar o OCR.');
+
+  const extractionId = crypto.randomUUID();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-180) || 'extrato';
+  const storagePath = `${userData.user.id}/${extractionId}/${safeName}`;
+  const fileHash = await hashImportFile(file);
+  const sourceMimeType = inferFileMimeType(file);
+  const { error: uploadError } = await supabase.storage
+    .from('mf-import-documents')
+    .upload(storagePath, file, { upsert: false, contentType: sourceMimeType });
+  if (uploadError) throw uploadError;
+
+  const { data: extraction, error: extractionError } = await supabase
+    .from('mf_document_extractions')
+    .insert({
+      id: extractionId,
+      user_id: userData.user.id,
+      account_id: accountId,
+      source_file_path: storagePath,
+      source_file_name: file.name,
+      source_mime_type: sourceMimeType,
+      source_file_size: file.size,
+      source_file_hash: fileHash || null,
+      document_type: 'statement',
+      status: 'uploaded',
+    })
+    .select('id')
+    .single();
+  if (extractionError || !extraction) {
+    await supabase.storage.from('mf-import-documents').remove([storagePath]);
+    throw extractionError || new Error('Não foi possível registrar o documento para OCR.');
+  }
+
+  const { data, error: functionError } = await supabase.functions.invoke('statement-ocr', {
+    body: { extractionId: extraction.id },
+  });
+  if (functionError) throw functionError;
+  if (data?.error) throw new Error(String(data.error));
+
+  const rawItems = Array.isArray(data?.items) ? data.items as Array<Record<string, unknown>> : [];
+  const transactions = rawItems.map((item, index) => {
+    const signedAmount = Number(item.signed_amount || 0);
+    const type: ImportedTransaction['type'] = item.transaction_type === 'income' || signedAmount > 0 ? 'income' : 'expense';
+    const confidence = Math.min(1, Math.max(0, Number(item.overall_confidence || 0)));
+    const description = String(item.description || '').trim() || 'Sem descricao';
+    const date = String(item.transaction_date || '');
+    const valid = /^\d{4}-\d{2}-\d{2}$/.test(date) && description !== 'Sem descricao' && Math.abs(signedAmount) > 0;
+    return {
+      id: generateId('ocr', index),
+      extraction_item_id: String(item.id || '') || undefined,
+      date: date || new Date().toISOString().slice(0, 10),
+      description,
+      amount: Math.abs(signedAmount),
+      source_id: String(item.external_id || '') || undefined,
+      type,
+      category: String(item.category_name || 'Geral'),
+      status: valid && confidence >= 0.85 ? 'ready' : valid ? 'pending' : 'error',
+      confidence,
+      original_description: description,
+      bank_source: String(item.source_name || 'OCR/IA'),
+      running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : undefined,
+      source: 'ocr_ai',
+      review_status: 'pending',
+    } satisfies ImportedTransaction;
+  });
+
+  const warnings = Array.isArray(data?.warnings)
+    ? data.warnings.map(String)
+    : ['Revise as linhas e confirme manualmente os itens com confiança abaixo de 85%.'];
+  return {
+    extractionId: extraction.id,
+    transactions,
+    documentConfidence: Math.min(1, Math.max(0, Number(data?.documentConfidence || 0))),
+    warnings,
+  };
+}
+
+function inferFileMimeType(file: File): string {
+  if (file.type) return file.type.toLowerCase();
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  const byExtension: Record<string, string> = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+  };
+  return byExtension[extension || ''] || 'application/octet-stream';
 }
 
 function normalizeHeader(value: string): string {
@@ -169,7 +272,7 @@ async function analyzeSpreadsheetContent(file: File): Promise<SpreadsheetAnalysi
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
 
-    const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+    const csv = standardizeBankSheet(sheet) || XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
     const analysis = analyzeDelimitedContent(csv);
     const candidate: SpreadsheetAnalysis = {
       csv,
@@ -565,14 +668,13 @@ export function detectFileFormat(file: File): FormatDetectionResult {
   if (ext === 'xls') {
     return { format: 'xls', formatLabel: 'XLS', parserLabel: 'Parser XLS', parserExists: true, supported: true };
   }
-  if (mime.startsWith('image/')) {
+  if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
     return {
       format: 'image',
       formatLabel: 'Imagem',
-      parserLabel: 'OCR de imagem',
-      parserExists: false,
-      supported: false,
-      reason: 'Parser de imagem ainda nao esta implementado para importacao de extratos.'
+      parserLabel: 'OCR/IA com revisão',
+      parserExists: true,
+      supported: true,
     };
   }
 
@@ -582,7 +684,7 @@ export function detectFileFormat(file: File): FormatDetectionResult {
     parserLabel: 'Nao disponivel',
     parserExists: false,
     supported: false,
-    reason: 'Formato nao suportado. Use CSV, OFX, PDF, XLS ou XLSX.'
+    reason: 'Formato nao suportado. Use CSV, OFX, PDF, XLS, XLSX ou imagem.'
   };
 }
 
@@ -839,13 +941,20 @@ export default function ImportarExtratos({
   internalAccountAliases
 }: ImportarExtratosProps) {
   const importSessionRef = useRef(0);
+  const pdfPasswordResolverRef = useRef<((password: string | null) => void) | null>(null);
   const [step, setStep] = useState<'upload' | 'processing' | 'review' | 'success'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [bank, setBank] = useState<string>('auto');
   const [importedData, setImportedData] = useState<ImportedTransaction[]>([]);
   const [importDiagnostics, setImportDiagnostics] = useState<ImportDiagnostics | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [shouldCalibrateBalance, setShouldCalibrateBalance] = useState(false);
+  const [balanceMode, setBalanceMode] = useState<'keep' | 'apply_new' | 'statement'>('keep');
+  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
+  const [ocrExtractionId, setOcrExtractionId] = useState<string | null>(null);
+  const [rejectedOcrItemIds, setRejectedOcrItemIds] = useState<string[]>([]);
+  const [pdfPasswordPrompt, setPdfPasswordPrompt] = useState<{ fileName?: string; incorrect?: boolean } | null>(null);
+  const [pdfPassword, setPdfPassword] = useState('');
+  const [showPdfPassword, setShowPdfPassword] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [committedCount, setCommittedCount] = useState(0);
@@ -855,7 +964,7 @@ export default function ImportarExtratos({
       || '',
   );
   const readyItemsCount = importedData.filter(i => i.status === 'ready').length;
-  const canConfirmImport = readyItemsCount > 0 && Boolean(selectedAccountId);
+  const canConfirmImport = readyItemsCount > 0 && Boolean(selectedAccountId) && reviewAcknowledged;
 
   useEffect(() => {
     if (accounts.some((account) => account.id === selectedAccountId && account.is_active)) return;
@@ -865,6 +974,29 @@ export default function ImportarExtratos({
         || '',
     );
   }, [accounts, selectedAccountId]);
+
+  useEffect(() => () => {
+    pdfPasswordResolverRef.current?.(null);
+    pdfPasswordResolverRef.current = null;
+  }, []);
+
+  const requestPdfPassword = useCallback((options: { fileName?: string; incorrect?: boolean }) => {
+    pdfPasswordResolverRef.current?.(null);
+    setPdfPassword('');
+    setShowPdfPassword(false);
+    setPdfPasswordPrompt(options);
+    return new Promise<string | null>((resolve) => {
+      pdfPasswordResolverRef.current = resolve;
+    });
+  }, []);
+
+  const finishPdfPassword = useCallback((value: string | null) => {
+    const resolve = pdfPasswordResolverRef.current;
+    pdfPasswordResolverRef.current = null;
+    setPdfPassword('');
+    setPdfPasswordPrompt(null);
+    resolve?.(value);
+  }, []);
 
   const signedAmountFromImported = (item: ImportedTransaction): number =>
     item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount);
@@ -931,20 +1063,23 @@ export default function ImportarExtratos({
     setIsDragging(false);
   }, []);
 
-  const onDrop = useCallback((e: React.DragEvent) => {
+  const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       processFile(e.dataTransfer.files[0]);
     }
-  }, [bank]);
+  };
 
   const resetImportState = useCallback((targetStep: 'upload' | 'processing' = 'upload') => {
     importSessionRef.current += 1;
     setFile(null);
     setImportedData([]);
     setImportDiagnostics(null);
-    setShouldCalibrateBalance(false);
+    setBalanceMode('keep');
+    setReviewAcknowledged(false);
+    setOcrExtractionId(null);
+    setRejectedOcrItemIds([]);
     setImportError(null);
     setCommittedCount(0);
     setStep(targetStep);
@@ -959,7 +1094,10 @@ export default function ImportarExtratos({
     setImportedData([]);
     setImportDiagnostics(null);
     setStep('processing');
-    setShouldCalibrateBalance(false);
+    setBalanceMode('keep');
+    setReviewAcknowledged(false);
+    setOcrExtractionId(null);
+    setRejectedOcrItemIds([]);
     setImportError(null);
     setCommittedCount(0);
 
@@ -970,6 +1108,9 @@ export default function ImportarExtratos({
       let sheetAnalysis: SpreadsheetAnalysis | undefined;
       let ofxContent = '';
       let rawTextPreview = '';
+      let ocrDocumentConfidence: number | null = null;
+      let currentOcrExtractionId: string | null = null;
+      let ocrWarnings: string[] = [];
       let parserDebug: ParserDebugSummary = { linesExtracted: 0, linesIgnored: 0, rejectedLineReasons: [] };
       let pdfDebugInfo: {
         totalPages: number;
@@ -1008,7 +1149,8 @@ export default function ImportarExtratos({
       }
 
       if (detection.format === 'csv') {
-        const content = await fileSnapshot.text();
+        const rawContent = await fileSnapshot.text();
+        const content = standardizeBankCsv(rawContent, fileSnapshot.name) || rawContent;
         rawTextPreview = buildTextPreview(content);
         csvAnalysis = analyzeDelimitedContent(content);
         parsed = parseCsvTransactions(content, bank);
@@ -1032,7 +1174,8 @@ export default function ImportarExtratos({
         const { parsePdfStatementWithDebug } = await import('../lib/import-parsers/pdf/parse-pdf-statement');
         const pdfResult = await parsePdfStatementWithDebug(fileSnapshot, bank, {
           accountHolderName,
-          internalAccountAliases
+          internalAccountAliases,
+          requestPassword: requestPdfPassword,
         });
         parsed = pdfResult.transactions;
         pdfDebugInfo = pdfResult.debug;
@@ -1042,6 +1185,26 @@ export default function ImportarExtratos({
           linesIgnored: pdfResult.debug.ignoredLines || 0,
           rejectedLineReasons: pdfResult.debug.rejectedLineReasons || []
         };
+        const hasValidLocalRows = parsed.some((item) => item.status === 'ready' && Number(item.amount) > 0);
+        if (!hasValidLocalRows) {
+          try {
+            const ocrResult = await extractStatementWithOcr(fileSnapshot, selectedAccountId);
+            parsed = ocrResult.transactions;
+            currentOcrExtractionId = ocrResult.extractionId;
+            ocrDocumentConfidence = ocrResult.documentConfidence;
+            ocrWarnings = ocrResult.warnings;
+            parserDebug = {
+              linesExtracted: parsed.length,
+              linesIgnored: parsed.filter((item) => item.status !== 'ready').length,
+              rejectedLineReasons: ocrWarnings,
+            };
+          } catch (ocrError) {
+            pdfDebugInfo = {
+              ...pdfResult.debug,
+              reason: `${pdfResult.debug.reason || 'PDF sem texto transacional.'} OCR/IA indisponível: ${ocrError instanceof Error ? ocrError.message : 'falha desconhecida'}`,
+            };
+          }
+        }
       } else if (detection.format === 'xls' || detection.format === 'xlsx') {
         sheetAnalysis = await analyzeSpreadsheetContent(fileSnapshot);
         rawTextPreview = buildTextPreview(sheetAnalysis.csv);
@@ -1051,6 +1214,17 @@ export default function ImportarExtratos({
           linesExtracted: Math.max(sheetAnalysis.nonEmptyRows - 1, 0),
           linesIgnored: rejected.length,
           rejectedLineReasons: rejected
+        };
+      } else if (detection.format === 'image') {
+        const ocrResult = await extractStatementWithOcr(fileSnapshot, selectedAccountId);
+        parsed = ocrResult.transactions;
+        currentOcrExtractionId = ocrResult.extractionId;
+        ocrDocumentConfidence = ocrResult.documentConfidence;
+        ocrWarnings = ocrResult.warnings;
+        parserDebug = {
+          linesExtracted: parsed.length,
+          linesIgnored: parsed.filter((item) => item.status !== 'ready').length,
+          rejectedLineReasons: ocrWarnings,
         };
       }
 
@@ -1062,8 +1236,11 @@ export default function ImportarExtratos({
       ).length;
 
       setImportedData(normalized);
+      setOcrExtractionId(currentOcrExtractionId);
       let debugNote: string | undefined;
-      if (detection.format === 'pdf' && pdfDebugInfo) {
+      if (ocrDocumentConfidence !== null) {
+        debugNote = `OCR/IA -> confiança do documento: ${Math.round(ocrDocumentConfidence * 100)}%; revisão humana obrigatória; ${ocrWarnings.join(' | ')}`;
+      } else if (detection.format === 'pdf' && pdfDebugInfo) {
         const preview = pdfDebugInfo.textPreview ? ` | Texto extraido: "${pdfDebugInfo.textPreview}"` : '';
         debugNote = `PDF Debug -> paginas: ${pdfDebugInfo.totalPages}, itens de texto: ${pdfDebugInfo.totalTextItems}, linhas extraidas: ${pdfDebugInfo.linesExtracted}, linhas ignoradas: ${pdfDebugInfo.ignoredLines || 0}, perfil extrato: ${pdfDebugInfo.isLikelyBankStatement ? 'sim' : 'nao'}, padrao transacao: ${pdfDebugInfo.hasTransactionPattern ? 'sim' : 'nao'}, fallback generico: ${pdfDebugInfo.usedGenericFallback ? 'sim' : 'nao'}${preview}`;
       } else if ((detection.format === 'xls' || detection.format === 'xlsx') && sheetAnalysis) {
@@ -1099,7 +1276,9 @@ export default function ImportarExtratos({
           ? zeroResultReason
           : undefined,
         debugNote,
-        baseTextPreview: rawTextPreview
+        baseTextPreview: rawTextPreview,
+        ocrExtractionId: currentOcrExtractionId || undefined,
+        ocrDocumentConfidence: ocrDocumentConfidence ?? undefined,
       });
       if (isStale()) return;
       setStep('review');
@@ -1128,34 +1307,106 @@ export default function ImportarExtratos({
   };
 
   const handleToggleStatus = (id: string) => {
+    setReviewAcknowledged(false);
     setImportedData(prev => prev.map(item => {
       if (item.id === id) {
         if (item.status === 'error' && (item.amount <= 0 || item.description === 'Sem descricao')) {
           return item;
         }
-        return { ...item, status: item.status === 'ready' ? 'pending' : 'ready' };
+        const selected = item.status !== 'ready';
+        return {
+          ...item,
+          status: selected ? 'ready' : 'pending',
+          review_status: item.extraction_item_id ? (selected ? 'accepted' : 'pending') : item.review_status,
+        };
       }
       return item;
     }));
   };
 
   const handleRemove = (id: string) => {
-    setImportedData(prev => prev.filter(item => item.id !== id));
+    setReviewAcknowledged(false);
+    setImportedData(prev => {
+      const removed = prev.find((item) => item.id === id);
+      if (removed?.extraction_item_id) {
+        setRejectedOcrItemIds((current) => current.includes(removed.extraction_item_id!)
+          ? current
+          : [...current, removed.extraction_item_id!]);
+      }
+      return prev.filter(item => item.id !== id);
+    });
   };
+
+  const handleUpdateItem = (id: string, patch: Partial<ImportedTransaction>) => {
+    setReviewAcknowledged(false);
+    setImportedData((current) => current.map((item) => {
+      if (item.id !== id) return item;
+      const next = { ...item, ...patch };
+      const valid = /^\d{4}-\d{2}-\d{2}$/.test(next.date)
+        && next.description.trim().length > 0
+        && Number(next.amount) > 0;
+      return {
+        ...next,
+        status: valid ? 'ready' : 'error',
+        confidence: Math.min(Number(next.confidence || 0), 0.99),
+        review_status: 'edited',
+      };
+    }));
+  };
+
+  async function persistOcrReview() {
+    if (!ocrExtractionId) return;
+
+    const updates = importedData
+      .filter((item) => item.extraction_item_id)
+      .map((item) => supabase
+        .from('mf_document_extraction_items')
+        .update({
+          transaction_date: item.date.slice(0, 10),
+          description: item.description,
+          signed_amount: item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount),
+          transaction_type: item.type,
+          source_name: item.bank_source || item.source || 'OCR/IA',
+          external_id: item.source_id || null,
+          running_balance: item.running_balance ?? null,
+          category_name: item.category || 'Geral',
+          reviewed_at: new Date().toISOString(),
+          review_status: item.status === 'ready'
+            ? (item.review_status === 'edited' ? 'edited' : 'accepted')
+            : 'rejected',
+          reviewer_notes: item.status === 'ready' ? 'Revisado antes da importação.' : 'Não selecionado na revisão.',
+        })
+        .eq('id', item.extraction_item_id!)
+        .eq('extraction_id', ocrExtractionId));
+
+    if (rejectedOcrItemIds.length) {
+      updates.push(supabase
+        .from('mf_document_extraction_items')
+        .update({ review_status: 'rejected', reviewer_notes: 'Removido durante a revisão humana.' })
+        .eq('extraction_id', ocrExtractionId)
+        .in('id', rejectedOcrItemIds));
+    }
+
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw new Error(`Não foi possível salvar a revisão do OCR: ${failed.error.message}`);
+  }
 
   const handleFinalImport = async () => {
     if (!canConfirmImport || isImporting) return;
 
-    const calibrationBalance = shouldCalibrateBalance && balanceValidation ? balanceValidation.statementFinal : undefined;
+    const calibrationBalance = balanceMode === 'statement' && balanceValidation ? balanceValidation.statementFinal : undefined;
 
     setIsImporting(true);
     setImportError(null);
 
     try {
       if (!file || !selectedAccountId) throw new Error('Selecione um arquivo e a conta financeira de destino.');
+      await persistOcrReview();
       const fileHash = await hashImportFile(file);
       const insertedCount = await onImport(importedData, calibrationBalance, {
         accountId: selectedAccountId,
+        balanceMode,
         fileName: file.name,
         fileType: file.type || undefined,
         fileSize: file.size,
@@ -1166,6 +1417,13 @@ export default function ImportarExtratos({
           : undefined,
       });
       setCommittedCount(insertedCount);
+      if (ocrExtractionId) {
+        const { error: extractionError } = await supabase
+          .from('mf_document_extractions')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', ocrExtractionId);
+        if (extractionError) console.warn('A revisão OCR não pôde ser encerrada após a importação:', extractionError.message);
+      }
       setStep('success');
     } catch (error) {
       console.error('Falha ao importar lançamentos:', error);
@@ -1253,7 +1511,7 @@ export default function ImportarExtratos({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold">Formatos Suportados</h4>
-                    <p className="text-[10px] text-white/40 mt-1">CSV, OFX e PDF com mapeamento automatico de campos.</p>
+                    <p className="text-[10px] text-white/40 mt-1">CSV, OFX, Excel, PDF e imagens; OCR/IA exige revisão humana.</p>
                   </div>
                 </div>
                 <div className="glass-card !p-4 flex items-start gap-3">
@@ -1262,7 +1520,7 @@ export default function ImportarExtratos({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold">Seguranca de Dados</h4>
-                    <p className="text-[10px] text-white/40 mt-1">Seus dados sao processados localmente.</p>
+                    <p className="text-[10px] text-white/40 mt-1">Arquivos de OCR ficam em armazenamento privado e a chave de IA permanece no servidor.</p>
                   </div>
                 </div>
               </div>
@@ -1322,7 +1580,7 @@ export default function ImportarExtratos({
               Conta financeira do extrato
               <select
                 value={selectedAccountId}
-                onChange={(event) => setSelectedAccountId(event.target.value)}
+                onChange={(event) => { setSelectedAccountId(event.target.value); setReviewAcknowledged(false); }}
                 disabled={isImporting}
                 className="min-w-[220px] rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs font-medium normal-case tracking-normal text-white outline-none focus:border-brand-primary disabled:opacity-50"
               >
@@ -1332,6 +1590,24 @@ export default function ImportarExtratos({
                 ))}
               </select>
             </label>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {([
+                { id: 'keep', label: 'Preservar saldo atual', detail: 'Importa o histórico sem alterar o saldo de hoje.' },
+                { id: 'apply_new', label: 'Aplicar movimentações', detail: 'Soma entradas e saídas novas ao saldo.' },
+                { id: 'statement', label: 'Usar saldo do extrato', detail: balanceValidation ? 'Calibra para o saldo final informado.' : 'O arquivo não trouxe saldo final.' },
+              ] as const).map((mode) => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  disabled={mode.id === 'statement' && !balanceValidation}
+                  onClick={() => { setBalanceMode(mode.id); setReviewAcknowledged(false); }}
+                  className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-35 ${balanceMode === mode.id ? 'border-brand-primary/40 bg-brand-primary/10' : 'border-white/10 bg-white/[0.02]'}`}
+                >
+                  <strong className="block text-[10px]">{mode.label}</strong>
+                  <span className="mt-1 block text-[9px] font-normal normal-case tracking-normal text-white/35">{mode.detail}</span>
+                </button>
+              ))}
+            </div>
           </div>
           {balanceValidation && (
             <div className={`glass-card !p-3 shrink-0 border transition-all ${balanceValidation.isClose ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}>
@@ -1343,23 +1619,7 @@ export default function ImportarExtratos({
                       <span className="text-[8px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full font-bold uppercase">Sincronizado</span>
                     )}
                   </div>
-                  <div className="text-xs text-white/80 mt-1">
-                    Saldo final extraído do comprovante.
-                  </div>
-                  
-                  <button 
-                    onClick={() => setShouldCalibrateBalance(!shouldCalibrateBalance)}
-                    className={`mt-2 flex items-center gap-2 px-2 py-1 rounded-lg border transition-all ${
-                      shouldCalibrateBalance 
-                        ? 'bg-brand-primary/20 border-brand-primary/40 text-brand-primary' 
-                        : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
-                    }`}
-                  >
-                    <div className={`h-3 w-3 rounded-full border flex items-center justify-center ${shouldCalibrateBalance ? 'border-brand-primary bg-brand-primary' : 'border-white/20'}`}>
-                      {shouldCalibrateBalance && <Check size={8} className="text-black" />}
-                    </div>
-                    <span className="text-[10px] font-bold">Calibrar saldo do MFinanceiro</span>
-                  </button>
+                  <div className="text-xs text-white/80 mt-1">Saldo final extraído do comprovante.</div>
                 </div>
                 <div className="text-right text-[11px] leading-5 shrink-0">
                   <div className="text-white/40">Esperado: <span className="text-white font-medium">R$ {balanceValidation.expectedFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
@@ -1369,7 +1629,7 @@ export default function ImportarExtratos({
                   </div>
                 </div>
               </div>
-              {shouldCalibrateBalance && (
+              {balanceMode === 'statement' && (
                 <div className="mt-2 py-2 px-3 bg-brand-primary/10 rounded-lg border border-brand-primary/20 flex items-center gap-3">
                   <Info size={14} className="text-brand-primary shrink-0" />
                   <p className="text-[10px] text-brand-primary/80 leading-relaxed font-medium">
@@ -1382,7 +1642,7 @@ export default function ImportarExtratos({
 
           <div className="flex items-center gap-4 shrink-0">
             <div className="flex-1 glass-card !p-3 flex items-center justify-between">
-              <div className="flex items-center gap-6">
+              <div className="flex flex-wrap items-center gap-6">
                 <div className="flex flex-col">
                   <span className="text-[8px] text-white/40 uppercase font-bold">Lancamentos</span>
                   <span className="text-sm font-bold">{importedData.length}</span>
@@ -1395,6 +1655,10 @@ export default function ImportarExtratos({
                   <span className="text-[8px] text-white/40 uppercase font-bold">Erros</span>
                   <span className="text-sm font-bold text-red-400">{importedData.filter(i => i.status === 'error').length}</span>
                 </div>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-[9px] text-white/60">
+                  <input type="checkbox" checked={reviewAcknowledged} onChange={(event) => setReviewAcknowledged(event.target.checked)} disabled={readyItemsCount === 0 || isImporting} />
+                  Revisei os itens selecionados e o modo de saldo
+                </label>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1508,8 +1772,8 @@ export default function ImportarExtratos({
             {importedData.map(item => (
               <div
                 key={item.id}
-                className={`p-4 rounded-xl border transition-all flex items-center gap-4 ${
-                  item.status === 'ready' ? 'bg-white/5 border-white/5' : 'bg-red-500/5 border-red-500/20'
+                className={`grid grid-cols-[40px_minmax(0,1fr)] items-center gap-3 rounded-xl border p-3 transition-all md:grid-cols-[40px_minmax(0,1fr)_150px_auto] ${
+                  item.status === 'ready' ? 'bg-white/5 border-white/5' : item.status === 'pending' ? 'border-yellow-500/20 bg-yellow-500/5' : 'bg-red-500/5 border-red-500/20'
                 }`}
               >
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -1518,35 +1782,41 @@ export default function ImportarExtratos({
                   <ArrowRightLeft size={20} />
                 </div>
 
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold truncate">{item.description}</span>
+                    <input aria-label="Descrição do lançamento" value={item.description} onChange={(event) => handleUpdateItem(item.id, { description: event.target.value })} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-bold text-white outline-none focus:border-brand-primary/50" />
                     {item.status === 'error' && (
                       <span className="text-[8px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded uppercase font-bold">Campo faltando</span>
                     )}
+                    {item.confidence < 0.85 && item.status !== 'error' && (
+                      <span className="whitespace-nowrap rounded bg-yellow-500/15 px-1.5 py-0.5 text-[8px] font-bold text-yellow-200">REVISAR {Math.round(item.confidence * 100)}%</span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[10px] text-white/40">{new Date(item.date).toLocaleDateString('pt-BR')}</span>
-                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-tighter bg-white/5 px-1.5 rounded">{item.category}</span>
-                    <span className="text-[10px] text-white/20 truncate">{item.original_description}</span>
+                  <div className="grid gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+                    <input aria-label="Data do lançamento" type="date" value={item.date.slice(0, 10)} onChange={(event) => handleUpdateItem(item.id, { date: event.target.value })} className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-white" />
+                    <input aria-label="Categoria do lançamento" value={item.category} onChange={(event) => handleUpdateItem(item.id, { category: event.target.value })} className="min-w-0 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-white" />
                   </div>
                 </div>
 
-                <div className="text-right shrink-0">
-                  <div className={`text-sm font-bold ${item.type === 'income' ? 'text-green-400' : 'text-white'}`}>
-                    {item.type === 'income' ? '+' : '-'} R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </div>
-                  <div className="text-[8px] text-white/40 uppercase font-bold">{item.bank_source}</div>
+                <div className="col-start-2 text-right md:col-start-auto">
+                  <label className="block text-[8px] font-bold uppercase text-white/35">{item.type === 'income' ? 'Entrada' : 'Saída'}
+                    <input aria-label="Valor do lançamento" type="number" min="0.01" step="0.01" value={item.amount} onChange={(event) => handleUpdateItem(item.id, { amount: Math.abs(Number(event.target.value || 0)) })} className={`mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-right text-sm font-bold ${item.type === 'income' ? 'text-green-400' : 'text-white'}`} />
+                  </label>
+                  <div className="mt-1 text-[8px] text-white/40 uppercase font-bold">{item.bank_source} · confiança {Math.round(item.confidence * 100)}%</div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0 ml-4">
+                <div className="col-start-2 flex items-center justify-end gap-1 md:col-start-auto">
                   <button
+                    type="button"
+                    aria-label={item.status === 'ready' ? `Não importar ${item.description}` : `Aprovar ${item.description}`}
                     onClick={() => handleToggleStatus(item.id)}
                     className={`p-2 rounded-lg transition-colors ${item.status === 'ready' ? 'text-green-400 bg-green-400/10' : 'text-white/20 hover:text-white/40 bg-white/5'}`}
                   >
                     <Check size={16} />
                   </button>
                   <button
+                    type="button"
+                    aria-label={`Remover ${item.description}`}
                     onClick={() => handleRemove(item.id)}
                     className="p-2 text-white/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
                   >
@@ -1561,6 +1831,35 @@ export default function ImportarExtratos({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {pdfPasswordPrompt && (
+        <div className="fixed inset-0 z-[200] grid place-items-center bg-black/80 p-5 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="mf-pdf-password-title">
+          <form
+            className="w-full max-w-md rounded-3xl border border-white/10 bg-[#151515] p-6 shadow-2xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (pdfPassword) finishPdfPassword(pdfPassword);
+            }}
+          >
+            <span className="inline-flex rounded-full bg-purple-500/15 px-2.5 py-1 text-[10px] font-black tracking-widest text-purple-300">PDF PROTEGIDO</span>
+            <h3 id="mf-pdf-password-title" className="mt-3 text-xl font-black">{pdfPasswordPrompt.incorrect ? 'Senha incorreta' : 'Este extrato precisa de senha'}</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">{pdfPasswordPrompt.incorrect ? 'A senha informada não abriu o PDF. Confira e tente novamente.' : 'A senha será usada somente nesta leitura e não será salva.'}</p>
+            <div className="mt-4 truncate rounded-xl bg-white/5 px-3 py-2 text-[10px] text-white/45">{pdfPasswordPrompt.fileName || 'Arquivo PDF protegido'}</div>
+            <label className="mt-4 block text-[10px] font-bold uppercase tracking-widest text-white/55">Senha do PDF
+              <div className="mt-2 flex gap-2">
+                <input autoFocus autoComplete="off" type={showPdfPassword ? 'text' : 'password'} value={pdfPassword} onChange={(event) => setPdfPassword(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-sm text-white outline-none focus:border-purple-400/60" />
+                <button type="button" onClick={() => setShowPdfPassword((current) => !current)} className="rounded-xl border border-white/10 px-3 text-[10px] font-bold text-white/65">{showPdfPassword ? 'Ocultar' : 'Mostrar'}</button>
+              </div>
+            </label>
+            {pdfPasswordPrompt.incorrect && <p className="mt-2 text-[10px] text-red-300">Senha incorreta. Tente novamente.</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => finishPdfPassword(null)} className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-bold text-white/65">Cancelar</button>
+              <button type="submit" disabled={!pdfPassword} className="rounded-xl bg-purple-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">Abrir PDF</button>
+            </div>
+            <p className="mt-4 text-[9px] leading-4 text-white/30">A senha permanece apenas na memória durante a abertura do arquivo.</p>
+          </form>
         </div>
       )}
     </div>

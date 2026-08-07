@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useMemo, useState } from 'react';
 import { Bell, X, CheckCircle2, AlertCircle, Clock, Calendar, Wallet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -61,7 +60,6 @@ function normalizeNotification(item: NotificationItem): NormalizedNotification {
 }
 
 export default function NotificationCenter({ notifications, onPay, onDismiss, onClose, isOpen }: NotificationCenterProps) {
-  const [bellButton, setBellButton] = useState<HTMLElement | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
 
   const normalizedNotifications = useMemo(
@@ -72,21 +70,6 @@ export default function NotificationCenter({ notifications, onPay, onDismiss, on
   const overdue = normalizedNotifications.filter((item) => item.status === 'overdue');
   const dueToday = normalizedNotifications.filter((item) => item.status === 'due_today');
   const upcoming = normalizedNotifications.filter((item) => item.status === 'pending');
-  const urgentCount = overdue.length + dueToday.length;
-
-  useEffect(() => {
-    const locateButton = () => {
-      const button = document.querySelector<HTMLElement>('button[title="Notificações"]');
-      if (button) {
-        button.style.position = 'relative';
-        setBellButton(button);
-      }
-    };
-
-    locateButton();
-    const timer = window.setTimeout(locateButton, 300);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   async function handlePay(item: NormalizedNotification) {
     try {
@@ -97,39 +80,8 @@ export default function NotificationCenter({ notifications, onPay, onDismiss, on
     }
   }
 
-  const badge = bellButton && normalizedNotifications.length > 0
-    ? createPortal(
-        <span
-          aria-label={`${normalizedNotifications.length} notificações pendentes`}
-          style={{
-            position: 'absolute',
-            top: '-5px',
-            right: '-5px',
-            minWidth: '16px',
-            height: '16px',
-            padding: '0 4px',
-            borderRadius: '999px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: urgentCount > 0 ? '#ef4444' : '#00f2ff',
-            color: urgentCount > 0 ? '#fff' : '#050505',
-            fontSize: '9px',
-            fontWeight: 800,
-            lineHeight: 1,
-            border: '2px solid #080808',
-            pointerEvents: 'none',
-          }}
-        >
-          {normalizedNotifications.length > 99 ? '99+' : normalizedNotifications.length}
-        </span>,
-        bellButton,
-      )
-    : null;
-
   return (
     <>
-      {badge}
       <AnimatePresence>
         {isOpen && (
           <>

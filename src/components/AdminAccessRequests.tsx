@@ -139,15 +139,10 @@ export default function AdminAccessRequests({ user }: { user: User }) {
 
   useEffect(() => {
     if (!isAdmin) return;
-    const intervalId = window.setInterval(() => {
-      fetchRequests();
-    }, 10000);
-
     const onFocus = () => fetchRequests();
     window.addEventListener("focus", onFocus);
 
     return () => {
-      window.clearInterval(intervalId);
       window.removeEventListener("focus", onFocus);
     };
   }, [isAdmin]);

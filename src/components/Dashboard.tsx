@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import {
   Activity,
   AlertCircle,
@@ -19,7 +20,6 @@ import {
   TrendingUp,
   Wallet,
   X,
-  type LucideIcon,
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
@@ -54,6 +54,9 @@ import {
 } from '../types';
 
 import AdminAccessRequests from './AdminAccessRequests';
+import AdminMaintenanceControl from './AdminMaintenanceControl';
+import AppNavigation from './AppNavigation';
+import AutomationCenter from './AutomationCenter';
 import BaseFinanceira from './BaseFinanceira';
 import Cartoes from './Cartoes';
 import Details from './Details';
@@ -63,17 +66,21 @@ import FinancialHealth from './FinancialHealth';
 import FinancialStructure from './FinancialStructure';
 import History from './History';
 import ImportBatches from './ImportBatches';
-import ImportarExtratos from './ImportarExtratos';
 import Insights from './Insights';
-import Investments from './Investments';
+import MonthlyFixedBills from './MonthlyFixedBills';
 import NotificationCenter from './NotificationCenter';
+import ProfileCenter, { OnboardingChecklist } from './ProfileCenter';
 import SubscriptionManager from './SubscriptionManager';
 
 ChartJS.register(...registerables);
 
+const ImportarExtratos = lazy(() => import('./ImportarExtratos'));
+const IncomePayrollCenter = lazy(() => import('./IncomePayrollCenter'));
+const Investments = lazy(() => import('./Investments'));
+
 type ActiveTab = 'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests';
 type AnalysisTab = 'stats' | 'insights' | 'health' | 'goals';
-type AccountsTab = 'financial' | 'bills' | 'calendar' | 'subscriptions' | 'investments';
+type AccountsTab = 'financial' | 'bills' | 'calendar' | 'subscriptions' | 'investments' | 'income' | 'automations';
 type StatementBalanceMode = 'keep' | 'apply_new' | 'statement';
 
 interface StatementImportRpcResult {
@@ -161,11 +168,49 @@ export default function Dashboard({
 }) {
   const { isPrivate, setIsPrivate } = useApp();
   const db = supabase;
-
-  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
-  const [historySubTab, setHistorySubTab] = useState<'list' | 'import' | 'batches'>('list');
-  const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisTab>('stats');
-  const [accountsSubTab, setAccountsSubTab] = useState<AccountsTab>('financial');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const routePath = location.pathname.replace(/\/+$/, '') || '/app';
+  const activeTab: ActiveTab = routePath === '/app'
+    ? 'overview'
+    : routePath.startsWith('/app/movimentacoes')
+      ? 'history'
+      : routePath.startsWith('/app/analises')
+        ? 'analysis'
+        : routePath === '/app/planejamento/cartoes'
+          ? 'cards'
+          : routePath.startsWith('/app/planejamento')
+            ? 'accounts'
+            : routePath === '/app/preferencias'
+              ? 'settings'
+              : routePath === '/app/admin'
+                ? 'admin_requests'
+                : 'overview';
+  const historySubTab: 'list' | 'import' | 'batches' = routePath === '/app/movimentacoes/importar'
+    ? 'import'
+    : routePath === '/app/movimentacoes/lotes'
+      ? 'batches'
+      : 'list';
+  const analysisSubTab: AnalysisTab = routePath.endsWith('/insights')
+    ? 'insights'
+    : routePath.endsWith('/saude')
+      ? 'health'
+      : routePath.endsWith('/metas')
+        ? 'goals'
+        : 'stats';
+  const accountsSubTab: AccountsTab = routePath.endsWith('/renda')
+    ? 'income'
+    : routePath.endsWith('/contas-fixas')
+      ? 'bills'
+      : routePath.endsWith('/calendario')
+        ? 'calendar'
+        : routePath.endsWith('/assinaturas')
+          ? 'subscriptions'
+          : routePath.endsWith('/investimentos')
+            ? 'investments'
+            : routePath.endsWith('/automacoes')
+              ? 'automations'
+              : 'financial';
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const transactionIdsRef = useRef<Set<string>>(new Set());
@@ -185,6 +230,7 @@ export default function Dashboard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
   const [rhythmFilter, setRhythmFilter] = useState<'day' | 'week' | 'month'>('day');
 
@@ -764,15 +810,7 @@ export default function Dashboard({
       throw new Error('Nenhum lançamento válido foi selecionado para importação.');
     }
 
-    const rawApproval = (window as any).__mfStatementImportApproval as {
-      reviewedAt?: number;
-      mode?: StatementBalanceMode;
-    } | undefined;
-    const approvalIsFresh = Number(rawApproval?.reviewedAt || 0) > Date.now() - 10 * 60_000;
-    const approvedMode = approvalIsFresh && ['keep', 'apply_new', 'statement'].includes(String(rawApproval?.mode))
-      ? rawApproval?.mode as StatementBalanceMode
-      : undefined;
-    const balanceMode: StatementBalanceMode = approvedMode
+    const balanceMode: StatementBalanceMode = options.balanceMode
       || (typeof newBalance === 'number' && Number.isFinite(newBalance) ? 'statement' : 'keep');
 
     const { data, error: rpcError } = await db.rpc('mf_commit_statement_import_v2', {
@@ -798,24 +836,6 @@ export default function Dashboard({
     if (!result || !Number.isInteger(insertedCount) || insertedCount < 0) {
       throw new Error('O banco não confirmou quantos lançamentos foram importados.');
     }
-
-    const dates = entries.map((entry) => entry.date).filter(Boolean).sort();
-    window.dispatchEvent(new CustomEvent('mf:statement-import-result', {
-      detail: {
-        insertedCount,
-        batchId: result.batch_id,
-        duplicateCount: Number(result.duplicate_count || 0),
-        rejectedCount: Number(result.rejected_count || 0),
-        ignoredCount: Number(result.ignored_count || 0),
-        periodStart: dates[0] || null,
-        periodEnd: dates[dates.length - 1] || null,
-        netNew: Number(result.net_new || 0),
-        mode: result.balance_mode,
-        balanceBefore: Number(result.balance_before || 0),
-        balanceAfter: Number(result.balance_after || 0),
-      },
-    }));
-    delete (window as any).__mfStatementImportApproval;
 
     await fetchData();
     return insertedCount;
@@ -951,19 +971,6 @@ export default function Dashboard({
     else await fetchData();
   }
 
-  const toolGroups: Array<{ id: ActiveTab; label: string; icon: LucideIcon }> = [
-    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'history', label: 'Histórico', icon: HistoryIcon },
-    { id: 'cards', label: 'Cartões', icon: CreditCardIcon },
-    { id: 'analysis', label: 'Análises', icon: BarChart2 },
-    { id: 'accounts', label: 'Contas', icon: Wallet },
-    { id: 'settings', label: 'Preferências', icon: Settings },
-  ];
-
-  if (isAdmin) {
-    toolGroups.push({ id: 'admin_requests', label: 'Admin', icon: ShieldAlert });
-  }
-
   const activeAccounts = accounts.filter((account) => account.is_active);
   const selectableCategories = categories.filter((category) =>
     category.is_active
@@ -987,24 +994,18 @@ export default function Dashboard({
   }
 
   return (
-    <div className="mf-app-shell">
+    <div className="mf-app-shell mf-routed-app">
+      <AppNavigation onLaunch={() => setShowAddModal(true)} />
       <header className="mf-topbar">
         <div className="mf-brand">
           <div className="mf-brand-icon"><Wallet size={20} /></div>
-          <div><h1>MFinanceiro</h1><span>Dashboard</span></div>
+          <div><h1>{settings?.workspace_name || 'MFinanceiro'}</h1><span>{settings?.display_name ? `Olá, ${settings.display_name.split(/\s+/)[0]}` : 'Dashboard'}</span></div>
         </div>
 
-        <nav className="mf-nav">
-          {toolGroups.map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={activeTab === item.id ? 'active' : ''}>
-              <item.icon size={14} /><span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
         <div className="mf-top-actions">
+          <ProfileCenter user={user} settings={settings} accounts={accounts} open={showProfile} onOpenChange={setShowProfile} onSaved={fetchData} />
           <button onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-          <button onClick={() => setShowNotificationCenter(true)} title="Notificações"><Bell size={16} /></button>
+          <button className="relative" onClick={() => setShowNotificationCenter(true)} title="Notificações"><Bell size={16} />{notifications.length > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[8px] font-black text-white">{notifications.length > 99 ? '99+' : notifications.length}</span>}</button>
           <button className="primary" onClick={() => setShowAddModal(true)}><Plus size={16} />Lançar</button>
           <button onClick={async () => { await db.auth.signOut(); window.location.replace('/'); }} title="Sair"><LogOut size={17} /></button>
         </div>
@@ -1013,7 +1014,10 @@ export default function Dashboard({
       {error && <div className="mf-error"><AlertCircle size={16} />{error}<button onClick={() => setError(null)}><X size={14} /></button></div>}
 
       <section className={`mf-content ${activeTab === 'history' ? 'history-active' : ''}`}>
-        {activeTab === 'overview' && (
+        <Suspense fallback={<div className="mf-loading">Carregando módulo...</div>}>
+        <Routes>
+        <Route path="/app" element={<>
+          <OnboardingChecklist settings={settings} transactionCount={transactionCount} hasCommitment={fixedBills.length > 0 || cards.length > 0} onProfile={() => setShowProfile(true)} onNavigate={navigate} />
           <main className="mf-dashboard-grid">
             <section className="mf-kpi-grid">
               <article className={`mf-card mf-kpi ${balanceValue < 0 ? 'danger' : ''}`}>
@@ -1086,14 +1090,15 @@ export default function Dashboard({
               </article>
             </section>
           </main>
-        )}
+          {loading && <div className="mf-loading">Atualizando dados...</div>}
+        </>} />
 
-        {activeTab === 'history' && (
+        <Route path="/app/movimentacoes/*" element={
           <div className="mf-tab-shell history-shell">
             <div className="mf-subnav">
-              <button className={historySubTab === 'list' ? 'active' : ''} onClick={() => setHistorySubTab('list')}>Movimentações</button>
-              <button className={historySubTab === 'import' ? 'active' : ''} onClick={() => setHistorySubTab('import')}>Importar extrato</button>
-              <button className={historySubTab === 'batches' ? 'active' : ''} onClick={() => setHistorySubTab('batches')}>Lotes e conciliação</button>
+              <button className={historySubTab === 'list' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes')}>Movimentações</button>
+              <button className={historySubTab === 'import' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes/importar')}>Importar extrato</button>
+              <button className={historySubTab === 'batches' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes/lotes')}>Lotes e conciliação</button>
             </div>
             {historySubTab === 'list' ? (
               <History
@@ -1108,51 +1113,56 @@ export default function Dashboard({
                 onLoadMore={loadMoreLedgerEntries}
               />
             ) : historySubTab === 'import' ? (
-              <ImportarExtratos accounts={accounts} onImport={handleImportTransactions} onCancel={() => setHistorySubTab('list')} accountHolderName={user.user_metadata?.name || user.email || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} />
+              <ImportarExtratos accounts={accounts} onImport={handleImportTransactions} onCancel={() => navigate('/app/movimentacoes')} accountHolderName={user.user_metadata?.name || user.email || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} />
             ) : (
               <ImportBatches userId={user.id} accounts={accounts} />
             )}
           </div>
-        )}
+        } />
 
-        {activeTab === 'analysis' && (
+        <Route path="/app/analises/*" element={
           <div className="mf-tab-shell">
             <div className="mf-subnav">
-              <button className={analysisSubTab === 'stats' ? 'active' : ''} onClick={() => setAnalysisSubTab('stats')}>Estatísticas</button>
-              <button className={analysisSubTab === 'insights' ? 'active' : ''} onClick={() => setAnalysisSubTab('insights')}>Insights</button>
-              <button className={analysisSubTab === 'health' ? 'active' : ''} onClick={() => setAnalysisSubTab('health')}>Saúde financeira</button>
-              <button className={analysisSubTab === 'goals' ? 'active' : ''} onClick={() => setAnalysisSubTab('goals')}>Metas</button>
+              <button className={analysisSubTab === 'stats' ? 'active' : ''} onClick={() => navigate('/app/analises/resumo')}>Estatísticas</button>
+              <button className={analysisSubTab === 'insights' ? 'active' : ''} onClick={() => navigate('/app/analises/insights')}>Insights</button>
+              <button className={analysisSubTab === 'health' ? 'active' : ''} onClick={() => navigate('/app/analises/saude')}>Saúde financeira</button>
+              <button className={analysisSubTab === 'goals' ? 'active' : ''} onClick={() => navigate('/app/analises/metas')}>Metas</button>
             </div>
             {analysisSubTab === 'stats' && <Details transactions={transactions} summary={summary} />}
             {analysisSubTab === 'insights' && <Insights summary={summary} transactions={transactions} fixedBills={fixedBills} />}
             {analysisSubTab === 'health' && <FinancialHealth transactions={transactions} summary={summary} totals={{ totalInvestments: investments.reduce((sum, item) => sum + Number(item.amount || 0), 0), categoryCount: new Set(transactions.map((item) => item.category)).size }} />}
             {analysisSubTab === 'goals' && <FinancialGoals />}
           </div>
-        )}
+        } />
 
-        {activeTab === 'accounts' && (
+        <Route path="/app/planejamento/*" element={activeTab === 'cards' ?
+          <Cartoes cards={cards} installments={installments} onAddCard={openAddCardModal} onEditCard={openEditCardModal} onDeleteCard={handleDeleteCard} onAddInstallment={openAddInstallmentModal} onEditInstallment={openEditInstallmentModal} onDeleteInstallment={handleDeleteInstallment} onPayInstallment={handlePayInstallment} onPayCardBill={handlePayCardBill} />
+          :
           <div className="mf-tab-shell">
             <div className="mf-subnav">
-              <button className={accountsSubTab === 'financial' ? 'active' : ''} onClick={() => setAccountsSubTab('financial')}>Contas financeiras</button>
-              <button className={accountsSubTab === 'bills' ? 'active' : ''} onClick={() => setAccountsSubTab('bills')}>Gestão de contas</button>
-              <button className={accountsSubTab === 'calendar' ? 'active' : ''} onClick={() => setAccountsSubTab('calendar')}>Calendário</button>
-              <button className={accountsSubTab === 'subscriptions' ? 'active' : ''} onClick={() => setAccountsSubTab('subscriptions')}>Assinaturas</button>
-              <button className={accountsSubTab === 'investments' ? 'active' : ''} onClick={() => setAccountsSubTab('investments')}>Investimentos</button>
+              <button className={accountsSubTab === 'financial' ? 'active' : ''} onClick={() => navigate('/app/planejamento/contas')}>Contas financeiras</button>
+              <button className={accountsSubTab === 'bills' ? 'active' : ''} onClick={() => navigate('/app/planejamento/contas-fixas')}>Contas fixas</button>
+              <button className={accountsSubTab === 'calendar' ? 'active' : ''} onClick={() => navigate('/app/planejamento/calendario')}>Calendário</button>
+              <button className={accountsSubTab === 'subscriptions' ? 'active' : ''} onClick={() => navigate('/app/planejamento/assinaturas')}>Assinaturas</button>
+              <button className={accountsSubTab === 'investments' ? 'active' : ''} onClick={() => navigate('/app/planejamento/investimentos')}>Investimentos</button>
+              <button className={accountsSubTab === 'income' ? 'active' : ''} onClick={() => navigate('/app/planejamento/renda')}>Renda</button>
+              <button className={accountsSubTab === 'automations' ? 'active' : ''} onClick={() => navigate('/app/planejamento/automacoes')}>Automação</button>
             </div>
             {accountsSubTab === 'financial' && <FinancialStructure userId={user.id} accounts={accounts} categories={categories} onRefresh={fetchData} />}
-            {accountsSubTab === 'bills' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="bills" />}
+            {accountsSubTab === 'bills' && <MonthlyFixedBills userId={user.id} onDataChanged={fetchData} />}
             {accountsSubTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
             {accountsSubTab === 'subscriptions' && <SubscriptionManager />}
             {accountsSubTab === 'investments' && <Investments user={user} settings={settings} onRefresh={fetchData} />}
+            {accountsSubTab === 'income' && <IncomePayrollCenter userId={user.id} />}
+            {accountsSubTab === 'automations' && <AutomationCenter userId={user.id} accounts={accounts} categories={categories} />}
           </div>
-        )}
+        } />
 
-        {activeTab === 'cards' && <Cartoes cards={cards} installments={installments} onAddCard={openAddCardModal} onEditCard={openEditCardModal} onDeleteCard={handleDeleteCard} onAddInstallment={openAddInstallmentModal} onEditInstallment={openEditInstallmentModal} onDeleteInstallment={handleDeleteInstallment} onPayInstallment={handlePayInstallment} onPayCardBill={handlePayCardBill} />}
-
-        {activeTab === 'settings' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="income" />}
-        {activeTab === 'admin_requests' && <AdminAccessRequests user={user} />}
-
-        {loading && activeTab === 'overview' && <div className="mf-loading">Atualizando dados...</div>}
+        <Route path="/app/preferencias" element={settings ? <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="income" /> : null} />
+        <Route path="/app/admin" element={isAdmin ? <div className="space-y-4"><AdminMaintenanceControl /><AdminAccessRequests user={user} /></div> : <Navigate to="/app" replace />} />
+        <Route path="*" element={<Navigate to="/app" replace />} />
+        </Routes>
+        </Suspense>
       </section>
 
       <NotificationCenter isOpen={showNotificationCenter} onClose={() => setShowNotificationCenter(false)} notifications={notifications as any} onPay={(item: any) => item.type === 'fixed' && handleToggleBillStatus(item.originalData.id)} onDismiss={(id) => setDismissedAlerts((current) => [...current, id])} />

@@ -217,13 +217,11 @@ export default function Auth() {
     };
 
     void check();
-    const interval = window.setInterval(() => void check(), 15000);
     const onFocus = () => void check();
     window.addEventListener("focus", onFocus);
 
     return () => {
       active = false;
-      window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
     };
   }, [email, isPending]);

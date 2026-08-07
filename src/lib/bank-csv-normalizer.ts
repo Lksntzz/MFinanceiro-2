@@ -29,7 +29,6 @@ interface HeaderMatch {
   type: number;
 }
 
-const originalFileText = File.prototype.text;
 const MAX_TRANSACTION_VALUE = 100_000_000;
 
 const PROFILES: CsvProfile[] = [
@@ -240,7 +239,7 @@ function csvField(value: unknown): string {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
-function standardizeCsv(content: string, fileName: string): string | null {
+export function standardizeBankCsv(content: string, fileName: string): string | null {
   if (normalize(fileName).includes('mfinanceirorelatoriotransacoes')) return null;
   const lines = content.split(/\r?\n/).map((line) => line.replace(/^\uFEFF/, '').trim()).filter(Boolean);
   if (lines.length < 2) return null;
@@ -293,16 +292,3 @@ function standardizeCsv(content: string, fileName: string): string | null {
 
   return output.length > 1 ? output.join('\n') : null;
 }
-
-File.prototype.text = async function bankAwareText(): Promise<string> {
-  const original = await originalFileText.call(this);
-  const extension = this.name.split('.').pop()?.toLowerCase();
-  if (extension !== 'csv' && !this.type.toLowerCase().includes('csv')) return original;
-
-  try {
-    return standardizeCsv(original, this.name) || original;
-  } catch (error) {
-    console.warn('Falha ao normalizar CSV bancário; usando arquivo original.', error);
-    return original;
-  }
-};
