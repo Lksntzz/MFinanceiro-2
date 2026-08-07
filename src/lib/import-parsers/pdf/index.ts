@@ -7,7 +7,7 @@ import { parseSantanderPdf } from './santander';
 import { parseC6BankPdf } from './c6bank';
 import { parseGenericPdf } from './generic';
 import { detectBankFromText } from './utils';
-import { mergePdfTransactions, parseUniversalPdfStatement } from './universal';
+import { parseUniversalPdfStatement } from './universal';
 
 const BANK_PDF_PARSERS: Record<string, PdfBankParser> = {
   mercadopago: parseMercadoPagoPdf,
@@ -29,7 +29,18 @@ export function getPdfBankParser(bank: string): PdfBankParser {
 
   return (context) => {
     const bankSpecific = bankParser(context);
+
+    // A known-bank parser wins whenever it found transactions. The universal parser is
+    // recovery only; merging both sets can duplicate rows or reinterpret document/NSU
+    // columns as money when a bank changes the visual layout of its PDF.
+    if (bank !== 'generic' && bankSpecific.length > 0) return bankSpecific;
+
     const universal = parseUniversalPdfStatement(context);
-    return mergePdfTransactions(bankSpecific, universal);
+    if (bankSpecific.length === 0) return universal;
+    if (universal.length === 0) return bankSpecific;
+
+    // For an unknown bank, choose one coherent interpretation instead of merging two
+    // independent parsers. Prefer the parser that recovered more transaction rows.
+    return universal.length > bankSpecific.length ? universal : bankSpecific;
   };
 }
