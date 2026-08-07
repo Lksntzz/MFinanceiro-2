@@ -9,6 +9,12 @@ import { requestPdfPassword } from './pdf-password-prompt';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
+// Safety ceiling for a single imported bank movement. Values at or above this point
+// are treated as parser corruption (usually document/NSU digits joined to money),
+// never as a ready transaction. The original PDF remains untouched for re-parsing.
+const MAX_SAFE_PDF_TRANSACTION_AMOUNT = 1_000_000_000;
+const STRICT_MONEY_PATTERN = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/;
+
 function inferCategoryFromStatement(description: string, type: 'income' | 'expense'): string {
   const text = normalizeHeader(description);
 
@@ -209,7 +215,8 @@ function toImportedTransactions(
     const description = entry.description || 'Sem descricao';
     const flowByContext = inferFlowByDescription(description);
     const type: 'income' | 'expense' = flowByContext || (entry.signedAmount >= 0 ? 'income' : 'expense');
-    const status: ImportedTransaction['status'] = description !== 'Sem descricao' && amount > 0 ? 'ready' : 'error';
+    const amountIsSafe = Number.isFinite(amount) && amount > 0 && amount < MAX_SAFE_PDF_TRANSACTION_AMOUNT;
+    const status: ImportedTransaction['status'] = description !== 'Sem descricao' && amountIsSafe ? 'ready' : 'error';
     const classification = classifyStatementEntry(description, type, options);
 
     return {
@@ -223,7 +230,9 @@ function toImportedTransactions(
       source: bankSource,
       categorySuggestion: classification.category,
       status,
-      confidence: typeof entry.confidence === 'number' ? entry.confidence : (status === 'ready' ? 0.9 : 0.35),
+      confidence: amountIsSafe
+        ? (typeof entry.confidence === 'number' ? entry.confidence : (status === 'ready' ? 0.9 : 0.35))
+        : 0.05,
       original_description: description,
       bank_source: bankSource,
       running_balance: entry.runningBalance
@@ -393,10 +402,14 @@ export async function parsePdfStatementWithDebug(
   const isScannedPdf = cleanedText.length < 40 || totalTextItems < 20 || lines.length < 5;
   const hasTransactionPattern =
     /\b\d{2}[./-]\d{2}(?:[./-]\d{2,4})?\b/.test(cleanedText) &&
-    /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/.test(cleanedText);
+    STRICT_MONEY_PATTERN.test(cleanedText);
   const isLikelyBankStatement =
     /(extrato|movimentacao|lancamento|saldo|contacorrente|banco|agencia|debito|credito|pix|transferencia)/.test(normalizedText) ||
     hasTransactionPattern;
+  const safeTransactions = transactions.filter((item) => item.status === 'ready');
+  const suspiciousTransactions = transactions.filter(
+    (item) => Number.isFinite(Number(item.amount)) && Math.abs(Number(item.amount)) >= MAX_SAFE_PDF_TRANSACTION_AMOUNT
+  );
 
   let reason: string | undefined;
   if (transactions.length === 0) {
@@ -409,11 +422,15 @@ export async function parsePdfStatementWithDebug(
     } else {
       reason = 'Extrato reconhecido, mas nenhuma movimentação pôde ser mapeada com segurança. O layout pode ter mudado.';
     }
+  } else if (safeTransactions.length === 0 && suspiciousTransactions.length > 0) {
+    reason = 'A leitura encontrou valores monetários implausíveis e bloqueou a importação. O PDF provavelmente separa documento/NSU e valor em colunas diferentes.';
   }
 
   const datePattern = /\b\d{2}[./-]\d{2}(?:[./-]\d{2,4})?\b/;
-  const amountPattern = /(?:R\$\s*)?[+-]?\s*\d[\d.\s]*[,.]\d{2}-?/;
-  const rejectedLineReasons: string[] = [];
+  const amountPattern = STRICT_MONEY_PATTERN;
+  const rejectedLineReasons: string[] = suspiciousTransactions.slice(0, 4).map((item) =>
+    `Valor bloqueado por segurança: ${Number(item.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em "${String(item.description || '').slice(0, 80)}"`
+  );
   let ignoredLines = 0;
 
   for (const line of lines) {
