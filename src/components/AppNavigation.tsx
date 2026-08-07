@@ -36,6 +36,7 @@ const primaryItems: NavigationItem[] = [
   { to: '/app', label: 'Início', icon: LayoutDashboard, end: true },
   { to: '/app/movimentacoes', label: 'Movimentações', icon: Receipt },
   { to: '/app/planejamento/contas', label: 'Planejamento', icon: Wallet },
+  { to: '/app/planejamento/investimentos', label: 'Investimentos', icon: Landmark },
   { to: '/app/analises/resumo', label: 'Análises', icon: BarChart3 },
 ];
 
@@ -46,7 +47,6 @@ const planningItems: NavigationItem[] = [
   { to: '/app/planejamento/contas-fixas', label: 'Contas fixas', icon: ListChecks },
   { to: '/app/planejamento/calendario', label: 'Calendário', icon: CalendarDays },
   { to: '/app/planejamento/assinaturas', label: 'Assinaturas', icon: ListChecks },
-  { to: '/app/planejamento/investimentos', label: 'Investimentos', icon: Landmark },
   { to: '/app/planejamento/automacoes', label: 'Automação e Open Finance', icon: Bot },
 ];
 
