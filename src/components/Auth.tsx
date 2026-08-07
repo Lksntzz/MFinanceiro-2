@@ -258,6 +258,17 @@ export default function Auth() {
     }
   }
 
+  function openExistingLogin() {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail) rememberIdentity(normalizedEmail);
+    writeStored(STORAGE_PENDING, "");
+    setMode("login");
+    setPassword("");
+    setSignupStatus(null);
+    setError(null);
+    setInfo(null);
+  }
+
   function resetForAnotherUser() {
     writeStored(STORAGE_ACCOUNT_READY, "");
     writeStored(STORAGE_PENDING, "");
@@ -394,6 +405,16 @@ export default function Auth() {
               )}
             </button>
           </form>
+
+          {isRequest && (
+            <button
+              type="button"
+              onClick={openExistingLogin}
+              className="mt-6 w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors"
+            >
+              Já tenho uma conta
+            </button>
+          )}
 
           {isLogin && rememberedEmail && (
             <button
