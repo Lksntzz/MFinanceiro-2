@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, FileDown, Search, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, FileDown, Loader2, Search, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 
-import { supabase } from '../lib/supabase';
 import { Transaction } from '../types';
 
 interface HistoryProps {
@@ -13,6 +12,12 @@ interface HistoryProps {
   onDelete?: (id: string) => void;
   onDeleteAll?: () => void;
   onToggleStatus?: (id: string, status: 'paid' | 'pending') => void;
+  currentBalance: number;
+  balanceConfirmed?: boolean;
+  totalCount: number;
+  hasMore: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore: () => Promise<void>;
 }
 
 type FilterType = 'all' | 'income' | 'expense';
@@ -74,57 +79,16 @@ export default function History({
   onDelete,
   onDeleteAll,
   onToggleStatus,
+  currentBalance,
+  balanceConfirmed = false,
+  totalCount,
+  hasMore,
+  isLoadingMore = false,
+  onLoadMore,
 }: HistoryProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
-  const [currentBalance, setCurrentBalance] = useState(0);
-  const [balanceConfirmed, setBalanceConfirmed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
-    const setup = async () => {
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id;
-      if (!userId || !active) return;
-
-      const loadBalance = async () => {
-        const { data, error } = await supabase
-          .from('mf_user_settings')
-          .select('current_balance,balance_confirmed')
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (error) {
-          console.warn('Falha ao carregar saldo do histórico:', error);
-          return;
-        }
-        if (!active) return;
-        setCurrentBalance(Number(data?.current_balance || 0));
-        setBalanceConfirmed(data?.balance_confirmed === true);
-      };
-
-      await loadBalance();
-      if (!active) return;
-
-      channel = supabase
-        .channel(`history-settings-${userId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'mf_user_settings', filter: `user_id=eq.${userId}` },
-          () => void loadBalance(),
-        )
-        .subscribe();
-    };
-
-    void setup();
-    return () => {
-      active = false;
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, []);
-
   const ledgerTransactions = transactions as LedgerTransaction[];
 
   const filteredTransactions = useMemo(() => {
@@ -342,7 +306,7 @@ export default function History({
       </div>
 
       <div className="shrink-0 rounded-xl border border-brand-primary/15 bg-brand-primary/[0.055] px-3 py-2 text-[10px] leading-relaxed text-white/55">
-        O <strong className="text-white/85">movimento líquido</strong> considera somente lançamentos realizados no filtro atual. O <strong className="text-white/85">saldo atual</strong> está {balanceConfirmed ? 'confirmado pelo usuário' : 'ainda não confirmado'} e não precisa ser igual ao movimento do período. Diferença entre saldo e filtro: <strong className="text-white/85">{formatMoney(filteredDifference)}</strong>. Base anterior/ajustes fora de todo o histórico: <strong className="text-white/85">{formatMoney(balanceState.openingBase)}</strong>.
+        O <strong className="text-white/85">movimento líquido</strong> considera os lançamentos carregados no filtro atual. O <strong className="text-white/85">saldo atual</strong> é derivado das contas e está {balanceConfirmed ? 'confirmado pelo usuário' : 'aguardando conferência'}. Diferença entre saldo e filtro: <strong className="text-white/85">{formatMoney(filteredDifference)}</strong>. Base anterior aos {transactions.length} lançamentos carregados: <strong className="text-white/85">{formatMoney(balanceState.openingBase)}</strong>.
       </div>
 
       <div className="history-scroll flex-1 min-h-0 overflow-y-auto pr-1 no-scrollbar">
@@ -445,6 +409,21 @@ export default function History({
               Nenhum lançamento encontrado.
             </div>
           )}
+
+          <div className="flex flex-col items-center gap-2 py-3 text-[10px] text-white/35">
+            <span>{transactions.length} de {totalCount} lançamentos carregados</span>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => void onLoadMore()}
+                disabled={isLoadingMore}
+                className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white/70 hover:bg-white/10 disabled:opacity-45"
+              >
+                {isLoadingMore && <Loader2 size={14} className="animate-spin" />}
+                {isLoadingMore ? 'Carregando...' : 'Carregar mais lançamentos'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </section>

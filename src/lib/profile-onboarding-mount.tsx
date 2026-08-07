@@ -256,11 +256,22 @@ function ProfileOnboarding() {
         avatarUrl = `${data.publicUrl}?v=${Date.now()}`;
       }
 
+      const { data: structure, error: structureError } = await supabase.rpc('mf_ensure_financial_structure');
+      if (structureError) throw structureError;
+      const defaultAccountId = String((structure as any)?.default_account_id || '');
+      if (!defaultAccountId) throw new Error('A conta financeira principal não foi encontrada.');
+
       const { error: updateError } = await supabase
         .from('mf_user_settings')
-        .update({ display_name: name, workspace_name: workspace, avatar_url: avatarUrl, current_balance: balance, balance_confirmed: true, updated_at: new Date().toISOString() })
+        .update({ display_name: name, workspace_name: workspace, avatar_url: avatarUrl, balance_confirmed: true, updated_at: new Date().toISOString() })
         .eq('user_id', userId);
       if (updateError) throw updateError;
+
+      const { error: balanceError } = await supabase.rpc('mf_set_account_balance', {
+        p_account_id: defaultAccountId,
+        p_balance: balance,
+      });
+      if (balanceError) throw balanceError;
 
       setAvatarFile(null);
       setWorkspaceName(workspace);

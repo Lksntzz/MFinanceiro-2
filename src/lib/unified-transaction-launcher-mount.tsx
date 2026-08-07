@@ -21,6 +21,7 @@ import {
 import { format } from 'date-fns';
 import { CATEGORIES } from './constants';
 import { supabase } from './supabase';
+import { FinancialAccount, TransactionCategory } from '../types';
 
 type EntryType = 'expense' | 'income';
 type EntryStatus = 'paid' | 'pending';
@@ -57,6 +58,8 @@ type FormState = {
   type: EntryType;
   amount: string;
   description: string;
+  accountId: string;
+  categoryId: string;
   category: string;
   date: string;
   status: EntryStatus;
@@ -96,6 +99,8 @@ function defaultForm(): FormState {
     type: 'expense',
     amount: '',
     description: '',
+    accountId: '',
+    categoryId: '',
     category: CATEGORIES[0] || 'Geral',
     date: todayKey(),
     status: 'paid',
@@ -114,6 +119,8 @@ function UnifiedTransactionLauncher() {
   const [pendingOpen, setPendingOpen] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [cards, setCards] = useState<CardRow[]>([]);
+  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
+  const [normalizedCategories, setNormalizedCategories] = useState<TransactionCategory[]>([]);
   const [pending, setPending] = useState<PendingRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -134,7 +141,13 @@ function UnifiedTransactionLauncher() {
 
   async function loadSupportingData() {
     if (!userId) return;
-    const [cardResult, pendingResult] = await Promise.all([
+    const ensured = await supabase.rpc('mf_ensure_financial_structure');
+    if (ensured.error) {
+      setError(ensured.error.message);
+      return;
+    }
+
+    const [cardResult, pendingResult, accountResult, categoryResult] = await Promise.all([
       supabase.from('mf_credit_cards').select('id,name,brand,used,limit').eq('user_id', userId).order('name'),
       supabase
         .from('mf_finance_ledger_entries')
@@ -143,17 +156,30 @@ function UnifiedTransactionLauncher() {
         .eq('status', 'pending')
         .order('due_date', { ascending: true, nullsFirst: false })
         .limit(12),
+      supabase.from('mf_account_balances').select('*').eq('user_id', userId).eq('is_active', true).order('is_default', { ascending: false }).order('created_at'),
+      supabase.from('mf_transaction_categories').select('*').eq('user_id', userId).eq('is_active', true).order('sort_order').order('name'),
     ]);
 
     if (cardResult.error) setError(cardResult.error.message);
     if (pendingResult.error) setError(pendingResult.error.message);
+    if (accountResult.error) setError(accountResult.error.message);
+    if (categoryResult.error) setError(categoryResult.error.message);
 
     const nextCards = (cardResult.data || []).map((card: any) => ({
       ...card,
       used: Number(card.used || 0),
       limit: Number(card.limit || 0),
     })) as CardRow[];
+    const nextAccounts = (accountResult.data || []).map((account: any) => ({
+      ...account,
+      opening_balance: Number(account.opening_balance || 0),
+      current_balance: Number(account.current_balance || 0),
+      transaction_count: Number(account.transaction_count || 0),
+    })) as FinancialAccount[];
+    const nextCategories = (categoryResult.data || []) as TransactionCategory[];
     setCards(nextCards);
+    setAccounts(nextAccounts);
+    setNormalizedCategories(nextCategories);
     setPending((pendingResult.data || []).map((item: any) => ({
       ...item,
       amount: Number(item.amount || 0),
@@ -162,9 +188,24 @@ function UnifiedTransactionLauncher() {
       type: item.type === 'income' ? 'income' : 'expense',
     })) as PendingRow[]);
 
-    if (!form.cardId && nextCards[0]?.id) {
-      setForm((current) => ({ ...current, cardId: nextCards[0].id }));
-    }
+    setForm((current) => {
+      const account = nextAccounts.find((item) => item.id === current.accountId)
+        || nextAccounts.find((item) => item.is_default)
+        || nextAccounts[0];
+      const compatibleCategories = nextCategories.filter((item) =>
+        item.category_type === 'both' || item.category_type === current.type,
+      );
+      const category = compatibleCategories.find((item) => item.id === current.categoryId)
+        || compatibleCategories.find((item) => item.name === current.category)
+        || compatibleCategories[0];
+      return {
+        ...current,
+        accountId: account?.id || '',
+        categoryId: category?.id || '',
+        category: category?.name || current.category,
+        cardId: current.cardId || nextCards[0]?.id || '',
+      };
+    });
   }
 
   function openLauncher() {
@@ -226,7 +267,9 @@ function UnifiedTransactionLauncher() {
   }, [open]);
 
   const amount = Number(form.amount || 0);
-  const categories = form.type === 'income' ? INCOME_CATEGORIES : CATEGORIES;
+  const categoryOptions = normalizedCategories.filter((category) =>
+    category.category_type === 'both' || category.category_type === form.type,
+  );
   const selectedCard = cards.find((card) => card.id === form.cardId);
   const affectsBalance = form.status === 'paid' && !(form.type === 'expense' && form.paymentMethod === 'credit_card');
   const balanceEffect = affectsBalance ? (form.type === 'expense' ? -Math.abs(amount) : Math.abs(amount)) : 0;
@@ -241,10 +284,14 @@ function UnifiedTransactionLauncher() {
   }, [amount, balanceEffect, form.paymentMethod, form.status, form.type, selectedCard?.name]);
 
   function changeType(type: EntryType) {
+    const nextCategory = normalizedCategories.find((category) =>
+      category.is_active && (category.category_type === 'both' || category.category_type === type),
+    );
     setForm((current) => ({
       ...current,
       type,
-      category: type === 'income' ? INCOME_CATEGORIES[0] : CATEGORIES[0] || 'Geral',
+      categoryId: nextCategory?.id || '',
+      category: nextCategory?.name || (type === 'income' ? INCOME_CATEGORIES[0] : CATEGORIES[0] || 'Geral'),
       paymentMethod: type === 'income' ? 'pix' : current.paymentMethod === 'benefit' ? 'pix' : current.paymentMethod,
       cardId: type === 'income' ? '' : current.cardId,
       installmentCount: type === 'income' ? '1' : current.installmentCount,
@@ -266,7 +313,9 @@ function UnifiedTransactionLauncher() {
     setForm((current) => ({
       ...defaultForm(),
       type: current.type,
-      category: current.type === 'income' ? INCOME_CATEGORIES[0] : CATEGORIES[0] || 'Geral',
+      accountId: current.accountId,
+      categoryId: current.categoryId,
+      category: current.category,
       date: current.date,
       paymentMethod: current.paymentMethod,
       cardId: current.paymentMethod === 'credit_card' ? current.cardId : '',
@@ -284,16 +333,20 @@ function UnifiedTransactionLauncher() {
     try {
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Informe um valor maior que zero.');
       if (!form.description.trim()) throw new Error('Informe uma descrição.');
+      if (!form.accountId) throw new Error('Selecione a conta financeira do lançamento.');
+      if (!form.categoryId) throw new Error('Selecione uma categoria.');
       if (form.paymentMethod === 'credit_card' && form.type === 'expense' && !form.cardId) {
         throw new Error('Selecione o cartão utilizado.');
       }
       const installmentCount = Math.max(1, Math.min(48, Number(form.installmentCount || 1)));
 
-      const { error: rpcError } = await supabase.rpc('mf_create_finance_entry_v2', {
+      const { error: rpcError } = await supabase.rpc('mf_create_finance_entry_v3', {
         p_type: form.type,
         p_amount: amount,
         p_date: form.date,
         p_description: form.description.trim(),
+        p_account_id: form.accountId,
+        p_category_id: form.categoryId,
         p_category: form.category,
         p_payment_method: form.paymentMethod,
         p_status: form.status,
@@ -301,6 +354,7 @@ function UnifiedTransactionLauncher() {
         p_installment_count: installmentCount,
         p_due_date: form.status === 'pending' && form.dueDate ? form.dueDate : null,
         p_notes: form.notes.trim() || null,
+        p_source: 'Manual detalhado',
       });
       if (rpcError) throw rpcError;
 
@@ -388,7 +442,8 @@ function UnifiedTransactionLauncher() {
             <Field label="Valor"><input autoFocus type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="0,00" /></Field>
             <Field label="Data"><input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></Field>
             <Field label="Descrição" wide><input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.type === 'expense' ? 'Ex.: Mercado, combustível, aluguel' : 'Ex.: Salário, reembolso, venda'} /></Field>
-            <Field label="Categoria" wide><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
+            <Field label="Conta financeira"><select value={form.accountId} onChange={(event) => setForm({ ...form, accountId: event.target.value })}><option value="">Selecione</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {money(account.current_balance)}</option>)}</select></Field>
+            <Field label="Categoria"><select value={form.categoryId} onChange={(event) => { const category = normalizedCategories.find((item) => item.id === event.target.value); setForm({ ...form, categoryId: event.target.value, category: category?.name || 'Geral' }); }}><option value="">Selecione</option>{categoryOptions.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Field>
           </div>
 
           <section className="mt-5">

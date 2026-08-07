@@ -5,6 +5,7 @@ import { AlertTriangle, BrainCircuit, RefreshCcw } from 'lucide-react';
 
 import Insights from '../components/Insights';
 import { calculateFinanceSummary } from './finance-calculations';
+import { readLedgerCache } from './ledger-cache';
 import { supabase } from './supabase';
 import {
   CardInstallment,
@@ -203,13 +204,20 @@ function StandaloneInsights() {
 
   async function load() {
     if (!userId || !visible) return;
+    const cached = readLedgerCache(userId);
+    if (cached?.rows.length) setTransactions(cached.rows);
     setLoading(true);
     setError(null);
 
     try {
       const [settingsResult, transactionsResult, fixedResult, cardsResult, installmentsResult] = await Promise.all([
         supabase.from('mf_user_settings').select('*').eq('user_id', userId).maybeSingle(),
-        supabase.from('mf_finance_ledger_entries').select('*').eq('user_id', userId).order('date', { ascending: false }),
+        supabase.rpc('mf_get_ledger_page', {
+          p_page_size: 250,
+          p_cursor_date: null,
+          p_cursor_created_at: null,
+          p_cursor_id: null,
+        }),
         supabase.from('mf_fixed_bills').select('*').eq('user_id', userId).eq('active', true),
         supabase.from('mf_credit_cards').select('*').eq('user_id', userId),
         supabase.from('mf_card_installments').select('*').eq('user_id', userId),
@@ -219,7 +227,10 @@ function StandaloneInsights() {
       if (firstError) throw firstError;
       if (!settingsResult.data) throw new Error('As configurações financeiras não foram encontradas.');
 
-      const nextTransactions = (transactionsResult.data || [])
+      const ledgerRows = Array.isArray((transactionsResult.data as any)?.items)
+        ? (transactionsResult.data as any).items
+        : [];
+      const nextTransactions = ledgerRows
         .map(normalizeTransaction)
         .filter((item): item is Transaction => Boolean(item));
       const nextFixed = (fixedResult.data || []) as FixedBill[];

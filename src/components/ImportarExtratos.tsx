@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { ImportedTransaction } from '../types';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { FinancialAccount, ImportedTransaction, StatementImportOptions } from '../types';
 import { identifyCompany } from '../lib/company-aliases';
 import * as XLSX from 'xlsx';
 import {
@@ -20,8 +20,13 @@ import {
 } from 'lucide-react';
 
 interface ImportarExtratosProps {
-  onImport: (transactions: ImportedTransaction[], newBalance?: number) => Promise<number>;
+  onImport: (
+    transactions: ImportedTransaction[],
+    newBalance: number | undefined,
+    options: StatementImportOptions,
+  ) => Promise<number>;
   onCancel: () => void;
+  accounts: FinancialAccount[];
   accountHolderName?: string;
   internalAccountAliases?: string[];
 }
@@ -74,6 +79,14 @@ interface ParserDebugSummary {
   linesExtracted: number;
   linesIgnored: number;
   rejectedLineReasons: string[];
+}
+
+async function hashImportFile(file: File): Promise<string | undefined> {
+  if (!globalThis.crypto?.subtle) return undefined;
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function normalizeHeader(value: string): string {
@@ -821,6 +834,7 @@ export async function parseSpreadsheetTransactions(file: File, selectedBank: str
 export default function ImportarExtratos({
   onImport,
   onCancel,
+  accounts,
   accountHolderName,
   internalAccountAliases
 }: ImportarExtratosProps) {
@@ -835,8 +849,22 @@ export default function ImportarExtratos({
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [committedCount, setCommittedCount] = useState(0);
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    () => accounts.find((account) => account.is_default && account.is_active)?.id
+      || accounts.find((account) => account.is_active)?.id
+      || '',
+  );
   const readyItemsCount = importedData.filter(i => i.status === 'ready').length;
-  const canConfirmImport = readyItemsCount > 0;
+  const canConfirmImport = readyItemsCount > 0 && Boolean(selectedAccountId);
+
+  useEffect(() => {
+    if (accounts.some((account) => account.id === selectedAccountId && account.is_active)) return;
+    setSelectedAccountId(
+      accounts.find((account) => account.is_default && account.is_active)?.id
+        || accounts.find((account) => account.is_active)?.id
+        || '',
+    );
+  }, [accounts, selectedAccountId]);
 
   const signedAmountFromImported = (item: ImportedTransaction): number =>
     item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount);
@@ -1118,19 +1146,25 @@ export default function ImportarExtratos({
   const handleFinalImport = async () => {
     if (!canConfirmImport || isImporting) return;
 
-    const readyItems = importedData.filter(item =>
-      item.status === 'ready' &&
-      item.amount > 0 &&
-      item.description !== 'Sem descricao'
-    );
-    
     const calibrationBalance = shouldCalibrateBalance && balanceValidation ? balanceValidation.statementFinal : undefined;
 
     setIsImporting(true);
     setImportError(null);
 
     try {
-      const insertedCount = await onImport(readyItems, calibrationBalance);
+      if (!file || !selectedAccountId) throw new Error('Selecione um arquivo e a conta financeira de destino.');
+      const fileHash = await hashImportFile(file);
+      const insertedCount = await onImport(importedData, calibrationBalance, {
+        accountId: selectedAccountId,
+        fileName: file.name,
+        fileType: file.type || undefined,
+        fileSize: file.size,
+        fileHash,
+        parserName: importDiagnostics?.parserLabel,
+        diagnostics: importDiagnostics
+          ? { ...importDiagnostics } as unknown as Record<string, unknown>
+          : undefined,
+      });
       setCommittedCount(insertedCount);
       setStep('success');
     } catch (error) {
@@ -1283,6 +1317,22 @@ export default function ImportarExtratos({
 
       {step === 'review' && (
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+          <div className="glass-card !p-3 shrink-0 border border-brand-primary/20">
+            <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-widest text-white/45 sm:flex-row sm:items-center sm:justify-between">
+              Conta financeira do extrato
+              <select
+                value={selectedAccountId}
+                onChange={(event) => setSelectedAccountId(event.target.value)}
+                disabled={isImporting}
+                className="min-w-[220px] rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs font-medium normal-case tracking-normal text-white outline-none focus:border-brand-primary disabled:opacity-50"
+              >
+                <option value="">Selecione uma conta</option>
+                {accounts.filter((account) => account.is_active).map((account) => (
+                  <option key={account.id} value={account.id}>{account.name} · {Number(account.current_balance || 0).toLocaleString('pt-BR', { style: 'currency', currency: account.currency || 'BRL' })}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           {balanceValidation && (
             <div className={`glass-card !p-3 shrink-0 border transition-all ${balanceValidation.isClose ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}>
               <div className="flex items-center justify-between gap-4">

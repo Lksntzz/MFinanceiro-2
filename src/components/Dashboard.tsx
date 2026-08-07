@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import {
   Activity,
@@ -27,18 +27,29 @@ import { addDays, format, isAfter, startOfDay, startOfMonth, startOfWeek, subDay
 
 import { supabase } from '../lib/supabase';
 import { calculateFinanceSummary } from '../lib/finance-calculations';
-import { DEFAULT_USER_SETTINGS, CATEGORIES } from '../lib/constants';
+import { DEFAULT_USER_SETTINGS } from '../lib/constants';
 import { clearLegacyCache } from '../lib/clearCache';
 import { formatCurrency } from '../lib/formatters';
+import {
+  LEDGER_PAGE_SIZE,
+  mergeLedgerRows,
+  readLedgerCache,
+  writeLedgerCache,
+} from '../lib/ledger-cache';
 import { useApp } from '../context/AppContext';
 import {
   CardInstallment,
   CreditCard,
+  FinancialAccount,
   FinanceSummary,
   FixedBill,
   ImportedTransaction,
   Investment,
+  LedgerCursor,
+  LedgerPage,
+  StatementImportOptions,
   Transaction,
+  TransactionCategory,
   UserSettings,
 } from '../types';
 
@@ -49,7 +60,9 @@ import Details from './Details';
 import FinancialCalendar from './FinancialCalendar';
 import FinancialGoals from './FinancialGoals';
 import FinancialHealth from './FinancialHealth';
+import FinancialStructure from './FinancialStructure';
 import History from './History';
+import ImportBatches from './ImportBatches';
 import ImportarExtratos from './ImportarExtratos';
 import Insights from './Insights';
 import Investments from './Investments';
@@ -60,12 +73,15 @@ ChartJS.register(...registerables);
 
 type ActiveTab = 'overview' | 'history' | 'cards' | 'analysis' | 'accounts' | 'settings' | 'admin_requests';
 type AnalysisTab = 'stats' | 'insights' | 'health' | 'goals';
-type AccountsTab = 'bills' | 'calendar' | 'subscriptions' | 'investments';
+type AccountsTab = 'financial' | 'bills' | 'calendar' | 'subscriptions' | 'investments';
 type StatementBalanceMode = 'keep' | 'apply_new' | 'statement';
 
 interface StatementImportRpcResult {
+  batch_id: string;
   inserted_count: number;
   duplicate_count: number;
+  rejected_count: number;
+  ignored_count: number;
   net_new: number;
   balance_before: number;
   balance_after: number;
@@ -108,6 +124,34 @@ function transactionDay(rawDate: string): string {
   return parsed ? format(parsed, 'yyyy-MM-dd') : '';
 }
 
+function normalizeLedgerPage(raw: unknown): LedgerPage {
+  const page = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const items = Array.isArray(page.items)
+    ? page.items.map(normalizeTransaction).filter((item): item is Transaction => Boolean(item))
+    : [];
+  const cursor = page.next_cursor && typeof page.next_cursor === 'object'
+    ? page.next_cursor as LedgerCursor
+    : null;
+  return {
+    items,
+    has_more: page.has_more === true,
+    total_count: Number(page.total_count || items.length),
+    next_cursor: cursor,
+  };
+}
+
+function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
+  return rows.map((row) => {
+    const item = row as Record<string, unknown>;
+    return {
+      ...item,
+      opening_balance: Number(item.opening_balance || 0),
+      current_balance: Number(item.current_balance || 0),
+      transaction_count: Number(item.transaction_count || 0),
+    } as FinancialAccount;
+  });
+}
+
 export default function Dashboard({
   user,
   isMaintenanceBypass: _isMaintenanceBypass,
@@ -119,12 +163,19 @@ export default function Dashboard({
   const db = supabase;
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
-  const [historySubTab, setHistorySubTab] = useState<'list' | 'import'>('list');
+  const [historySubTab, setHistorySubTab] = useState<'list' | 'import' | 'batches'>('list');
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisTab>('stats');
-  const [accountsSubTab, setAccountsSubTab] = useState<AccountsTab>('bills');
+  const [accountsSubTab, setAccountsSubTab] = useState<AccountsTab>('financial');
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const transactionIdsRef = useRef<Set<string>>(new Set());
+  const [transactionCount, setTransactionCount] = useState(0);
+  const [ledgerCursor, setLedgerCursor] = useState<LedgerCursor | null>(null);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
   const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
+  const [categories, setCategories] = useState<TransactionCategory[]>([]);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
   const [cards, setCards] = useState<CreditCard[]>([]);
   const [installments, setInstallments] = useState<CardInstallment[]>([]);
@@ -140,9 +191,12 @@ export default function Dashboard({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [tempBalance, setTempBalance] = useState('');
+  const [balanceAccountId, setBalanceAccountId] = useState('');
   const [newTransaction, setNewTransaction] = useState({
     amount: '',
     category: 'Geral',
+    category_id: '',
+    account_id: '',
     description: '',
     type: 'expense' as 'expense' | 'income',
   });
@@ -167,22 +221,87 @@ export default function Dashboard({
     clearLegacyCache();
   }, []);
 
+  async function refreshFinancialState() {
+    const [settingsResult, accountsResult, categoriesResult] = await Promise.all([
+      db.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
+      db.from('mf_account_balances').select('*').eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at'),
+      db.from('mf_transaction_categories').select('*').eq('user_id', user.id).order('sort_order').order('name'),
+    ]);
+    const firstError = settingsResult.error || accountsResult.error || categoriesResult.error;
+    if (firstError) throw firstError;
+
+    const nextAccounts = normalizeAccounts(accountsResult.data || []);
+    const derivedBalance = nextAccounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
+    if (settingsResult.data) {
+      setSettings({ ...settingsResult.data, current_balance: derivedBalance } as UserSettings);
+    }
+    setAccounts(nextAccounts);
+    setCategories((categoriesResult.data || []) as TransactionCategory[]);
+  }
+
+  async function refreshAuxiliaryData() {
+    const [cardsResult, installmentsResult, fixedResult, investmentResult] = await Promise.all([
+      db.from('mf_credit_cards').select('*').eq('user_id', user.id),
+      db.from('mf_card_installments').select('*').eq('user_id', user.id),
+      db.from('mf_fixed_bills').select('*').eq('user_id', user.id),
+      db.from('mf_investments').select('*').eq('user_id', user.id),
+    ]);
+    const firstError = cardsResult.error || installmentsResult.error || fixedResult.error || investmentResult.error;
+    if (firstError) throw firstError;
+
+    setCards((cardsResult.data || []) as CreditCard[]);
+    setInstallments(
+      (installmentsResult.data || []).map((item: any) => ({
+        ...item,
+        description: item.description || item.descricao || 'Parcelamento',
+        total_amount: Number(item.total_amount ?? item.valor_total ?? 0),
+        monthly_amount: Number(item.monthly_amount ?? item.valor_mensal ?? 0),
+        current_installment: Number(item.current_installment ?? item.parcela_atual ?? 1),
+        total_installments: Number(item.total_installments ?? item.total_parcelas ?? 1),
+        due_day: Number(item.due_day ?? 1),
+      })) as CardInstallment[],
+    );
+    setFixedBills((fixedResult.data || []) as FixedBill[]);
+    setInvestments(
+      (investmentResult.data || []).map((item: any) => ({ ...item, amount: Number(item.amount ?? item.valor ?? 0) })) as Investment[],
+    );
+  }
+
   async function fetchData() {
     setLoading(true);
     setError(null);
 
+    const cached = readLedgerCache(user.id);
+    if (cached) {
+      transactionIdsRef.current = new Set(cached.rows.map((transaction) => transaction.id));
+      setTransactions(cached.rows);
+      setTransactionCount(cached.totalCount);
+      setHasMoreTransactions(cached.hasMore);
+      setLedgerCursor(cached.nextCursor);
+    }
+
     try {
-      const [settingsResult, transactionsResult, cardsResult, installmentsResult, fixedResult, investmentResult] =
+      const ensured = await db.rpc('mf_ensure_financial_structure');
+      if (ensured.error) throw ensured.error;
+
+      const [settingsResult, accountsResult, categoriesResult, ledgerResult, cardsResult, installmentsResult, fixedResult, investmentResult] =
         await Promise.all([
           db.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
-          db.from('mf_finance_ledger_entries').select('*').eq('user_id', user.id).order('date', { ascending: false }),
+          db.from('mf_account_balances').select('*').eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at'),
+          db.from('mf_transaction_categories').select('*').eq('user_id', user.id).order('sort_order').order('name'),
+          db.rpc('mf_get_ledger_page', {
+            p_page_size: LEDGER_PAGE_SIZE,
+            p_cursor_date: null,
+            p_cursor_created_at: null,
+            p_cursor_id: null,
+          }),
           db.from('mf_credit_cards').select('*').eq('user_id', user.id),
           db.from('mf_card_installments').select('*').eq('user_id', user.id),
           db.from('mf_fixed_bills').select('*').eq('user_id', user.id),
           db.from('mf_investments').select('*').eq('user_id', user.id),
         ]);
 
-      const firstError = settingsResult.error || transactionsResult.error || cardsResult.error || installmentsResult.error || fixedResult.error || investmentResult.error;
+      const firstError = settingsResult.error || accountsResult.error || categoriesResult.error || ledgerResult.error || cardsResult.error || installmentsResult.error || fixedResult.error || investmentResult.error;
       if (firstError) throw firstError;
 
       let nextSettings = settingsResult.data as UserSettings | null;
@@ -193,12 +312,19 @@ export default function Dashboard({
         nextSettings = inserted.data as UserSettings;
       }
 
-      const normalizedTransactions = (transactionsResult.data || [])
-        .map(normalizeTransaction)
-        .filter((item): item is Transaction => Boolean(item));
+      const nextAccounts = normalizeAccounts(accountsResult.data || []);
+      const derivedBalance = nextAccounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
+      const ledgerPage = normalizeLedgerPage(ledgerResult.data);
+      nextSettings = { ...nextSettings, current_balance: derivedBalance };
 
       setSettings(nextSettings);
-      setTransactions(normalizedTransactions);
+      setAccounts(nextAccounts);
+      setCategories((categoriesResult.data || []) as TransactionCategory[]);
+      transactionIdsRef.current = new Set(ledgerPage.items.map((transaction) => transaction.id));
+      setTransactions(ledgerPage.items);
+      setTransactionCount(ledgerPage.total_count);
+      setHasMoreTransactions(ledgerPage.has_more);
+      setLedgerCursor(ledgerPage.next_cursor);
       setCards((cardsResult.data || []) as CreditCard[]);
       setInstallments(
         (installmentsResult.data || []).map((item: any) => ({
@@ -228,18 +354,103 @@ export default function Dashboard({
     const filter = `user_id=eq.${user.id}`;
     const channel = db
       .channel(`dashboard-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries', filter }, () => void fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_user_settings', filter }, () => void fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_credit_cards', filter }, () => void fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_card_installments', filter }, () => void fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_fixed_bills', filter }, () => void fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_investments', filter }, () => void fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_finance_ledger_entries', filter }, (payload: any) => {
+        const rowId = String(payload.old?.id || payload.new?.id || '');
+        const existed = transactionIdsRef.current.has(rowId);
+        if (payload.eventType === 'DELETE') {
+          transactionIdsRef.current.delete(rowId);
+          if (existed) setTransactionCount((count) => Math.max(0, count - 1));
+        } else if (payload.eventType === 'INSERT' && !existed) {
+          transactionIdsRef.current.add(rowId);
+          setTransactionCount((count) => count + 1);
+        }
+
+        setTransactions((current) => {
+          if (payload.eventType === 'DELETE') {
+            return current.filter((item) => item.id !== rowId);
+          }
+          const normalized = normalizeTransaction(payload.new);
+          if (!normalized) return current;
+          return mergeLedgerRows(current, [normalized]);
+        });
+        void refreshFinancialState().catch((refreshError) => console.warn('Falha ao atualizar saldos:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_user_settings', filter }, () => {
+        void refreshFinancialState().catch((refreshError) => console.warn('Falha ao atualizar configurações:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_financial_accounts', filter }, () => {
+        void refreshFinancialState().catch((refreshError) => console.warn('Falha ao atualizar contas:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_transaction_categories', filter }, () => {
+        void refreshFinancialState().catch((refreshError) => console.warn('Falha ao atualizar categorias:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_credit_cards', filter }, () => {
+        void refreshAuxiliaryData().catch((refreshError) => console.warn('Falha ao atualizar cartões:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_card_installments', filter }, () => {
+        void refreshAuxiliaryData().catch((refreshError) => console.warn('Falha ao atualizar parcelas:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_fixed_bills', filter }, () => {
+        void refreshAuxiliaryData().catch((refreshError) => console.warn('Falha ao atualizar contas fixas:', refreshError));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_investments', filter }, () => {
+        void refreshAuxiliaryData().catch((refreshError) => console.warn('Falha ao atualizar investimentos:', refreshError));
+      })
       .subscribe();
 
     return () => {
       void db.removeChannel(channel);
     };
   }, [user.id]);
+
+  useEffect(() => {
+    writeLedgerCache(user.id, transactions, transactionCount, hasMoreTransactions, ledgerCursor);
+    transactionIdsRef.current = new Set(transactions.map((transaction) => transaction.id));
+  }, [user.id, transactions, transactionCount, hasMoreTransactions, ledgerCursor]);
+
+  useEffect(() => {
+    const defaultAccount = accounts.find((account) => account.is_default && account.is_active)
+      || accounts.find((account) => account.is_active);
+    const defaultCategory = categories.find((category) => category.name === 'Geral' && category.is_active)
+      || categories.find((category) => category.is_active);
+
+    setNewTransaction((current) => ({
+      ...current,
+      account_id: accounts.some((account) => account.id === current.account_id && account.is_active)
+        ? current.account_id
+        : defaultAccount?.id || '',
+      category_id: categories.some((category) => category.id === current.category_id && category.is_active)
+        ? current.category_id
+        : defaultCategory?.id || '',
+      category: categories.find((category) => category.id === current.category_id)?.name
+        || defaultCategory?.name
+        || 'Geral',
+    }));
+  }, [accounts, categories]);
+
+  async function loadMoreLedgerEntries() {
+    if (!hasMoreTransactions || !ledgerCursor || loadingMoreTransactions) return;
+    setLoadingMoreTransactions(true);
+    setError(null);
+    try {
+      const { data, error: pageError } = await db.rpc('mf_get_ledger_page', {
+        p_page_size: LEDGER_PAGE_SIZE,
+        p_cursor_date: ledgerCursor.date,
+        p_cursor_created_at: ledgerCursor.created_at,
+        p_cursor_id: ledgerCursor.id,
+      });
+      if (pageError) throw pageError;
+      const page = normalizeLedgerPage(data);
+      setTransactions((current) => mergeLedgerRows(current, page.items));
+      setTransactionCount(page.total_count);
+      setHasMoreTransactions(page.has_more);
+      setLedgerCursor(page.next_cursor);
+    } catch (pageError: any) {
+      setError(pageError?.message || 'Não foi possível carregar mais lançamentos.');
+    } finally {
+      setLoadingMoreTransactions(false);
+    }
+  }
 
   useEffect(() => {
     if (!settings) {
@@ -257,7 +468,7 @@ export default function Dashboard({
 
   const isAdmin = useMemo(() => {
     const role = String(user.app_metadata?.role || '').toLowerCase();
-    return role === 'admin' || role === 'owner' || user.user_metadata?.is_admin === true;
+    return role === 'admin' || role === 'owner';
   }, [user]);
 
   const overviewTopCategories = useMemo(() => {
@@ -454,33 +665,34 @@ export default function Dashboard({
   }, [fixedBills, dismissedAlerts]);
 
   async function insertLedger(entry: Partial<Transaction>) {
-    const result = await db.from('mf_finance_ledger_entries').insert({
-      user_id: user.id,
-      date: entry.date || new Date().toISOString(),
-      amount: entry.amount || 0,
-      type: entry.type || 'expense',
-      description: entry.description || 'Lançamento',
-      category: entry.category || 'Geral',
-      source: (entry as any).source || 'Manual',
-      status: (entry as any).status || 'paid',
+    const result = await db.rpc('mf_create_finance_entry_v3', {
+      p_type: entry.type || 'expense',
+      p_amount: Math.abs(Number(entry.amount || 0)),
+      p_date: String(entry.date || new Date().toISOString()).slice(0, 10),
+      p_description: entry.description || 'Lançamento',
+      p_account_id: entry.account_id || null,
+      p_category_id: entry.category_id || null,
+      p_category: entry.category || 'Geral',
+      p_payment_method: (entry as any).payment_method || 'unspecified',
+      p_status: (entry as any).status || 'paid',
+      p_source: entry.source || 'Manual',
+      p_card_id: (entry as any).card_id || null,
+      p_due_date: (entry as any).due_date || null,
+      p_notes: (entry as any).notes || null,
     });
     if (result.error) throw result.error;
+    return result.data;
   }
 
   async function handleAddTransaction(event: React.FormEvent) {
     event.preventDefault();
-    if (!settings) return;
-
     try {
       const entered = Number(newTransaction.amount);
       if (!Number.isFinite(entered) || entered <= 0) return;
       const amount = newTransaction.type === 'expense' ? -Math.abs(entered) : Math.abs(entered);
       await insertLedger({ ...newTransaction, amount });
-      const nextBalance = Number(settings.current_balance || 0) + amount;
-      const update = await db.from('mf_user_settings').update({ current_balance: nextBalance }).eq('user_id', user.id);
-      if (update.error) throw update.error;
       setShowAddModal(false);
-      setNewTransaction({ amount: '', category: 'Geral', description: '', type: 'expense' });
+      setNewTransaction((current) => ({ ...current, amount: '', description: '', type: 'expense' }));
       await fetchData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível salvar o lançamento.');
@@ -490,8 +702,11 @@ export default function Dashboard({
   async function handleUpdateBalance(event: React.FormEvent) {
     event.preventDefault();
     const value = Number(tempBalance);
-    if (!Number.isFinite(value)) return;
-    const result = await db.from('mf_user_settings').update({ current_balance: value }).eq('user_id', user.id);
+    if (!Number.isFinite(value) || !balanceAccountId) return;
+    const result = await db.rpc('mf_set_account_balance', {
+      p_account_id: balanceAccountId,
+      p_balance: value,
+    });
     if (result.error) {
       setError(result.error.message);
       return;
@@ -501,42 +716,51 @@ export default function Dashboard({
   }
 
   async function handleDeleteTransaction(id: string) {
-    const result = await db.from('mf_finance_ledger_entries').delete().eq('id', id).eq('user_id', user.id);
+    const result = await db.rpc('mf_delete_finance_entry', { p_entry_id: id });
     if (result.error) setError(result.error.message);
     else await fetchData();
   }
 
   async function handleDeleteAllTransactions() {
     if (!window.confirm('Apagar definitivamente todos os lançamentos e zerar o saldo?')) return;
-    const deletion = await db.from('mf_finance_ledger_entries').delete().eq('user_id', user.id);
+    const deletion = await db.rpc('mf_delete_all_finance_entries', { p_account_id: null });
     if (deletion.error) {
       setError(deletion.error.message);
       return;
     }
-    await db.from('mf_user_settings').update({ current_balance: 0 }).eq('user_id', user.id);
     await fetchData();
   }
 
-  async function handleImportTransactions(imported: ImportedTransaction[], newBalance?: number) {
-    const entries = imported
-      .filter((item) => item.description && Number(item.amount) > 0)
-      .map((item) => ({
-        date: item.date,
-        description: item.description,
+  async function handleImportTransactions(
+    imported: ImportedTransaction[],
+    newBalance: number | undefined,
+    options: StatementImportOptions,
+  ) {
+    const entries = imported.map((item) => {
+      const numericAmount = Number(item.amount);
+      const selected = item.status === 'ready'
+        && Number.isFinite(numericAmount)
+        && numericAmount > 0
+        && item.description !== 'Sem descricao';
+      return {
+        selected,
+        status: item.status,
+        date: item.date || '',
+        description: item.description || '',
         category: item.category || 'Geral',
-        amount: Math.abs(Number(item.amount)),
+        amount: Number.isFinite(numericAmount) ? Math.abs(numericAmount) : 0,
         type: item.type,
         source: item.bank_source || item.source || 'Importado',
         external_id: item.source_id
           ? `statement:${item.bank_source || item.source || 'unknown'}:${item.source_id}`
           : null,
-        metadata: {
-          original_description: item.original_description,
-          confidence: item.confidence,
-        },
-      }));
+        original_description: item.original_description,
+        confidence: item.confidence,
+        running_balance: item.running_balance,
+      };
+    });
 
-    if (!entries.length) {
+    if (!entries.some((entry) => entry.selected)) {
       throw new Error('Nenhum lançamento válido foi selecionado para importação.');
     }
 
@@ -551,10 +775,17 @@ export default function Dashboard({
     const balanceMode: StatementBalanceMode = approvedMode
       || (typeof newBalance === 'number' && Number.isFinite(newBalance) ? 'statement' : 'keep');
 
-    const { data, error: rpcError } = await db.rpc('mf_commit_statement_import', {
+    const { data, error: rpcError } = await db.rpc('mf_commit_statement_import_v2', {
       p_entries: entries,
+      p_account_id: options.accountId,
       p_balance_mode: balanceMode,
       p_statement_balance: balanceMode === 'statement' ? newBalance : null,
+      p_file_name: options.fileName || null,
+      p_file_type: options.fileType || null,
+      p_file_size: options.fileSize ?? null,
+      p_file_hash: options.fileHash || null,
+      p_parser_name: options.parserName || null,
+      p_raw_metadata: options.diagnostics || {},
     });
 
     if (rpcError) {
@@ -572,7 +803,10 @@ export default function Dashboard({
     window.dispatchEvent(new CustomEvent('mf:statement-import-result', {
       detail: {
         insertedCount,
+        batchId: result.batch_id,
         duplicateCount: Number(result.duplicate_count || 0),
+        rejectedCount: Number(result.rejected_count || 0),
+        ignoredCount: Number(result.ignored_count || 0),
         periodStart: dates[0] || null,
         periodEnd: dates[dates.length - 1] || null,
         netNew: Number(result.net_new || 0),
@@ -596,11 +830,10 @@ export default function Dashboard({
 
   async function handleToggleBillStatus(id: string) {
     const bill = fixedBills.find((item) => item.id === id);
-    if (!bill || !settings) return;
+    if (!bill) return;
     const amount = -Math.abs(Number(bill.amount || 0));
     await insertLedger({ amount, type: 'expense', category: bill.category || 'Contas Fixas', description: `Pagamento: ${bill.name}` });
     await db.from('mf_fixed_bills').update({ status: 'paid', last_paid_month: format(new Date(), 'yyyy-MM') }).eq('id', id);
-    await db.from('mf_user_settings').update({ current_balance: Number(settings.current_balance || 0) + amount }).eq('user_id', user.id);
     await fetchData();
   }
 
@@ -731,9 +964,27 @@ export default function Dashboard({
     toolGroups.push({ id: 'admin_requests', label: 'Admin', icon: ShieldAlert });
   }
 
-  const balanceValue = Number(settings?.current_balance ?? summary?.currentBalance ?? 0);
+  const activeAccounts = accounts.filter((account) => account.is_active);
+  const selectableCategories = categories.filter((category) =>
+    category.is_active
+    && (category.category_type === 'both' || category.category_type === newTransaction.type),
+  );
+  const balanceValue = accounts.length > 0
+    ? accounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
+    : Number(settings?.current_balance ?? summary?.currentBalance ?? 0);
   const dailyLimit = Number(summary?.dailyLimit || 0);
   const todaySpent = Number(summary?.todaySpent || 0);
+
+  function openBalanceEditor() {
+    const account = activeAccounts.find((item) => item.is_default) || activeAccounts[0];
+    if (!account) {
+      setError('Crie uma conta financeira antes de ajustar o saldo.');
+      return;
+    }
+    setBalanceAccountId(account.id);
+    setTempBalance(String(account.current_balance || 0));
+    setShowBalanceModal(true);
+  }
 
   return (
     <div className="mf-app-shell">
@@ -766,7 +1017,7 @@ export default function Dashboard({
           <main className="mf-dashboard-grid">
             <section className="mf-kpi-grid">
               <article className={`mf-card mf-kpi ${balanceValue < 0 ? 'danger' : ''}`}>
-                <div><span>Saldo</span><button onClick={() => { setTempBalance(String(balanceValue)); setShowBalanceModal(true); }}><Pencil size={12} /></button></div>
+                <div><span>Saldo derivado</span><button onClick={openBalanceEditor}><Pencil size={12} /></button></div>
                 <strong>{formatCurrency(balanceValue, isPrivate)}</strong>
               </article>
               <article className="mf-card mf-kpi accent"><span>Limite</span><strong>{formatCurrency(dailyLimit, isPrivate)}</strong></article>
@@ -842,11 +1093,24 @@ export default function Dashboard({
             <div className="mf-subnav">
               <button className={historySubTab === 'list' ? 'active' : ''} onClick={() => setHistorySubTab('list')}>Movimentações</button>
               <button className={historySubTab === 'import' ? 'active' : ''} onClick={() => setHistorySubTab('import')}>Importar extrato</button>
+              <button className={historySubTab === 'batches' ? 'active' : ''} onClick={() => setHistorySubTab('batches')}>Lotes e conciliação</button>
             </div>
             {historySubTab === 'list' ? (
-              <History transactions={transactions} onDelete={handleDeleteTransaction} onDeleteAll={handleDeleteAllTransactions} />
+              <History
+                transactions={transactions}
+                onDelete={handleDeleteTransaction}
+                onDeleteAll={handleDeleteAllTransactions}
+                currentBalance={balanceValue}
+                balanceConfirmed={settings?.balance_confirmed === true}
+                totalCount={transactionCount}
+                hasMore={hasMoreTransactions}
+                isLoadingMore={loadingMoreTransactions}
+                onLoadMore={loadMoreLedgerEntries}
+              />
+            ) : historySubTab === 'import' ? (
+              <ImportarExtratos accounts={accounts} onImport={handleImportTransactions} onCancel={() => setHistorySubTab('list')} accountHolderName={user.user_metadata?.name || user.email || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} />
             ) : (
-              <ImportarExtratos onImport={handleImportTransactions} onCancel={() => setHistorySubTab('list')} accountHolderName={user.user_metadata?.name || user.email || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} />
+              <ImportBatches userId={user.id} accounts={accounts} />
             )}
           </div>
         )}
@@ -869,11 +1133,13 @@ export default function Dashboard({
         {activeTab === 'accounts' && (
           <div className="mf-tab-shell">
             <div className="mf-subnav">
+              <button className={accountsSubTab === 'financial' ? 'active' : ''} onClick={() => setAccountsSubTab('financial')}>Contas financeiras</button>
               <button className={accountsSubTab === 'bills' ? 'active' : ''} onClick={() => setAccountsSubTab('bills')}>Gestão de contas</button>
               <button className={accountsSubTab === 'calendar' ? 'active' : ''} onClick={() => setAccountsSubTab('calendar')}>Calendário</button>
               <button className={accountsSubTab === 'subscriptions' ? 'active' : ''} onClick={() => setAccountsSubTab('subscriptions')}>Assinaturas</button>
               <button className={accountsSubTab === 'investments' ? 'active' : ''} onClick={() => setAccountsSubTab('investments')}>Investimentos</button>
             </div>
+            {accountsSubTab === 'financial' && <FinancialStructure userId={user.id} accounts={accounts} categories={categories} onRefresh={fetchData} />}
             {accountsSubTab === 'bills' && settings && <BaseFinanceira settings={settings} onSave={handleUpdateSettings} fixedBills={fixedBills} summary={summary} onToggleBillStatus={handleToggleBillStatus} onRefresh={fetchData} initialTab="bills" />}
             {accountsSubTab === 'calendar' && <FinancialCalendar fixedBills={fixedBills} settings={settings} />}
             {accountsSubTab === 'subscriptions' && <SubscriptionManager />}
@@ -897,7 +1163,8 @@ export default function Dashboard({
             <div className="mf-modal-title"><h2>Novo lançamento</h2><button type="button" onClick={() => setShowAddModal(false)}><X size={18} /></button></div>
             <label>Valor<input type="number" step="0.01" required value={newTransaction.amount} onChange={(event) => setNewTransaction({ ...newTransaction, amount: event.target.value })} /></label>
             <div className="mf-type-buttons"><button type="button" className={newTransaction.type === 'expense' ? 'expense active' : 'expense'} onClick={() => setNewTransaction({ ...newTransaction, type: 'expense' })}>Saída</button><button type="button" className={newTransaction.type === 'income' ? 'income active' : 'income'} onClick={() => setNewTransaction({ ...newTransaction, type: 'income' })}>Entrada</button></div>
-            <label>Categoria<select value={newTransaction.category} onChange={(event) => setNewTransaction({ ...newTransaction, category: event.target.value })}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+            <label>Conta<select required value={newTransaction.account_id} onChange={(event) => setNewTransaction({ ...newTransaction, account_id: event.target.value })}><option value="">Selecione uma conta</option>{activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+            <label>Categoria<select required value={newTransaction.category_id} onChange={(event) => { const category = categories.find((item) => item.id === event.target.value); setNewTransaction({ ...newTransaction, category_id: event.target.value, category: category?.name || 'Geral' }); }}><option value="">Selecione uma categoria</option>{selectableCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             <label>Descrição<input value={newTransaction.description} onChange={(event) => setNewTransaction({ ...newTransaction, description: event.target.value })} /></label>
             <div className="mf-modal-actions"><button type="button" onClick={() => setShowAddModal(false)}>Cancelar</button><button className="primary">Salvar</button></div>
           </form>
@@ -907,8 +1174,10 @@ export default function Dashboard({
       {showBalanceModal && (
         <div className="mf-modal-backdrop">
           <form className="mf-modal compact" onSubmit={handleUpdateBalance}>
-            <div className="mf-modal-title"><h2>Saldo atual</h2><button type="button" onClick={() => setShowBalanceModal(false)}><X size={18} /></button></div>
-            <label>Valor da conta<input autoFocus type="number" step="0.01" value={tempBalance} onChange={(event) => setTempBalance(event.target.value)} /></label>
+            <div className="mf-modal-title"><h2>Calibrar saldo da conta</h2><button type="button" onClick={() => setShowBalanceModal(false)}><X size={18} /></button></div>
+            <label>Conta<select value={balanceAccountId} onChange={(event) => { const account = accounts.find((item) => item.id === event.target.value); setBalanceAccountId(event.target.value); setTempBalance(String(account?.current_balance || 0)); }}>{activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+            <label>Saldo confirmado<input autoFocus type="number" step="0.01" value={tempBalance} onChange={(event) => setTempBalance(event.target.value)} /></label>
+            <p className="text-[10px] text-white/40">A calibração ajusta o saldo inicial da conta. Os lançamentos continuam sendo a fonte de verdade.</p>
             <div className="mf-modal-actions"><button type="button" onClick={() => setShowBalanceModal(false)}>Cancelar</button><button className="primary">Salvar</button></div>
           </form>
         </div>

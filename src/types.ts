@@ -3,6 +3,10 @@ export type TransactionType = 'expense' | 'income' | 'transfer';
 export interface Transaction {
   id: string;
   user_id: string;
+  account_id?: string;
+  category_id?: string;
+  import_batch_id?: string;
+  import_row_id?: string;
   amount: number;
   category: string;
   description: string;
@@ -10,6 +14,9 @@ export interface Transaction {
   type: TransactionType;
   status?: 'pending' | 'completed' | 'ready' | 'duplicate' | 'error' | 'paid';
   source?: string;
+  created_at?: string;
+  updated_at?: string;
+  affects_balance?: boolean;
 }
 
 export type NormalizedTransaction = Transaction & {
@@ -36,6 +43,7 @@ export interface UserSettings {
   payday_2?: number;
   payday_1_percentage?: number;
   payday_2_percentage?: number;
+  balance_confirmed?: boolean;
 }
 
 export interface RhythmData {
@@ -105,6 +113,99 @@ export interface ImportedTransaction {
   original_description: string;
   bank_source?: string;
   running_balance?: number;
+}
+
+export type FinancialAccountType = 'checking' | 'savings' | 'cash' | 'investment' | 'credit' | 'other';
+
+export interface FinancialAccount {
+  id: string;
+  user_id: string;
+  name: string;
+  account_type: FinancialAccountType;
+  currency: string;
+  institution_name?: string | null;
+  opening_balance: number;
+  current_balance: number;
+  transaction_count: number;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TransactionCategory {
+  id: string;
+  user_id: string;
+  name: string;
+  name_key: string;
+  category_type: 'income' | 'expense' | 'both';
+  color?: string | null;
+  icon?: string | null;
+  is_system: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LedgerCursor {
+  date: string;
+  created_at: string;
+  id: string;
+}
+
+export interface LedgerPage {
+  items: Transaction[];
+  has_more: boolean;
+  total_count: number;
+  next_cursor: LedgerCursor | null;
+}
+
+export interface StatementImportOptions {
+  accountId: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+  fileHash?: string;
+  parserName?: string;
+  diagnostics?: Record<string, unknown>;
+}
+
+export interface StatementImportBatch {
+  id: string;
+  user_id: string;
+  account_id: string;
+  status: 'uploaded' | 'parsed' | 'reviewing' | 'committing' | 'completed' | 'failed' | 'reverted';
+  source_format: string;
+  file_name?: string | null;
+  parser_name?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  balance_mode: 'keep' | 'apply_new' | 'statement';
+  balance_before?: number | null;
+  balance_after?: number | null;
+  net_amount: number;
+  requested_count: number;
+  inserted_count: number;
+  duplicate_count: number;
+  rejected_count: number;
+  ignored_count: number;
+  error_message?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
+
+export interface StatementImportRow {
+  id: string;
+  batch_id: string;
+  line_number: number;
+  transaction_date?: string | null;
+  description?: string | null;
+  category_name?: string | null;
+  signed_amount?: number | null;
+  status: 'parsed' | 'imported' | 'duplicate' | 'rejected' | 'ignored' | 'reconciled';
+  error_message?: string | null;
+  ledger_entry_id?: string | null;
 }
 
 export interface FinanceSummary {
