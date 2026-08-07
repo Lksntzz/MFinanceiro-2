@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { createApiKey, createConnectToken, deleteItem, pluggyConfigured } from "../_shared/pluggy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,10 +9,7 @@ const corsHeaders = {
 };
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
 function readSupabaseKey(jsonName: string, directName: string, legacyName: string) {
@@ -23,7 +21,7 @@ function readSupabaseKey(jsonName: string, directName: string, legacyName: strin
       const keys = JSON.parse(encoded) as Record<string, unknown>;
       if (typeof keys.default === "string") return keys.default;
     } catch {
-      // Fall through to the legacy environment variable.
+      // Fall through.
     }
   }
   return Deno.env.get(legacyName) || "";
@@ -38,20 +36,8 @@ Deno.serve(async (request: Request) => {
   if (!authorization || !token) return json({ error: "Autenticação necessária." }, 401);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const publishableKey = readSupabaseKey(
-    "SUPABASE_PUBLISHABLE_KEYS",
-    "SUPABASE_PUBLISHABLE_KEY",
-    "SUPABASE_ANON_KEY",
-  );
-  const secretKey = readSupabaseKey(
-    "SUPABASE_SECRET_KEYS",
-    "SUPABASE_SECRET_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-  );
-  const providerApiUrl = Deno.env.get("OPEN_FINANCE_CONNECT_API_URL") || "";
-  const providerApiKey = Deno.env.get("OPEN_FINANCE_PROVIDER_API_KEY") || "";
-  const providerName = Deno.env.get("OPEN_FINANCE_PROVIDER") || "aggregator";
-  const redirectUri = Deno.env.get("OPEN_FINANCE_REDIRECT_URI") || "";
+  const publishableKey = readSupabaseKey("SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY");
+  const secretKey = readSupabaseKey("SUPABASE_SECRET_KEYS", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !publishableKey) return json({ error: "Supabase não configurado na função." }, 500);
 
   const supabase = createClient(supabaseUrl, publishableKey, {
@@ -62,107 +48,116 @@ Deno.serve(async (request: Request) => {
   if (userError || !userData.user) return json({ error: "Sessão inválida." }, 401);
 
   try {
-    const body = await request.json() as {
-      action?: "connect" | "revoke";
+    const body = await request.json().catch(() => ({})) as {
+      action?: "connect" | "token" | "bind" | "revoke";
       connectionId?: string;
+      itemId?: string;
       institutionId?: string;
       institutionName?: string;
+      displayName?: string;
       scopes?: string[];
     };
     const action = body.action || "connect";
-    if (action !== "connect" && action !== "revoke") throw new Error("Ação Open Finance inválida.");
+
+    if (!pluggyConfigured()) {
+      return json({
+        configured: false,
+        provider: "pluggy",
+        error: "Pluggy ainda não foi configurado. Defina PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET nos secrets do Supabase.",
+      }, 503);
+    }
+
+    if (action === "token" || action === "connect") {
+      const apiKey = await createApiKey();
+      const webhookBase = (Deno.env.get("OPEN_FINANCE_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/open-finance-webhook`).trim();
+      const webhookSecret = (Deno.env.get("OPEN_FINANCE_WEBHOOK_SECRET") || "").trim();
+      const webhookUrl = webhookSecret
+        ? `${webhookBase}${webhookBase.includes("?") ? "&" : "?"}token=${encodeURIComponent(webhookSecret)}`
+        : webhookBase;
+      const connectToken = await createConnectToken(apiKey, userData.user.id, webhookUrl, body.itemId || null);
+      return json({
+        configured: true,
+        provider: "pluggy",
+        connectToken,
+        accessToken: connectToken,
+        expiresInSeconds: 1800,
+      });
+    }
+
+    if (action === "bind") {
+      const itemId = String(body.itemId || "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(itemId)) throw new Error("Item Pluggy inválido.");
+      const institutionName = String(body.institutionName || body.displayName || "Instituição conectada").trim();
+      const scopes = Array.isArray(body.scopes) && body.scopes.length ? body.scopes : ["ACCOUNTS_READ", "TRANSACTIONS_READ"];
+
+      const { data: existing } = await supabase
+        .from("mf_bank_connections")
+        .select("id")
+        .eq("user_id", userData.user.id)
+        .eq("provider", "pluggy")
+        .eq("provider_connection_ref", itemId)
+        .maybeSingle();
+
+      if (existing?.id) return json({ configured: true, provider: "pluggy", connectionId: existing.id, itemId, status: "active" });
+
+      const { data: prepared, error: prepareError } = await supabase.rpc("mf_prepare_bank_connection", {
+        p_provider: "pluggy",
+        p_institution_id: String(body.institutionId || "").trim() || null,
+        p_institution_name: institutionName,
+        p_scopes: scopes,
+      });
+      if (prepareError) throw prepareError;
+      const connectionId = String((prepared as Record<string, unknown>)?.connection_id || "");
+      if (!connectionId) throw new Error("Não foi possível registrar a conexão.");
+
+      const { error: updateError } = await supabase
+        .from("mf_bank_connections")
+        .update({
+          status: "active",
+          sync_status: "idle",
+          provider_connection_ref: itemId,
+          display_name: body.displayName || institutionName,
+          last_error: null,
+          metadata: { provider: "pluggy", bound_at: new Date().toISOString() },
+        })
+        .eq("id", connectionId)
+        .eq("user_id", userData.user.id);
+      if (updateError) throw updateError;
+
+      return json({ configured: true, provider: "pluggy", connectionId, itemId, status: "active" });
+    }
+
     if (action === "revoke") {
-      const connectionId = String(body.connectionId || "");
+      const connectionId = String(body.connectionId || "").trim();
       if (!/^[0-9a-f-]{36}$/i.test(connectionId)) throw new Error("Identificador da conexão inválido.");
-      if (!secretKey) throw new Error("Atualização segura do Open Finance não configurada no servidor.");
+      if (!secretKey) throw new Error("Chave administrativa do Supabase não configurada.");
 
       const { data: connection, error: connectionError } = await supabase
         .from("mf_bank_connections")
-        .select("id,status")
+        .select("id,status,provider,provider_connection_ref")
         .eq("id", connectionId)
         .eq("user_id", userData.user.id)
         .single();
       if (connectionError || !connection) throw new Error("Conexão não encontrada.");
-      if (["revoked", "revocation_pending"].includes(connection.status)) {
-        return json({ connectionId, status: connection.status, alreadyRequested: true });
-      }
+      if (connection.status === "revoked") return json({ connectionId, status: "revoked", alreadyRevoked: true });
+      if (connection.provider !== "pluggy" || !connection.provider_connection_ref) throw new Error("Conexão sem referência Pluggy válida.");
 
-      const supabaseAdmin = createClient(supabaseUrl, secretKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data: updated, error: updateError } = await supabaseAdmin
+      const apiKey = await createApiKey();
+      await deleteItem(apiKey, connection.provider_connection_ref);
+
+      const admin = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { error: revokeError } = await admin
         .from("mf_bank_connections")
-        .update({ status: "revocation_pending", sync_status: "idle" })
+        .update({ status: "revoked", sync_status: "idle", last_error: null, next_sync_at: null })
         .eq("id", connectionId)
-        .eq("user_id", userData.user.id)
-        .select("id")
-        .single();
-      if (updateError || !updated) throw new Error("Não foi possível registrar a revogação.");
-      return json({ connectionId, status: "revocation_pending", alreadyRequested: false });
+        .eq("user_id", userData.user.id);
+      if (revokeError) throw revokeError;
+
+      return json({ connectionId, status: "revoked", alreadyRevoked: false });
     }
 
-    const institutionName = String(body.institutionName || "").trim();
-    if (institutionName.length < 2) throw new Error("Selecione uma instituição válida.");
-
-    const { data: prepared, error: prepareError } = await supabase.rpc("mf_prepare_bank_connection", {
-      p_provider: providerName,
-      p_institution_id: String(body.institutionId || "").trim() || null,
-      p_institution_name: institutionName,
-      p_scopes: Array.isArray(body.scopes) && body.scopes.length
-        ? body.scopes
-        : ["ACCOUNTS_READ", "RESOURCES_READ"],
-    });
-    if (prepareError) throw prepareError;
-    const connectionId = String((prepared as Record<string, unknown>)?.connection_id || "");
-    if (!connectionId) throw new Error("Não foi possível preparar a conexão.");
-
-    if (!providerApiUrl || !providerApiKey || !redirectUri) {
-      return json({
-        connectionId,
-        status: "pending",
-        configured: false,
-        message: "A base está pronta; falta configurar o participante/agregador Open Finance no servidor.",
-      }, 202);
-    }
-    if (!secretKey) throw new Error("Atualização segura do Open Finance não configurada no servidor.");
-
-    const providerResponse = await fetch(providerApiUrl, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${providerApiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customerReference: userData.user.id,
-        connectionReference: connectionId,
-        institutionId: body.institutionId || null,
-        institutionName,
-        scopes: body.scopes || ["ACCOUNTS_READ", "RESOURCES_READ"],
-        redirectUri,
-      }),
-    });
-    if (!providerResponse.ok) throw new Error(`O provedor Open Finance recusou a sessão (${providerResponse.status}).`);
-    const providerPayload = await providerResponse.json() as Record<string, unknown>;
-    const authorizationUrl = String(providerPayload.authorization_url || providerPayload.connect_url || "");
-    const providerReference = String(providerPayload.connection_id || providerPayload.id || "");
-    if (!authorizationUrl.startsWith("https://")) throw new Error("O provedor não retornou uma URL segura de autorização.");
-
-    const supabaseAdmin = createClient(supabaseUrl, secretKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from("mf_bank_connections")
-      .update({
-        status: "authorizing",
-        provider_connection_ref: providerReference || null,
-        metadata: { session_created_at: new Date().toISOString() },
-      })
-      .eq("id", connectionId)
-      .eq("user_id", userData.user.id)
-      .eq("status", "pending")
-      .select("id")
-      .single();
-    if (updateError || !updated) throw new Error("Não foi possível registrar a autorização do provedor.");
-
-    return json({ connectionId, status: "authorizing", configured: true, authorizationUrl });
+    throw new Error("Ação Open Finance inválida.");
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Falha ao preparar o Open Finance." }, 400);
+    return json({ error: error instanceof Error ? error.message : "Falha no Open Finance." }, 400);
   }
 });
