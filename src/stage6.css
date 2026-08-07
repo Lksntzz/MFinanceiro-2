@@ -1,0 +1,192 @@
+/* Stage 6: accessibility, motion preferences and subtle visual refinement. */
+
+.mf-visually-hidden,
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.mf-skip-link {
+  position: fixed;
+  left: 16px;
+  top: 12px;
+  z-index: 10000;
+  transform: translateY(-160%);
+  border: 1px solid rgba(23, 217, 228, .72);
+  border-radius: 10px;
+  background: #08131d;
+  color: #eaffff;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  transition: transform .16s ease;
+}
+
+.mf-skip-link:focus {
+  transform: translateY(0);
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #17d9e4 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(23, 217, 228, .14);
+}
+
+:where(button, input, select, textarea):disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed !important;
+  opacity: .52;
+}
+
+::selection {
+  background: rgba(23, 217, 228, .28);
+  color: #fff;
+}
+
+body {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mf-card,
+.glass-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025), 0 8px 28px rgba(0, 0, 0, .16);
+}
+
+.mf-card {
+  border-color: rgba(255, 255, 255, .15);
+}
+
+.mf-side-panel,
+.mf-topbar,
+.mf-modal,
+.glass-card {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.mf-content:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.mf-content:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.mf-latest-list > div,
+.mf-category-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 44px;
+}
+
+.history-scroll,
+.mf-modal,
+.mf-tab-shell {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(23, 217, 228, .28) rgba(255, 255, 255, .025);
+}
+
+.history-scroll::-webkit-scrollbar,
+.mf-modal::-webkit-scrollbar,
+.mf-tab-shell::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.history-scroll::-webkit-scrollbar-thumb,
+.mf-modal::-webkit-scrollbar-thumb,
+.mf-tab-shell::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(23, 217, 228, .28);
+  background-clip: padding-box;
+}
+
+.history-scroll::-webkit-scrollbar-track,
+.mf-modal::-webkit-scrollbar-track,
+.mf-tab-shell::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, .025);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mf-card,
+  .glass-card,
+  .mf-side-item,
+  .mf-side-shortcut,
+  button,
+  a {
+    transition-property: color, background-color, border-color, opacity, transform, box-shadow;
+    transition-duration: 160ms;
+    transition-timing-function: ease;
+  }
+
+  .mf-side-item:hover,
+  .mf-side-shortcut:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (pointer: coarse) {
+  .mf-side-item,
+  .mf-side-launch,
+  .mf-side-settings,
+  .mf-subnav button,
+  .mf-top-actions button,
+  .mf-modal-actions button {
+    min-height: 44px;
+  }
+
+  .mf-side-shortcut {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .mf-card,
+  .glass-card,
+  .mf-modal,
+  .mf-side-panel {
+    border-color: rgba(255, 255, 255, .32) !important;
+  }
+
+  .text-white\/40,
+  .text-white\/35,
+  .text-white\/30 {
+    color: rgba(255, 255, 255, .72) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  .animate-spin {
+    animation: none !important;
+  }
+
+  .mf-side-item:hover,
+  .mf-side-shortcut:hover {
+    transform: none !important;
+  }
+}
