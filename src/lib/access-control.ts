@@ -1,7 +1,13 @@
 import { supabase } from "./supabase";
 
 export type AccessRequestStatus = "pending" | "approved" | "denied" | "none";
-export type ResolvedAuthState = "account" | "pending" | "approved" | "denied" | "new";
+export type ResolvedAuthState =
+  | "account"
+  | "confirmation_pending"
+  | "pending"
+  | "approved"
+  | "denied"
+  | "new";
 
 function normalizeStatus(raw: unknown): AccessRequestStatus {
   const status = String(raw || "").toLowerCase();
@@ -13,7 +19,14 @@ function normalizeStatus(raw: unknown): AccessRequestStatus {
 
 function normalizeResolvedState(raw: unknown): ResolvedAuthState | null {
   const state = String(raw || "").trim().toLowerCase();
-  if (state === "account" || state === "pending" || state === "approved" || state === "denied" || state === "new") {
+  if (
+    state === "account"
+    || state === "confirmation_pending"
+    || state === "pending"
+    || state === "approved"
+    || state === "denied"
+    || state === "new"
+  ) {
     return state;
   }
   return null;

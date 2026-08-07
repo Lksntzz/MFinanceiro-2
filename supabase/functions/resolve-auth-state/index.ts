@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.103.0";
 
-type AuthState = "account" | "pending" | "approved" | "denied" | "new";
+type AuthState = "account" | "confirmation_pending" | "pending" | "approved" | "denied" | "new";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +14,7 @@ function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
-function normalizeRequestStatus(value: unknown): Exclude<AuthState, "account" | "new"> | "none" {
+function normalizeRequestStatus(value: unknown): Exclude<AuthState, "account" | "confirmation_pending" | "new"> | "none" {
   const status = String(value || "").trim().toLowerCase();
   if (status === "approved" || status === "aprovado") return "approved";
   if (status === "denied" || status === "negado" || status === "rejected") return "denied";
@@ -54,19 +54,17 @@ Deno.serve(async (request) => {
   });
 
   try {
-    let accountExists = false;
     for (let page = 1; page <= 50; page += 1) {
       const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
       if (error) throw error;
       const users = data?.users || [];
-      if (users.some((user) => normalizeEmail(user.email) === email)) {
-        accountExists = true;
-        break;
+      const existingUser = users.find((user) => normalizeEmail(user.email) === email);
+      if (existingUser) {
+        const confirmed = Boolean(existingUser.email_confirmed_at || existingUser.confirmed_at);
+        return json({ state: confirmed ? "account" : "confirmation_pending" satisfies AuthState });
       }
       if (users.length < 1000) break;
     }
-
-    if (accountExists) return json({ state: "account" satisfies AuthState });
 
     const { data, error } = await admin.rpc("check_access_request_status", { p_email: email });
     if (error) throw error;
