@@ -42,6 +42,8 @@ const responseSchema = {
   required: ["document_confidence", "institution_name", "period_start", "period_end", "statement_balance", "warnings", "transactions"],
 };
 
+type JsonRecord = Record<string, unknown>;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -100,6 +102,30 @@ function interactionText(payload: Record<string, unknown>): string {
   throw new Error("O provedor de IA não retornou o JSON esperado.");
 }
 
+function asRecords(value: unknown): JsonRecord[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is JsonRecord => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+}
+
+function learningPrompt(hints: JsonRecord[]) {
+  if (!hints.length) return "";
+  const lines = hints.slice(0, 20).map((hint) => {
+    const pattern = String(hint.pattern || "").slice(0, 80);
+    const category = String(hint.category_name || "").slice(0, 80);
+    const type = hint.transaction_type === "income" ? "income" : "expense";
+    const confirmations = Math.max(0, Number(hint.confirmations || 0));
+    const confidence = Math.round(clampConfidence(hint.confidence) * 100);
+    return `- texto contém “${pattern}” e type=${type} → categoria “${category}” (${confirmations} revisões, ${confidence}% consistência)`;
+  });
+  return [
+    "Aprendizados de categorização confirmados pelo próprio usuário:",
+    ...lines,
+    "Use esses aprendizados somente para o campo category e apenas quando a descrição visível realmente corresponder ao padrão.",
+    "Nunca use o histórico aprendido para inventar ou alterar data, valor, descrição, saldo, type ou external_id.",
+  ].join("\n");
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
@@ -135,7 +161,7 @@ Deno.serve(async (request: Request) => {
 
     const { data: extraction, error: extractionError } = await supabase
       .from("mf_document_extractions")
-      .select("id,user_id,source_file_path,source_file_name,source_mime_type,source_file_size,status")
+      .select("id,user_id,account_id,source_file_path,source_file_name,source_mime_type,source_file_size,status")
       .eq("id", extractionId)
       .eq("user_id", userData.user.id)
       .single();
@@ -149,6 +175,17 @@ Deno.serve(async (request: Request) => {
       .eq("user_id", userData.user.id);
     if (startError) throw startError;
 
+    let adaptiveHints: JsonRecord[] = [];
+    const { data: hintData, error: hintError } = await supabase.rpc("mf_get_adaptive_ocr_hints", {
+      p_account_id: extraction.account_id || null,
+      p_limit: 20,
+    });
+    if (hintError) {
+      console.warn("Adaptive OCR hints unavailable", hintError.message);
+    } else {
+      adaptiveHints = asRecords(hintData);
+    }
+
     const { data: file, error: downloadError } = await supabase.storage
       .from("mf-import-documents")
       .download(extraction.source_file_path);
@@ -156,6 +193,7 @@ Deno.serve(async (request: Request) => {
 
     const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
     const fileType = extraction.source_mime_type === "application/pdf" ? "document" : "image";
+    const learnedContext = learningPrompt(adaptiveHints);
     const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey },
@@ -170,7 +208,8 @@ Deno.serve(async (request: Request) => {
               "Use amount positivo e type income/expense. Preserve o texto do estabelecimento.",
               "Dê confiança de 0 a 1 por linha e por campo. Se houver dúvida, reduza a confiança.",
               "Itens com confiança baixa serão obrigatoriamente revisados por uma pessoa.",
-            ].join(" "),
+              learnedContext,
+            ].filter(Boolean).join("\n"),
           },
           { type: fileType, data: base64, mime_type: extraction.source_mime_type },
         ],
@@ -188,12 +227,51 @@ Deno.serve(async (request: Request) => {
     const transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     if (transactions.length > 2000) throw new Error("O documento excedeu o limite de 2.000 lançamentos.");
 
+    const ruleInput = transactions.map((raw, index) => {
+      const item = raw as JsonRecord;
+      const amount = Math.abs(Number(item.amount || 0));
+      const type = item.type === "income" || item.type === "expense" ? item.type : "expense";
+      return {
+        id: String(index + 1),
+        description: String(item.description || ""),
+        source: String(item.source || parsed.institution_name || "OCR/IA"),
+        amount: type === "expense" ? -amount : amount,
+        type,
+        account_id: extraction.account_id || null,
+      };
+    });
+
+    let rulePreview = new Map<string, JsonRecord>();
+    const { data: previewData, error: previewError } = await supabase.rpc("mf_preview_categorization_rules", {
+      p_entries: ruleInput,
+    });
+    if (previewError) {
+      console.warn("Categorization rule preview unavailable", previewError.message);
+    } else {
+      rulePreview = new Map(
+        asRecords(previewData).map((preview) => [String(preview.entry_id || ""), preview]),
+      );
+    }
+
+    let appliedRuleCount = 0;
     const items = transactions.map((raw, index) => {
       const item = raw as Record<string, unknown>;
       const amount = Math.abs(Number(item.amount || 0));
       const type = item.type === "income" || item.type === "expense" ? item.type : null;
       const confidence = clampConfidence(item.confidence);
       const valid = Boolean(isoDate(item.date) && String(item.description || "").trim() && amount > 0 && type);
+      const preview = rulePreview.get(String(index + 1));
+      const hasRule = Boolean(preview?.rule_id && preview?.category_name);
+      if (hasRule) appliedRuleCount += 1;
+      const categoryName = hasRule
+        ? String(preview?.category_name || "Geral")
+        : String(item.category || "Geral");
+      const modelFieldConfidence = item.field_confidence && typeof item.field_confidence === "object"
+        ? item.field_confidence as JsonRecord
+        : {};
+      const ruleConfidence = hasRule ? clampConfidence(preview?.confidence) : 0;
+      const categoryConfidence = Math.max(clampConfidence(modelFieldConfidence.category), ruleConfidence);
+
       return {
         extraction_id: extractionId,
         user_id: userData.user.id,
@@ -205,11 +283,24 @@ Deno.serve(async (request: Request) => {
         source_name: String(item.source || parsed.institution_name || "OCR/IA").trim().slice(0, 120),
         external_id: String(item.external_id || "").trim().slice(0, 240) || null,
         running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : null,
-        category_name: String(item.category || "Geral").trim().slice(0, 120),
+        category_id: hasRule ? String(preview?.category_id || "") || null : null,
+        category_name: categoryName.trim().slice(0, 120),
         overall_confidence: valid ? confidence : Math.min(confidence, 0.4),
-        field_confidence: item.field_confidence && typeof item.field_confidence === "object" ? item.field_confidence : {},
+        field_confidence: {
+          ...modelFieldConfidence,
+          category: categoryConfidence,
+        },
         review_status: "pending",
-        raw_payload: item,
+        raw_payload: {
+          ...item,
+          model_category: item.category || null,
+          categorization_rule: hasRule ? {
+            id: preview?.rule_id,
+            name: preview?.rule_name,
+            origin: preview?.rule_origin || "manual",
+            confidence: ruleConfidence,
+          } : null,
+        },
       };
     });
 
@@ -237,6 +328,8 @@ Deno.serve(async (request: Request) => {
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20) : [],
       item_count: items.length,
       requires_human_review: true,
+      adaptive_hint_count: adaptiveHints.length,
+      categorization_rules_applied: appliedRuleCount,
     };
     const { error: completeError } = await supabase
       .from("mf_document_extractions")
@@ -255,6 +348,8 @@ Deno.serve(async (request: Request) => {
       status: "reviewing",
       documentConfidence: clampConfidence(parsed.document_confidence),
       warnings: metadata.warnings,
+      adaptiveHintCount: adaptiveHints.length,
+      rulesApplied: appliedRuleCount,
       items: storedItems,
     });
   } catch (error) {
