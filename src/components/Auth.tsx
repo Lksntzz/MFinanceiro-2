@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Github, LogIn, Mail, UserPlus, Wallet } from "lucide-react";
+import { LogIn, UserPlus, Wallet } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import {
   AccessRequestStatus,
@@ -9,46 +9,132 @@ import {
   requestAccess,
 } from "../lib/access-control";
 
-type AuthMode = "login" | "request" | "signup";
+type AuthMode = "login" | "request" | "activate";
+
+const STORAGE_EMAIL = "mf-auth-email";
+const STORAGE_NAME = "mf-auth-name";
+const STORAGE_PENDING = "mf-access-pending";
+const STORAGE_ACCOUNT_READY = "mf-auth-account-ready";
+
+function readStored(key: string) {
+  try {
+    return window.localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    if (value) window.localStorage.setItem(key, value);
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Storage may be disabled; the auth flow still works for the current session.
+  }
+}
 
 export default function Auth() {
-  const [mode, setMode] = useState<AuthMode>("request");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const rememberedEmail = readStored(STORAGE_EMAIL);
+  const rememberedName = readStored(STORAGE_NAME);
+  const accountReady = readStored(STORAGE_ACCOUNT_READY) === "true";
+
+  const [mode, setMode] = useState<AuthMode>(accountReady ? "login" : "request");
+  const [name, setName] = useState(rememberedName);
+  const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupStatus, setSignupStatus] = useState<AccessRequestStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [introDone, setIntroDone] = useState(false);
   const requestInFlightRef = useRef(false);
   const lastRequestAtRef = useRef(0);
 
   const isLogin = mode === "login";
   const isRequest = mode === "request";
-  const isSignUp = mode === "signup";
-  const canFinishSignup = signupStatus === "approved";
+  const isActivation = mode === "activate";
 
-  async function checkSignupAccessStatus() {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) {
-      setError("Informe o e-mail para verificar a aprovação.");
+  useEffect(() => {
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      setIntroDone(true);
       return;
     }
+    const timer = window.setTimeout(() => setIntroDone(true), 1450);
+    return () => window.clearTimeout(timer);
+  }, []);
 
-    setLoading(true);
+  function rememberIdentity(normalizedEmail: string, normalizedName = name.trim()) {
+    writeStored(STORAGE_EMAIL, normalizedEmail);
+    if (normalizedName) writeStored(STORAGE_NAME, normalizedName);
+  }
+
+  function markAccountReady(normalizedEmail: string) {
+    rememberIdentity(normalizedEmail);
+    writeStored(STORAGE_ACCOUNT_READY, "true");
+    writeStored(STORAGE_PENDING, "");
+  }
+
+  function moveToActivation(normalizedEmail: string) {
+    rememberIdentity(normalizedEmail);
+    setSignupStatus("approved");
+    setMode("activate");
+    setPassword("");
     setError(null);
-    setInfo(null);
+    setInfo("Seu acesso foi aprovado. Crie sua senha para ativar a conta.");
+  }
+
+  async function refreshAccessStatus(normalizedEmail: string, automatic = false) {
+    if (!normalizedEmail) return;
     try {
       const status = await fetchAccessStatus(normalizedEmail);
       setSignupStatus(status);
-      setInfo(getAccessStatusMessage(status));
-      if (status === "approved") setMode("signup");
-    } catch (err: any) {
-      setError(String(err?.message || "Falha ao consultar o status de acesso."));
-    } finally {
-      setLoading(false);
+
+      if (status === "approved") {
+        const requestedHere = readStored(STORAGE_PENDING) === normalizedEmail;
+        if (requestedHere && readStored(STORAGE_ACCOUNT_READY) !== "true") {
+          moveToActivation(normalizedEmail);
+        } else {
+          rememberIdentity(normalizedEmail);
+          setMode("login");
+          setError(null);
+          if (!automatic) setInfo("Acesso aprovado. Entre com seu e-mail e senha.");
+        }
+        return;
+      }
+
+      if (!automatic && status !== "none") setInfo(getAccessStatusMessage(status));
+    } catch {
+      // Background status checks are intentionally silent.
     }
   }
+
+  useEffect(() => {
+    if (!isRequest) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) return;
+
+    const timer = window.setTimeout(() => {
+      void refreshAccessStatus(normalizedEmail, true);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [email, isRequest]);
+
+  useEffect(() => {
+    if (!isRequest) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || readStored(STORAGE_PENDING) !== normalizedEmail) return;
+
+    const check = () => void refreshAccessStatus(normalizedEmail, true);
+    check();
+    const interval = window.setInterval(check, 20000);
+    const onFocus = () => check();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [email, isRequest]);
 
   async function handleRequestAccess() {
     if (requestInFlightRef.current) return;
@@ -75,9 +161,22 @@ export default function Auth() {
     setInfo(null);
     try {
       const result = await requestAccess(normalizedName, normalizedEmail);
+      rememberIdentity(normalizedEmail, normalizedName);
       setSignupStatus(result.status);
+
+      if (result.status === "approved") {
+        writeStored(STORAGE_PENDING, normalizedEmail);
+        moveToActivation(normalizedEmail);
+        return;
+      }
+
+      if (result.status === "pending") {
+        writeStored(STORAGE_PENDING, normalizedEmail);
+        setInfo("Solicitação enviada. Esta tela mudará automaticamente quando seu acesso for aprovado.");
+        return;
+      }
+
       setInfo(getAccessStatusMessage(result.status));
-      if (result.status === "approved") setMode("signup");
     } catch (err: any) {
       setError(String(err?.message || "Falha ao enviar a solicitação de acesso."));
     } finally {
@@ -101,21 +200,39 @@ export default function Auth() {
     setInfo(null);
 
     try {
-      if (isSignUp) {
+      if (isActivation) {
         const status = signupStatus ?? (await fetchAccessStatus(normalizedEmail));
         setSignupStatus(status);
         if (status !== "approved") {
           setError(getAccessStatusMessage(status));
+          setMode("request");
           return;
         }
 
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data, error: signUpError } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
           options: { data: { name: name.trim() } },
         });
-        if (signUpError) throw signUpError;
-        setInfo("Cadastro iniciado. Verifique seu e-mail para confirmar a conta.");
+
+        if (signUpError) {
+          const mapped = mapSignupErrorMessage(String(signUpError.message || ""));
+          if (mapped === "Este e-mail já está cadastrado.") {
+            markAccountReady(normalizedEmail);
+            setMode("login");
+            setPassword("");
+            setInfo("Sua conta já está ativa. Digite sua senha para entrar.");
+            return;
+          }
+          throw signUpError;
+        }
+
+        markAccountReady(normalizedEmail);
+        if (!data.session) {
+          setMode("login");
+          setPassword("");
+          setInfo("Conta criada. Confirme seu e-mail e depois entre com sua senha.");
+        }
         return;
       }
 
@@ -123,7 +240,17 @@ export default function Auth() {
         email: normalizedEmail,
         password,
       });
-      if (signInError) throw signInError;
+      if (signInError) {
+        const status = await fetchAccessStatus(normalizedEmail);
+        if (status === "approved" && readStored(STORAGE_ACCOUNT_READY) !== "true") {
+          writeStored(STORAGE_PENDING, normalizedEmail);
+          moveToActivation(normalizedEmail);
+          return;
+        }
+        throw signInError;
+      }
+
+      markAccountReady(normalizedEmail);
     } catch (err: any) {
       setError(mapSignupErrorMessage(String(err?.message || "Falha na autenticação.")));
     } finally {
@@ -131,100 +258,154 @@ export default function Auth() {
     }
   }
 
-  useEffect(() => {
-    if (!isRequest || !email.trim()) return;
-    const interval = window.setInterval(async () => {
-      const status = await fetchAccessStatus(email);
-      setSignupStatus(status);
-      if (status === "approved") {
-        setMode("signup");
-        setInfo("Seu acesso foi aprovado. Crie sua senha para concluir o cadastro.");
-      }
-    }, 60000);
-    return () => window.clearInterval(interval);
-  }, [email, isRequest]);
-
-  async function handleSocialLogin(provider: "google" | "github") {
-    setLoading(true);
-    setError(null);
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: window.location.origin },
-    });
-    if (oauthError) setError(String(oauthError.message || "Falha no login social."));
-    setLoading(false);
-  }
-
-  function changeMode(nextMode: AuthMode) {
-    setMode(nextMode);
+  function resetForAnotherUser() {
+    writeStored(STORAGE_ACCOUNT_READY, "");
+    writeStored(STORAGE_PENDING, "");
+    writeStored(STORAGE_EMAIL, "");
+    writeStored(STORAGE_NAME, "");
+    setMode("request");
+    setName("");
+    setEmail("");
+    setPassword("");
+    setSignupStatus(null);
     setError(null);
     setInfo(null);
-    if (nextMode === "request") setPassword("");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#050505]">
-      <div className="glass-card w-full max-w-md p-8 animate-fade-in relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary animate-pulse" />
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#050505] overflow-hidden">
+      <style>{`
+        @keyframes mf-auth-logo-intro {
+          0% { opacity: 0; transform: scale(.74) translateY(18px); filter: blur(10px); }
+          42% { opacity: 1; transform: scale(1.08) translateY(0); filter: blur(0); }
+          76% { opacity: 1; transform: scale(1) translateY(0); }
+          100% { opacity: 0; transform: scale(.78) translateY(-16px); }
+        }
+        @keyframes mf-auth-card-in {
+          from { opacity: 0; transform: translateY(18px) scale(.985); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes mf-auth-mark-in {
+          from { opacity: 0; transform: scale(1.45); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .mf-auth-intro { animation: mf-auth-logo-intro 1.45s cubic-bezier(.22,.8,.2,1) forwards; }
+        .mf-auth-card { animation: mf-auth-card-in .48s cubic-bezier(.22,.8,.2,1) both; }
+        .mf-auth-mark { animation: mf-auth-mark-in .55s cubic-bezier(.22,.8,.2,1) both; }
+        @media (prefers-reduced-motion: reduce) {
+          .mf-auth-intro,.mf-auth-card,.mf-auth-mark { animation: none !important; }
+        }
+      `}</style>
 
-        <div className="flex flex-col items-center mb-8">
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(0,242,255,0.3)]">
-            <Wallet className="text-white" size={32} />
+      {!introDone && (
+        <div className="mf-auth-intro absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <div className="h-20 w-20 rounded-[24px] bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-5 shadow-[0_0_55px_rgba(0,242,255,0.28)]">
+            <Wallet className="text-white" size={40} />
           </div>
-          <h1 className="text-3xl font-black tracking-tighter">MFinanceiro</h1>
-          <p className="text-white/40 mt-2 text-xs uppercase font-bold tracking-widest">Controle Financeiro Inteligente</p>
+          <h1 className="text-5xl font-black tracking-[-0.06em]">MFinanceiro</h1>
+          <p className="mt-3 text-[11px] uppercase font-bold tracking-[0.34em] text-white/35">Controle Financeiro Inteligente</p>
         </div>
+      )}
 
-        {isLogin && (
-          <>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <button type="button" onClick={() => handleSocialLogin("google")} disabled={loading} className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50">
-                <Mail size={18} className="text-red-400" /><span className="text-xs font-bold">Google</span>
-              </button>
-              <button type="button" onClick={() => handleSocialLogin("github")} disabled={loading} className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50">
-                <Github size={18} /><span className="text-xs font-bold">GitHub</span>
-              </button>
+      {introDone && (
+        <div className="mf-auth-card glass-card w-full max-w-md p-8 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary" />
+
+          <div className="flex flex-col items-center mb-8">
+            <div className="mf-auth-mark h-14 w-14 rounded-2xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center mb-4 shadow-[0_0_28px_rgba(0,242,255,0.24)]">
+              <Wallet className="text-white" size={28} />
             </div>
-          </>
-        )}
-
-        <form onSubmit={handleAuth} className="space-y-4">
-          {(isRequest || isSignUp) && (
-            <div>
-              <label className="block text-sm text-white/60 mb-1">Nome</label>
-              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Seu nome" />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm text-white/60 mb-1">E-mail</label>
-            <input type="email" required value={email} onChange={(e) => { setEmail(e.target.value); setSignupStatus(null); }} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="seu@email.com" />
+            <h1 className="text-3xl font-black tracking-tighter">MFinanceiro</h1>
+            <p className="text-white/40 mt-2 text-xs uppercase font-bold tracking-widest">Controle Financeiro Inteligente</p>
           </div>
 
-          {(isLogin || isSignUp) && (
+          <div className="mb-5 text-center">
+            <h2 className="text-sm font-bold text-white/85">
+              {isRequest ? "Solicite seu acesso" : isActivation ? "Ative sua conta" : "Acesse sua conta"}
+            </h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              {isRequest
+                ? "Envie seus dados uma única vez. A aprovação é acompanhada automaticamente."
+                : isActivation
+                  ? "Seu acesso foi aprovado. Defina sua senha para concluir o primeiro acesso."
+                  : "Entre com seu e-mail e senha."}
+            </p>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            {(isRequest || isActivation) && (
+              <div>
+                <label className="block text-sm text-white/60 mb-1">Nome</label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={isActivation}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none disabled:opacity-60"
+                  placeholder="Seu nome"
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-sm text-white/60 mb-1">Senha</label>
-              <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Mínimo de 8 caracteres" />
+              <label className="block text-sm text-white/60 mb-1">E-mail</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setSignupStatus(null); setError(null); }}
+                disabled={isActivation}
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none disabled:opacity-60"
+                placeholder="seu@email.com"
+              />
             </div>
+
+            {(isLogin || isActivation) && (
+              <div>
+                <label className="block text-sm text-white/60 mb-1">Senha</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none"
+                  placeholder={isActivation ? "Crie uma senha com no mínimo 8 caracteres" : "Sua senha"}
+                />
+              </div>
+            )}
+
+            {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{error}</div>}
+            {info && <div className="p-3 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-sm rounded-lg">{info}</div>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]"
+            >
+              {loading ? (
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+              ) : (
+                <>
+                  {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
+                  <span>{isRequest ? "Solicitar acesso" : isActivation ? "Criar senha e ativar" : "Entrar"}</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {isLogin && rememberedEmail && (
+            <button
+              type="button"
+              onClick={resetForAnotherUser}
+              className="mt-6 w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors"
+            >
+              Trocar usuário
+            </button>
           )}
-
-          {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{error}</div>}
-          {info && <div className="p-3 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-sm rounded-lg">{info}</div>}
-
-          <button type="submit" disabled={loading || (isSignUp && !canFinishSignup)} className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]">
-            {loading ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent" /> : <>{isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}<span>{isLogin ? "Entrar" : isRequest ? "Solicitar acesso" : "Finalizar cadastro"}</span></>}
-          </button>
-        </form>
-
-        {isRequest && (
-          <button type="button" onClick={checkSignupAccessStatus} disabled={loading} className="mt-4 w-full text-xs font-bold text-brand-primary hover:underline disabled:opacity-50">Verificar aprovação</button>
-        )}
-
-        <div className="mt-8 flex flex-col gap-3 text-center">
-          {!isLogin && <button type="button" onClick={() => changeMode("login")} className="text-xs uppercase font-bold tracking-widest text-white/40 hover:text-brand-primary">Já tenho uma conta</button>}
-          {isLogin && <button type="button" onClick={() => changeMode("request")} className="text-xs uppercase font-bold tracking-widest text-white/40 hover:text-brand-primary">Solicitar acesso para novo usuário</button>}
         </div>
-      </div>
+      )}
     </div>
   );
 }
