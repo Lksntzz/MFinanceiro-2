@@ -7,9 +7,9 @@ create unique index if not exists mf_account_balances_provider_account_ref_uidx
   on public.mf_account_balances(user_id, provider, provider_account_ref)
   where provider_account_ref is not null;
 
-create unique index if not exists mf_finance_ledger_entries_external_source_uidx
-  on public.mf_finance_ledger_entries(user_id, source_import, external_id)
-  where external_id is not null;
+create unique index if not exists mf_finance_ledger_entries_pluggy_external_uidx
+  on public.mf_finance_ledger_entries(user_id, external_id)
+  where source_import = 'open_finance_pluggy' and external_id is not null;
 
 create index if not exists mf_bank_connections_provider_ref_idx
   on public.mf_bank_connections(provider, provider_connection_ref)
