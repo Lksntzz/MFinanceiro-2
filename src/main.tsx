@@ -4,10 +4,12 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import App from './App.tsx';
+import AccessibilityLayer from './components/AccessibilityLayer';
 import { AppProvider } from './context/AppContext';
 import './index.css';
 import './layout-tuning.css';
 import './navigation.css';
+import './stage6.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -28,6 +30,7 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
+      <AccessibilityLayer />
       <AppProvider>
         <App />
       </AppProvider>
