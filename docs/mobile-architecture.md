@@ -23,10 +23,11 @@ The first mobile scope is intentionally small:
 - Mais
 - MF Scan
 - MF Quick
+- MF Inbox
 - Disponível de verdade
 - Posso gastar?
 
-Future mobile-only capabilities may include MF Inbox, MF Voice, recurring-document recognition, share-to-MF and platform shortcuts/widgets.
+Future mobile-only capabilities may include MF Voice, recurring-document recognition, share-to-MF and deeper platform shortcuts/widgets.
 
 ## Architecture rule
 
@@ -98,13 +99,39 @@ The scanner never executes a Pix or pays a boleto. It only creates a financial r
 
 Because `BarcodeDetector` is not supported by every mobile browser, MF Scan must degrade to capture + manual review instead of failing.
 
-PDF/document OCR is intentionally not faked in the first version. PDF files can enter the review flow, while full OCR/AI extraction is a later capability.
+MF Scan does not send generic bills, receipts or arbitrary photos to the statement OCR. Statement OCR has a specific financial-statement contract and is exposed through MF Inbox instead.
 
 ### MF Inbox
 
-Planned review queue for imported, scanned or automatically classified financial items that need user confirmation.
+MF Inbox is the persistent human-review queue for bank-statement extraction on mobile.
 
-Existing `mf_document_extractions` and `mf_document_extraction_items` already contain confidence/review fields and are RLS-protected, but they are not reused for MF Inbox until their storage semantics are intentionally integrated.
+It reuses the existing backend rather than introducing a parallel OCR system:
+
+- private Storage bucket `mf-import-documents`
+- per-user Storage RLS using the authenticated user folder
+- `mf_document_extractions` for document state and metadata
+- `mf_document_extraction_items` for extracted rows, field confidence and review state
+- authenticated `statement-ocr` Edge Function for OCR/AI extraction
+- existing `mf_commit_statement_import_v3` RPC for the final reviewed import
+
+The mobile flow is:
+
+1. choose the related financial account;
+2. upload a PDF/JPEG/PNG/WebP bank statement, up to the existing 20 MB bucket limit;
+3. store it privately under the authenticated user's folder;
+4. create a `statement` extraction record;
+5. invoke the existing `statement-ocr` function;
+6. keep the extraction in `reviewing` state with every extracted line initially pending human review;
+7. allow the user to correct date, description, amount, type and category or reject a line;
+8. save review state without importing when desired;
+9. import only explicitly confirmed, valid rows through `mf_commit_statement_import_v3`;
+10. mark the extraction completed after the import succeeds.
+
+The final statement import uses the existing external-id/fingerprint duplicate protection. The mobile Inbox uses balance mode `keep`, so historical statement rows can be added without silently recalibrating the user's current account balance.
+
+A failed OCR remains in the Inbox and can be retried. A document in `processing` remains read-only until the backend finishes. The UI never treats AI confidence as confirmation.
+
+No new table, bucket, RLS policy or Edge Function is required for the current Inbox implementation.
 
 ### Disponível de verdade
 
@@ -138,14 +165,15 @@ The simulator does not write to Supabase and does not tell the user to make or a
 - Mobile and desktop use the same Supabase project and user data.
 - A transaction created on mobile immediately belongs to the same ledger used by desktop.
 - MF Quick and confirmed MF Scan entries use the existing finance-entry RPC rather than a parallel transaction implementation.
+- MF Inbox statement imports use the existing statement-import RPC and reconciliation/deduplication path.
 - Mobile-specific UI preferences may be stored separately from general financial settings.
 - Schema changes are only introduced when a mobile capability truly needs new persisted data.
-- No schema change is required for the current Home / Quick / Scan / decision-helper implementation.
+- No schema change is required for the current Home / Quick / Scan / Inbox / decision-helper implementation.
 
 ## Styling rules
 
 - Mobile layout styles live under `src/mobile`.
-- Feature-specific styles may live next to the feature, such as `src/mobile/pages/mobile-scan.css`.
+- Feature-specific styles may live next to the feature, such as `src/mobile/pages/mobile-scan.css` and `src/mobile/pages/mobile-inbox.css`.
 - Existing desktop CSS should not be globally overridden for mobile-only redesign work.
 - Shared design tokens may be reused, but mobile sizing/layout classes should be scoped with `mf-mobile-*`.
 - Respect safe-area insets and touch targets.
@@ -202,8 +230,9 @@ Status: first implementation complete on the branch; visual/browser QA remains r
 - MF Scan
 - review flow
 - MF Inbox
+- statement OCR review/import
 
-Status: MF Scan capture/parsing/review is implemented. Full document OCR and persistent MF Inbox remain pending.
+Status: MF Scan capture/parsing/review and persistent MF Inbox statement OCR/review/import are implemented. Generic receipt/bill OCR remains intentionally separate and future work.
 
 ### Phase 3 — Native/mobile integrations
 
