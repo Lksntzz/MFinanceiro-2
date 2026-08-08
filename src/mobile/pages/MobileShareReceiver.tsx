@@ -51,8 +51,8 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
       try {
         const [shared, accountsResult, categoriesResult] = await Promise.all([
           getMobileSharedPayload(shareId),
-          supabase.from('mf_financial_accounts').select('*').eq('user_id', userId).order('is_default', { ascending: false }).order('name'),
-          supabase.from('mf_transaction_categories').select('*').eq('user_id', userId).eq('is_active', true).order('name'),
+          supabase.from('mf_account_balances').select('*').eq('user_id', userId).eq('is_active', true).order('is_default', { ascending: false }).order('created_at'),
+          supabase.from('mf_transaction_categories').select('*').eq('user_id', userId).eq('is_active', true).order('sort_order').order('name'),
         ]);
 
         if (!shared) throw new Error('O compartilhamento expirou ou já foi removido deste aparelho.');
