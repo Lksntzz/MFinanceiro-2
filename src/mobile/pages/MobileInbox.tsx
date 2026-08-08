@@ -203,8 +203,9 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
       await refreshQueue();
       await openExtraction(refreshedExtraction as InboxExtraction);
     } catch (processError: any) {
-      setError(processError?.message || 'Não foi possível analisar o extrato.');
+      const message = processError?.message || 'Não foi possível analisar o extrato.';
       await refreshQueue();
+      setError(message);
     } finally {
       setBusy(null);
     }
@@ -318,8 +319,7 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
   }
 
   function selectedCategory(item: EditableItem) {
-    const available = compatibleCategories(item);
-    return available.find((category) => category.id === item.category_id) || available[0];
+    return compatibleCategories(item).find((category) => category.id === item.category_id);
   }
 
   const validation = useMemo(() => {
@@ -358,7 +358,7 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
         external_id: item.external_id || null,
         running_balance: item.running_balance ?? null,
         category_id: category?.id || null,
-        category_name: category?.name || item.category_name || 'Geral',
+        category_name: category?.name || item.category_name || null,
         overall_confidence: Number(item.overall_confidence || 0),
         field_confidence: item.field_confidence || {},
         review_status: rejected ? 'rejected' : item.dirty ? 'edited' : item.review_status === 'accepted' ? 'accepted' : 'pending',
@@ -388,7 +388,11 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     setNotice(null);
     try {
       await persistReview();
-      setItems((current) => current.map((item) => ({ ...item, dirty: false })));
+      setItems((current) => current.map((item) => ({
+        ...item,
+        review_status: item.review_status === 'rejected' ? 'rejected' : item.dirty ? 'edited' : item.review_status,
+        dirty: false,
+      })));
       setNotice('Revisão salva. Nada foi importado ainda.');
     } catch (saveError: any) {
       setError(saveError?.message || 'Não foi possível salvar a revisão.');
