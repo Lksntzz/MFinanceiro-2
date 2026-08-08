@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 function vendorChunk(id: string) {
   if (!id.includes('node_modules')) return undefined;
@@ -16,9 +16,28 @@ function vendorChunk(id: string) {
   return undefined;
 }
 
-export default defineConfig(() => {
+function appVersionPlugin(buildId: string, builtAt: string): Plugin {
   return {
-    plugins: [react(), tailwindcss()],
+    name: 'mf-app-version',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ buildId, builtAt }),
+      });
+    },
+  };
+}
+
+export default defineConfig(() => {
+  const buildId = String(Date.now());
+  const builtAt = new Date().toISOString();
+
+  return {
+    plugins: [react(), tailwindcss(), appVersionPlugin(buildId, builtAt)],
+    define: {
+      __MF_BUILD_ID__: JSON.stringify(buildId),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
