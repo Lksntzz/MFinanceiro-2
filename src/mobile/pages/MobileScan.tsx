@@ -19,6 +19,7 @@ import type { FinancialAccount, TransactionCategory } from '../../types';
 import type { MobileScannedDraft } from '../types';
 import { MOBILE_ROUTES } from '../routes';
 import { parseFinancialCode, type ParsedFinancialCode } from '../lib/financial-code-parser';
+import './mobile-scan.css';
 
 type MobileScanProps = {
   userId: string;
@@ -45,6 +46,13 @@ type ReviewState = {
 
 function detectorConstructor() {
   return (globalThis as typeof globalThis & { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
+}
+
+function parseMoneyInput(value: string) {
+  const clean = value.trim().replace(/\s/g, '');
+  if (!clean) return Number.NaN;
+  if (clean.includes(',')) return Number(clean.replace(/\./g, '').replace(',', '.'));
+  return Number(clean);
 }
 
 async function detectCodeFromImage(file: File) {
@@ -140,6 +148,7 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
   function analyzePastedCode() {
     setError(null);
     setNotice(null);
+    setSaved(false);
     if (!rawInput.trim()) {
       setError('Cole um Pix Copia e Cola, linha digitável ou código de barras.');
       return;
@@ -194,12 +203,11 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
 
   async function saveReviewedEntry(event: React.FormEvent) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || saved) return;
     setError(null);
     setNotice(null);
-    setSaved(false);
 
-    const amount = Number(review.amount.replace(',', '.'));
+    const amount = parseMoneyInput(review.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       setError('Confirme um valor maior que zero.');
       return;
@@ -300,33 +308,33 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
           </div>
 
           {parsed?.dynamicPix ? <div className="mf-mobile-feedback warning">QR Pix dinâmico identificado. O valor completo pode depender do payload do PSP; confirme os campos abaixo.</div> : null}
-          {notice ? <div className="mf-mobile-feedback warning">{notice}</div> : null}
+          {!saved && notice ? <div className="mf-mobile-feedback warning">{notice}</div> : null}
 
           <label className="mf-mobile-amount-field mf-mobile-scan-amount">
             <span>Valor identificado</span>
-            <div><small>R$</small><input inputMode="decimal" value={review.amount} onChange={(event) => setReview((current) => ({ ...current, amount: event.target.value.replace(/[^0-9,.]/g, '') }))} placeholder="0,00" /></div>
+            <div><small>R$</small><input inputMode="decimal" value={review.amount} onChange={(event) => { setSaved(false); setReview((current) => ({ ...current, amount: event.target.value.replace(/[^0-9,.]/g, '') })); }} placeholder="0,00" /></div>
           </label>
 
           <label className="mf-mobile-field">
             <span>Descrição</span>
-            <input value={review.description} onChange={(event) => setReview((current) => ({ ...current, description: event.target.value }))} placeholder="Ex.: Conta de energia" />
+            <input value={review.description} onChange={(event) => { setSaved(false); setReview((current) => ({ ...current, description: event.target.value })); }} placeholder="Ex.: Conta de energia" />
           </label>
 
           <div className="mf-mobile-segmented" role="group" aria-label="Situação da captura">
-            <button type="button" data-active={review.status === 'pending'} onClick={() => setReview((current) => ({ ...current, status: 'pending' }))}>A pagar</button>
-            <button type="button" data-active={review.status === 'paid'} onClick={() => setReview((current) => ({ ...current, status: 'paid', dueDate: '' }))}>Já pago</button>
+            <button type="button" data-active={review.status === 'pending'} onClick={() => { setSaved(false); setReview((current) => ({ ...current, status: 'pending' })); }}>A pagar</button>
+            <button type="button" data-active={review.status === 'paid'} onClick={() => { setSaved(false); setReview((current) => ({ ...current, status: 'paid', dueDate: '' })); }}>Já pago</button>
           </div>
 
           {review.status === 'pending' ? (
             <label className="mf-mobile-field">
               <span>Vencimento <em>se houver</em></span>
-              <input type="date" value={review.dueDate} onChange={(event) => setReview((current) => ({ ...current, dueDate: event.target.value }))} />
+              <input type="date" value={review.dueDate} onChange={(event) => { setSaved(false); setReview((current) => ({ ...current, dueDate: event.target.value })); }} />
             </label>
           ) : null}
 
           <label className="mf-mobile-field">
             <span>Categoria</span>
-            <select value={effectiveCategoryId} onChange={(event) => setReview((current) => ({ ...current, categoryId: event.target.value }))}>
+            <select value={effectiveCategoryId} onChange={(event) => { setSaved(false); setReview((current) => ({ ...current, categoryId: event.target.value })); }}>
               {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
           </label>
@@ -334,7 +342,7 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
           {accounts.length > 1 ? (
             <label className="mf-mobile-field">
               <span>Conta</span>
-              <select value={review.accountId} onChange={(event) => setReview((current) => ({ ...current, accountId: event.target.value }))}>
+              <select value={review.accountId} onChange={(event) => { setSaved(false); setReview((current) => ({ ...current, accountId: event.target.value })); }}>
                 {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
               </select>
             </label>
@@ -344,9 +352,9 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
           {error ? <div className="mf-mobile-feedback error">{error}</div> : null}
           {saved && notice ? <div className="mf-mobile-feedback success"><Check size={16} />{notice}</div> : null}
 
-          <button className="mf-mobile-primary-button" type="submit" disabled={saving || !userId}>
+          <button className="mf-mobile-primary-button" type="submit" disabled={saving || saved || !userId}>
             {saving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
-            Confirmar no MF
+            {saved ? 'Registrado' : 'Confirmar no MF'}
           </button>
           <button className="mf-mobile-secondary-button" type="button" onClick={resetScan}>Escanear outro documento</button>
         </form>
