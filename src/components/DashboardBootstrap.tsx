@@ -25,6 +25,7 @@ export default function DashboardBootstrap({
 
   const legacyInvestmentRoute = location.pathname.startsWith('/app/planejamento/investimentos');
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
+  const planningRoute = location.pathname.startsWith('/app/planejamento') && !legacyInvestmentRoute;
 
   useEffect(() => {
     let active = true;
@@ -97,7 +98,14 @@ export default function DashboardBootstrap({
 
   if (ready) {
     if (investmentRoute) return <InvestmentTool user={user} />;
-    return <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />;
+    return (
+      <>
+        {planningRoute && (
+          <style>{'.mf-content .mf-tab-shell > .mf-subnav button:nth-child(5){display:none!important}'}</style>
+        )}
+        <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />
+      </>
+    );
   }
 
   return (
