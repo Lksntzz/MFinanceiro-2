@@ -11,6 +11,7 @@ import IntegrationTool from './IntegrationTool';
 import InvestmentTool from './InvestmentTool';
 import PlanningStrategyTool from './PlanningStrategyTool';
 import PlanningTool from './PlanningTool';
+import ProductTour from './ProductTour';
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -151,7 +152,12 @@ export default function DashboardBootstrap({
     if (agendaRoute) return <FinancialAgendaTool user={user} />;
     if (planningStrategyRoute) return <PlanningStrategyTool user={user} />;
     if (planningRoute) return <PlanningTool user={user} />;
-    return <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />;
+    return (
+      <>
+        <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />
+        <ProductTour userId={user.id} enabled={location.pathname.replace(/\/+$/, '') === '/app'} />
+      </>
+    );
   }
 
   return (
