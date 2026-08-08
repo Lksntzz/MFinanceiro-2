@@ -76,6 +76,8 @@ Fast expense/income capture with minimal fields. It uses the same `mf_create_fin
 
 It is callable from the direct `/quick` route and is also exposed as a PWA shortcut where supported.
 
+MF Quick intentionally records payment method as `unspecified` unless the user explicitly supplied a payment method elsewhere. A fast capture must not invent that the transaction was Pix, cash or card.
+
 ### MF Scan
 
 MF Scan is a capture-and-review flow. Its first implementation supports:
