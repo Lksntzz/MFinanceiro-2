@@ -51,6 +51,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/share",
+      "destination": "/index.html"
+    },
+    {
       "source": "/app",
       "destination": "/index.html"
     },
