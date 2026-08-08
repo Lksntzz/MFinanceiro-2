@@ -12,7 +12,7 @@ import {
   Sparkles,
   Wallet,
 } from 'lucide-react';
-import { format, startOfMonth } from 'date-fns';
+import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useLocation, useNavigate } from 'react-router';
 
@@ -193,7 +193,7 @@ function ScanPreviewPage() {
   const navigate = useNavigate();
   return (
     <div className="mf-mobile-focus-page">
-      <header className="mf-mobile-focus-header"><button type="button" className="mf-mobile-icon-button" onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft size={21} /></button><div><span className="mf-mobile-eyebrow">MF Scan</span><h1>Captura inteligente</h1></div><span /></header>
+      <header className="mf-mobile-focus-header"><button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.home)} aria-label="Voltar para a Home"><ArrowLeft size={21} /></button><div><span className="mf-mobile-eyebrow">MF Scan</span><h1>Captura inteligente</h1></div><span /></header>
       <section className="mf-mobile-scan-preview"><div className="mf-mobile-scan-orb"><ScanLine size={34} /></div><h2>Estrutura pronta para o scanner</h2><p>A próxima fase liga câmera, galeria, PDF, boleto e QR Pix a uma tela de revisão antes de salvar qualquer dado.</p><div className="mf-mobile-feedback success">Nada será registrado automaticamente sem sua confirmação.</div></section>
     </div>
   );
@@ -212,13 +212,14 @@ export default function MobileApp({ user }: { user: User }) {
       const ensured = await supabase.rpc('mf_ensure_financial_structure');
       if (ensured.error) throw ensured.error;
       const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+      const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
       const [settingsResult, accountsResult, categoriesResult, cardsResult, recentResult, monthResult, pendingResult] = await Promise.all([
         supabase.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('mf_account_balances').select('*').eq('user_id', user.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at'),
         supabase.from('mf_transaction_categories').select('*').eq('user_id', user.id).eq('is_active', true).order('sort_order').order('name'),
         supabase.from('mf_credit_cards').select('*').eq('user_id', user.id).order('name'),
         supabase.from('mf_finance_ledger_entries').select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance').eq('user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(24),
-        supabase.from('mf_finance_ledger_entries').select('id,user_id,amount,category,description,date,type,status,affects_balance').eq('user_id', user.id).gte('date', monthStart),
+        supabase.from('mf_finance_ledger_entries').select('id,user_id,amount,category,description,date,type,status,affects_balance').eq('user_id', user.id).gte('date', monthStart).lte('date', monthEnd),
         supabase.from('mf_finance_ledger_entries').select('id,description,amount,due_date,category').eq('user_id', user.id).eq('status', 'pending').order('due_date', { ascending: true, nullsFirst: false }).limit(6),
       ]);
 
