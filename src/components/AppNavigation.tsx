@@ -159,6 +159,8 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
   const [expandedGroup, setExpandedGroup] = useState<ToolGroup | null>(activeGroup);
   const requestedInvestmentSection = new URLSearchParams(location.search).get('section');
   const investmentSection: InvestmentSection = requestedInvestmentSection === 'planning' ? 'planning' : 'portfolio';
+  const isAnalysisRoute = location.pathname.startsWith('/app/analises');
+  const isMovementsRoute = location.pathname.startsWith('/app/movimentacoes');
 
   useEffect(() => {
     if (activeGroup) setExpandedGroup(activeGroup);
@@ -172,6 +174,11 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
     <aside className="mf-side-panel" aria-label="Navegação financeira">
       <style>{`
         .history-shell > div:first-child button[class*="border-red-500"] { display: none !important; }
+        ${isAnalysisRoute ? '.mf-content .mf-tab-shell > .mf-subnav { display: none !important; }' : ''}
+        ${isMovementsRoute ? `
+          .mf-content .history-shell > .mf-subnav button:nth-child(3) { font-size: 0 !important; }
+          .mf-content .history-shell > .mf-subnav button:nth-child(3)::after { content: 'Histórico de importações'; font-size: 12px; }
+        ` : ''}
       `}</style>
       <div className="mf-side-brand" aria-label="MF Financeiro">
         <div className="mf-side-brand-mark" aria-hidden="true">M</div>
