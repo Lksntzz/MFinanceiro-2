@@ -14,6 +14,7 @@ import InvestmentTool from './InvestmentTool';
 import PlanningStrategyTool from './PlanningStrategyTool';
 import PlanningTool from './PlanningTool';
 import ProductTour from './ProductTour';
+import TransactionLaunchTool from './TransactionLaunchTool';
 
 const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
@@ -37,6 +38,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   const legacyAnalysisOverviewRoute = location.pathname === '/app/analises' || location.pathname.startsWith('/app/analises/resumo');
   const legacyFinancialHealthRoute = location.pathname.startsWith('/app/analises/saude');
 
+  const launchRoute = location.pathname === '/app/lancar';
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
   const agendaRoute = location.pathname.startsWith('/app/agenda');
@@ -99,7 +101,8 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
 
   if (ready) {
     let tool: React.ReactNode;
-    if (investmentRoute) tool = <InvestmentTool user={user} />;
+    if (launchRoute) tool = <TransactionLaunchTool user={user} />;
+    else if (investmentRoute) tool = <InvestmentTool user={user} />;
     else if (integrationRoute) tool = <IntegrationTool user={user} />;
     else if (agendaRoute) tool = <FinancialAgendaTool user={user} />;
     else if (accountManagementRoute) tool = <FinancialAccountsTool user={user} />;
