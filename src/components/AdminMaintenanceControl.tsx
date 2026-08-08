@@ -10,7 +10,11 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { fetchMaintenanceConfig, type MaintenanceConfig } from '../lib/maintenance';
+import {
+  broadcastMaintenanceConfig,
+  fetchMaintenanceConfig,
+  type MaintenanceConfig,
+} from '../lib/maintenance';
 
 const DEFAULT_MESSAGE =
   'Estamos realizando melhorias importantes. O MFinanceiro estará disponível novamente em breve.';
@@ -69,8 +73,11 @@ export default function AdminMaintenanceControl() {
 
       setConfig(next);
       setMessage(next.maintenance_message);
-      setFeedback(enabled ? 'Modo manutenção ativado.' : 'Modo manutenção desativado.');
       window.dispatchEvent(new CustomEvent('mf:maintenance-changed', { detail: next }));
+      void broadcastMaintenanceConfig(supabase, next).catch((broadcastError) => {
+        console.warn('Falha ao transmitir manutenção por broadcast:', broadcastError);
+      });
+      setFeedback(enabled ? 'Modo manutenção ativado.' : 'Modo manutenção desativado.');
     } catch (err: any) {
       setError(String(err?.message || 'Não foi possível alterar o modo de manutenção.'));
     } finally {
