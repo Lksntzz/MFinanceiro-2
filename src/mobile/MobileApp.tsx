@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import {
-  ArrowLeft,
   Camera,
   ChevronRight,
   CreditCard as CreditCardIcon,
@@ -23,6 +22,7 @@ import MobileAppShell from './MobileAppShell';
 import { MOBILE_ROUTES } from './routes';
 import { openDesktopExperience } from './useMobileExperience';
 import MobileQuickAdd from './pages/MobileQuickAdd';
+import MobileScan from './pages/MobileScan';
 import './mobile.css';
 
 type PendingItem = {
@@ -189,16 +189,6 @@ function MorePage() {
   );
 }
 
-function ScanPreviewPage() {
-  const navigate = useNavigate();
-  return (
-    <div className="mf-mobile-focus-page">
-      <header className="mf-mobile-focus-header"><button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.home)} aria-label="Voltar para a Home"><ArrowLeft size={21} /></button><div><span className="mf-mobile-eyebrow">MF Scan</span><h1>Captura inteligente</h1></div><span /></header>
-      <section className="mf-mobile-scan-preview"><div className="mf-mobile-scan-orb"><ScanLine size={34} /></div><h2>Estrutura pronta para o scanner</h2><p>A próxima fase liga câmera, galeria, PDF, boleto e QR Pix a uma tela de revisão antes de salvar qualquer dado.</p><div className="mf-mobile-feedback success">Nada será registrado automaticamente sem sua confirmação.</div></section>
-    </div>
-  );
-}
-
 export default function MobileApp({ user }: { user: User }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -258,7 +248,7 @@ export default function MobileApp({ user }: { user: User }) {
   if (error) return <div className="mf-mobile-loading"><strong>Não foi possível carregar</strong><span>{error}</span><button type="button" className="mf-mobile-primary-button" onClick={() => void refresh()}>Tentar novamente</button></div>;
 
   if (page === 'quick') return <MobileQuickAdd userId={user.id} accounts={data.accounts} categories={data.categories} onSaved={refresh} />;
-  if (page === 'scan') return <ScanPreviewPage />;
+  if (page === 'scan') return <MobileScan userId={user.id} accounts={data.accounts} categories={data.categories} onSaved={refresh} />;
 
   let content: React.ReactNode;
   if (page === 'transactions') content = <TransactionsPage data={data} />;
