@@ -99,6 +99,11 @@
 .mf-side-settings { min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; color: rgba(255,255,255,.38); font-size: 9px; font-weight: 800; }
 .mf-side-settings:hover, .mf-side-settings.active { color: #fff; background: rgba(255,255,255,.04); }
 
+/* Movimentações já usa a árvore lateral como navegação local. */
+.mf-content.history-active .history-shell > .mf-subnav {
+  display: none;
+}
+
 @media (min-width: 821px) and (max-width: 1180px) {
   .mf-app-shell.mf-routed-app { padding-left: max(182px, calc(166px + var(--mf-page-pad-x, 10px))); }
   .mf-side-panel { width: 156px; padding-inline: 9px; }
@@ -111,7 +116,7 @@
   .mf-app-shell.mf-routed-app { padding-left: max(var(--mf-page-pad-x, 8px), env(safe-area-inset-left)); padding-bottom: 78px; }
   .mf-side-panel { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); top: auto; width: auto; height: auto; padding: 6px; border-radius: 15px; display: block; overflow: visible; }
   .mf-side-brand, .mf-side-context, .mf-side-shortcuts, .mf-side-settings, .mf-side-launch { display: none; }
-  .mf-side-primary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; overflow: visible; }
+  .mf-side-primary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; overflow: visible; }
   .mf-side-tool { min-width: 0; }
   .mf-side-tool-row { display: block; }
   .mf-side-chevron, .mf-side-primary-children { display: none; }
