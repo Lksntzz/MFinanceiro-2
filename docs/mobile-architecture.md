@@ -23,8 +23,10 @@ The first mobile scope is intentionally small:
 - Mais
 - MF Scan
 - MF Quick
+- Disponível de verdade
+- Posso gastar?
 
-Future mobile-only capabilities may include MF Inbox, MF Voice, “Posso gastar?”, recurring-document recognition, share-to-MF and platform shortcuts/widgets.
+Future mobile-only capabilities may include MF Inbox, MF Voice, recurring-document recognition, share-to-MF and platform shortcuts/widgets.
 
 ## Architecture rule
 
@@ -102,15 +104,34 @@ PDF/document OCR is intentionally not faked in the first version. PDF files can 
 
 Planned review queue for imported, scanned or automatically classified financial items that need user confirmation.
 
-Existing `mf_document_extractions` and `mf_document_extraction_items` already contain confidence/review fields and are RLS-protected, but they are not reused for MF Inbox until the current mobile branch passes build/preview validation and their storage semantics are intentionally integrated.
+Existing `mf_document_extractions` and `mf_document_extraction_items` already contain confidence/review fields and are RLS-protected, but they are not reused for MF Inbox until their storage semantics are intentionally integrated.
 
 ### Disponível de verdade
 
-A shared financial calculation presented prominently on mobile: balance minus known commitments/protected amounts until the next expected income.
+The mobile Home uses the existing shared `calculateFinanceSummary` core calculation instead of duplicating financial math.
+
+The card presents:
+
+- current balance derived from active financial accounts
+- projected free balance after registered commitments in the current cycle
+- daily spending margin until the next expected income
+- registered commitment amount
+- next payday and days remaining
+- the existing shared smart alert for the cycle
+
+Mobile loads the same supporting inputs used by the desktop summary: fixed bills, cards, installments, user payment settings and recent cycle transactions.
 
 ### Posso gastar?
 
-A mobile decision helper that simulates a purchase and shows its impact on the current cycle without making the decision for the user.
+A mobile-only, read-only simulator driven by the same `FinanceSummary` result.
+
+The user enters a possible purchase amount and the mobile UI shows:
+
+- remaining free balance after that hypothetical purchase
+- recalculated daily margin for the remaining cycle
+- a low / caution / over-limit impact message
+
+The simulator does not write to Supabase and does not tell the user to make or avoid a purchase. It only shows the calculated impact based on registered financial data.
 
 ## Data rules
 
@@ -119,7 +140,7 @@ A mobile decision helper that simulates a purchase and shows its impact on the c
 - MF Quick and confirmed MF Scan entries use the existing finance-entry RPC rather than a parallel transaction implementation.
 - Mobile-specific UI preferences may be stored separately from general financial settings.
 - Schema changes are only introduced when a mobile capability truly needs new persisted data.
-- No schema change is required for the current Home / Quick / Scan implementation.
+- No schema change is required for the current Home / Quick / Scan / decision-helper implementation.
 
 ## Styling rules
 
@@ -200,7 +221,7 @@ Status: quick route and PWA shortcuts implemented; share/native integrations pen
 - purchase impact
 - smarter recurring recognition
 
-Status: planned after the daily-use and capture flows pass QA.
+Status: Disponível de verdade and the read-only Posso gastar? simulator are implemented using the shared finance summary. Purchase persistence/impact hooks and smarter recurrence remain future work.
 
 ## Non-goals
 
