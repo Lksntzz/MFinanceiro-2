@@ -5,25 +5,38 @@ import {
   ChevronRight,
   CreditCard as CreditCardIcon,
   ExternalLink,
+  Gauge,
   Loader2,
   ReceiptText,
   ScanLine,
+  ShieldCheck,
   Sparkles,
   Wallet,
 } from 'lucide-react';
-import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useLocation, useNavigate } from 'react-router';
 
+import { calculateFinanceSummary } from '../lib/finance-calculations';
 import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
-import type { CreditCard, FinancialAccount, Transaction, TransactionCategory, UserSettings } from '../types';
+import type {
+  CardInstallment,
+  CreditCard,
+  FinanceSummary,
+  FinancialAccount,
+  FixedBill,
+  Transaction,
+  TransactionCategory,
+  UserSettings,
+} from '../types';
 import MobileAppShell from './MobileAppShell';
 import { MOBILE_ROUTES } from './routes';
 import { openDesktopExperience } from './useMobileExperience';
 import MobileQuickAdd from './pages/MobileQuickAdd';
 import MobileScan from './pages/MobileScan';
 import './mobile.css';
+import './pages/mobile-home.css';
 
 type PendingItem = {
   id: string;
@@ -38,9 +51,13 @@ type MobileData = {
   accounts: FinancialAccount[];
   categories: TransactionCategory[];
   cards: CreditCard[];
+  installments: CardInstallment[];
+  fixedBills: FixedBill[];
   recent: Transaction[];
   monthTransactions: Transaction[];
+  cycleTransactions: Transaction[];
   pending: PendingItem[];
+  summary: FinanceSummary | null;
 };
 
 const EMPTY_DATA: MobileData = {
@@ -48,9 +65,13 @@ const EMPTY_DATA: MobileData = {
   accounts: [],
   categories: [],
   cards: [],
+  installments: [],
+  fixedBills: [],
   recent: [],
   monthTransactions: [],
+  cycleTransactions: [],
   pending: [],
+  summary: null,
 };
 
 function normalizeAccount(row: any): FinancialAccount {
@@ -66,6 +87,32 @@ function normalizeTransaction(row: any): Transaction {
   return { ...row, amount: Number(row.amount || 0) } as Transaction;
 }
 
+function normalizeCard(row: any): CreditCard {
+  return {
+    ...row,
+    limit: Number(row.limit || 0),
+    used: Number(row.used || 0),
+    due_day: Number(row.due_day || 1),
+    closing_day: Number(row.closing_day || 1),
+  } as CreditCard;
+}
+
+function normalizeInstallment(row: any): CardInstallment {
+  return {
+    ...row,
+    description: row.description || row.descricao || 'Parcelamento',
+    total_amount: Number(row.total_amount ?? row.valor_total ?? 0),
+    monthly_amount: Number(row.monthly_amount ?? row.valor_mensal ?? 0),
+    current_installment: Number(row.current_installment ?? row.parcela_atual ?? 1),
+    total_installments: Number(row.total_installments ?? row.total_parcelas ?? 1),
+    due_day: Number(row.due_day ?? 1),
+  } as CardInstallment;
+}
+
+function normalizeFixedBill(row: any): FixedBill {
+  return { ...row, amount: Number(row.amount || 0), due_day: Number(row.due_day || 1) } as FixedBill;
+}
+
 function MobileHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <header className="mf-mobile-page-header">
@@ -79,9 +126,48 @@ function MobileHeader({ title, subtitle }: { title: string; subtitle?: string })
   );
 }
 
+function SafeToSpendCard({ summary }: { summary: FinanceSummary }) {
+  const commitments = Math.max(0, summary.currentBalance - summary.projectedBalance);
+  const tone = summary.projectedBalance < 0 ? 'danger' : summary.smartAlert?.type || 'success';
+
+  return (
+    <section className="mf-mobile-safe-card" data-tone={tone}>
+      <div className="mf-mobile-safe-card__head">
+        <div>
+          <span><ShieldCheck size={15} /> Disponível de verdade</span>
+          <small>Depois dos compromissos cadastrados deste ciclo</small>
+        </div>
+        <div className="mf-mobile-safe-card__status"><Gauge size={18} /></div>
+      </div>
+
+      <strong className="mf-mobile-safe-card__value">{formatCurrency(summary.projectedBalance)}</strong>
+
+      <div className="mf-mobile-safe-card__metrics">
+        <div>
+          <small>Pode gastar por dia</small>
+          <b>{formatCurrency(summary.dailyLimit)}</b>
+        </div>
+        <div>
+          <small>Compromissos reservados</small>
+          <b>{formatCurrency(commitments)}</b>
+        </div>
+      </div>
+
+      <div className="mf-mobile-safe-card__foot">
+        <span>Próximo recebimento: {summary.nextPaydayLabel}</span>
+        <span>{summary.daysRemaining} {summary.daysRemaining === 1 ? 'dia restante' : 'dias restantes'}</span>
+      </div>
+
+      {summary.smartAlert?.message ? (
+        <p className="mf-mobile-safe-card__insight">{summary.smartAlert.message}</p>
+      ) : null}
+    </section>
+  );
+}
+
 function HomePage({ data }: { data: MobileData }) {
   const navigate = useNavigate();
-  const balance = data.accounts.reduce((sum, account) => sum + account.current_balance, 0);
+  const balance = data.summary?.currentBalance ?? data.accounts.reduce((sum, account) => sum + account.current_balance, 0);
   const monthExpense = data.monthTransactions
     .filter((item) => item.type === 'expense' && !['pending', 'duplicate', 'error'].includes(String(item.status || 'paid')))
     .reduce((sum, item) => sum + Math.abs(item.amount), 0);
@@ -95,13 +181,15 @@ function HomePage({ data }: { data: MobileData }) {
       <MobileHeader title={firstName ? `Olá, ${firstName}` : 'Seu dinheiro hoje'} subtitle={format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })} />
 
       <section className="mf-mobile-balance-card">
-        <span>Saldo disponível</span>
+        <span>Saldo em contas</span>
         <strong>{formatCurrency(balance)}</strong>
         <div className="mf-mobile-balance-meta">
           <div><small>Entradas no mês</small><b>{formatCurrency(monthIncome)}</b></div>
           <div><small>Saídas no mês</small><b>{formatCurrency(monthExpense)}</b></div>
         </div>
       </section>
+
+      {data.summary ? <SafeToSpendCard summary={data.summary} /> : null}
 
       <section className="mf-mobile-quick-actions" aria-label="Ações rápidas">
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.quick)}><ReceiptText size={20} /><span>Lançar</span></button>
@@ -201,29 +289,82 @@ export default function MobileApp({ user }: { user: User }) {
     try {
       const ensured = await supabase.rpc('mf_ensure_financial_structure');
       if (ensured.error) throw ensured.error;
-      const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
-      const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
-      const [settingsResult, accountsResult, categoriesResult, cardsResult, recentResult, monthResult, pendingResult] = await Promise.all([
+
+      const now = new Date();
+      const monthStart = format(startOfMonth(now), 'yyyy-MM-dd');
+      const monthEnd = format(endOfMonth(now), 'yyyy-MM-dd');
+      const cycleHistoryStart = format(subMonths(startOfMonth(now), 2), 'yyyy-MM-dd');
+      const today = format(now, 'yyyy-MM-dd');
+
+      const [
+        settingsResult,
+        accountsResult,
+        categoriesResult,
+        cardsResult,
+        installmentsResult,
+        fixedBillsResult,
+        recentResult,
+        monthResult,
+        cycleResult,
+        pendingResult,
+      ] = await Promise.all([
         supabase.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('mf_account_balances').select('*').eq('user_id', user.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at'),
         supabase.from('mf_transaction_categories').select('*').eq('user_id', user.id).eq('is_active', true).order('sort_order').order('name'),
         supabase.from('mf_credit_cards').select('*').eq('user_id', user.id).order('name'),
+        supabase.from('mf_card_installments').select('*').eq('user_id', user.id),
+        supabase.from('mf_fixed_bills').select('*').eq('user_id', user.id),
         supabase.from('mf_finance_ledger_entries').select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance').eq('user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(24),
         supabase.from('mf_finance_ledger_entries').select('id,user_id,amount,category,description,date,type,status,affects_balance').eq('user_id', user.id).gte('date', monthStart).lte('date', monthEnd),
+        supabase.from('mf_finance_ledger_entries').select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance').eq('user_id', user.id).gte('date', cycleHistoryStart).lte('date', today).order('date', { ascending: false }),
         supabase.from('mf_finance_ledger_entries').select('id,description,amount,due_date,category').eq('user_id', user.id).eq('status', 'pending').order('due_date', { ascending: true, nullsFirst: false }).limit(6),
       ]);
 
-      const firstError = settingsResult.error || accountsResult.error || categoriesResult.error || cardsResult.error || recentResult.error || monthResult.error || pendingResult.error;
+      const firstError = settingsResult.error
+        || accountsResult.error
+        || categoriesResult.error
+        || cardsResult.error
+        || installmentsResult.error
+        || fixedBillsResult.error
+        || recentResult.error
+        || monthResult.error
+        || cycleResult.error
+        || pendingResult.error;
       if (firstError) throw firstError;
 
+      const accounts = (accountsResult.data || []).map(normalizeAccount);
+      const cards = (cardsResult.data || []).map(normalizeCard);
+      const installments = (installmentsResult.data || []).map(normalizeInstallment);
+      const fixedBills = (fixedBillsResult.data || []).map(normalizeFixedBill);
+      const recent = (recentResult.data || []).map(normalizeTransaction);
+      const monthTransactions = (monthResult.data || []).map(normalizeTransaction);
+      const cycleTransactions = (cycleResult.data || []).map(normalizeTransaction);
+      const derivedBalance = accounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
+      const settings = settingsResult.data
+        ? ({ ...settingsResult.data, current_balance: derivedBalance } as UserSettings)
+        : null;
+
+      let summary: FinanceSummary | null = null;
+      if (settings) {
+        try {
+          summary = calculateFinanceSummary(cycleTransactions, settings, fixedBills, cards, installments, now);
+        } catch (summaryError) {
+          console.warn('MF Mobile summary calculation failed:', summaryError);
+        }
+      }
+
       setData({
-        settings: settingsResult.data as UserSettings | null,
-        accounts: (accountsResult.data || []).map(normalizeAccount),
+        settings,
+        accounts,
         categories: (categoriesResult.data || []) as TransactionCategory[],
-        cards: (cardsResult.data || []).map((row: any) => ({ ...row, limit: Number(row.limit || 0), used: Number(row.used || 0), due_day: Number(row.due_day || 1), closing_day: Number(row.closing_day || 1) })) as CreditCard[],
-        recent: (recentResult.data || []).map(normalizeTransaction),
-        monthTransactions: (monthResult.data || []).map(normalizeTransaction),
+        cards,
+        installments,
+        fixedBills,
+        recent,
+        monthTransactions,
+        cycleTransactions,
         pending: (pendingResult.data || []).map((row: any) => ({ ...row, amount: Number(row.amount || 0) })) as PendingItem[],
+        summary,
       });
     } catch (loadError: any) {
       setError(loadError?.message || 'Não foi possível carregar o MF Mobile.');
