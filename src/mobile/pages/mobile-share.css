@@ -1,0 +1,95 @@
+.mf-mobile-share-state,
+.mf-mobile-share-picker {
+  min-height: 100dvh;
+  background: #050505;
+  color: #f7fbff;
+  padding: max(28px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+
+.mf-mobile-share-state {
+  align-items: center;
+  text-align: center;
+}
+
+.mf-mobile-share-state > strong {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.mf-mobile-share-state > span,
+.mf-mobile-share-picker header p {
+  color: rgba(235, 246, 255, 0.62);
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 420px;
+}
+
+.mf-mobile-share-state .mf-mobile-primary-button,
+.mf-mobile-share-picker .mf-mobile-primary-button,
+.mf-mobile-share-picker .mf-mobile-secondary-button {
+  width: 100%;
+  max-width: 440px;
+}
+
+.mf-mobile-share-picker {
+  justify-content: flex-start;
+}
+
+.mf-mobile-share-picker header {
+  padding-top: 18px;
+}
+
+.mf-mobile-share-picker header h1 {
+  margin: 7px 0 8px;
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.mf-mobile-share-files {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 6px;
+}
+
+.mf-mobile-share-files button {
+  min-height: 64px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+  text-align: left;
+}
+
+.mf-mobile-share-files button[data-active='true'] {
+  border-color: rgba(0, 242, 255, 0.55);
+  background: rgba(0, 242, 255, 0.08);
+}
+
+.mf-mobile-share-files button > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mf-mobile-share-files strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.mf-mobile-share-files small {
+  margin-top: 3px;
+  color: rgba(235, 246, 255, 0.48);
+  font-size: 11px;
+}
