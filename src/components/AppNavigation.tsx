@@ -32,7 +32,7 @@ type NavigationItem = {
 };
 
 type InvestmentSection = 'portfolio' | 'income' | 'planning';
-type ToolGroup = 'movements' | 'investments' | 'planning' | 'analysis';
+type ToolGroup = 'movements' | 'investments' | 'planning' | 'analysis' | 'agenda';
 
 const movementItems: NavigationItem[] = [
   { to: '/app/movimentacoes', label: 'Movimentações', icon: Receipt, end: true },
@@ -44,9 +44,16 @@ const planningItems: NavigationItem[] = [
   { to: '/app/planejamento', label: 'Visão do mês', icon: CalendarDays, end: true },
   { to: '/app/planejamento/contas', label: 'Contas financeiras', icon: CircleDollarSign },
   { to: '/app/planejamento/cartoes', label: 'Cartões e parcelas', icon: CreditCard },
-  { to: '/app/planejamento/compromissos', label: 'Compromissos recorrentes', icon: ListChecks },
-  { to: '/app/planejamento/receitas', label: 'Receitas previstas', icon: FileText },
   { to: '/app/planejamento/orcamento', label: 'Orçamento', icon: Target },
+  { to: '/app/planejamento/metas', label: 'Metas financeiras', icon: Target },
+  { to: '/app/planejamento/projecoes', label: 'Projeções e cenários', icon: TrendingUp },
+];
+
+const agendaItems: NavigationItem[] = [
+  { to: '/app/agenda', label: 'Calendário', icon: CalendarDays, end: true },
+  { to: '/app/agenda/contas-fixas', label: 'Contas fixas', icon: ListChecks },
+  { to: '/app/agenda/assinaturas', label: 'Assinaturas', icon: Receipt },
+  { to: '/app/agenda/receitas', label: 'Receitas previstas', icon: FileText },
 ];
 
 const investmentItems: Array<{
@@ -63,7 +70,6 @@ const analysisItems: NavigationItem[] = [
   { to: '/app/analises/resumo', label: 'Visão geral', icon: BarChart3 },
   { to: '/app/analises/insights', label: 'Insights', icon: Lightbulb },
   { to: '/app/analises/saude', label: 'Saúde financeira', icon: HeartPulse },
-  { to: '/app/analises/metas', label: 'Metas', icon: Target },
 ];
 
 function NavigationLink({ item, compact = false }: { item: NavigationItem; compact?: boolean }) {
@@ -151,6 +157,7 @@ function ToolHeader({
 function groupForPath(pathname: string): ToolGroup | null {
   if (pathname.startsWith('/app/movimentacoes')) return 'movements';
   if (pathname.startsWith('/app/investimentos') || pathname.startsWith('/app/planejamento/investimentos')) return 'investments';
+  if (pathname.startsWith('/app/agenda')) return 'agenda';
   if (pathname.startsWith('/app/planejamento')) return 'planning';
   if (pathname.startsWith('/app/analises')) return 'analysis';
   return null;
@@ -186,84 +193,43 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
         <NavigationLink item={{ to: '/app', label: 'Início', icon: LayoutDashboard, end: true }} />
 
         <section className="mf-side-tool" aria-label="Movimentações">
-          <ToolHeader
-            to="/app/movimentacoes"
-            label="Movimentações"
-            icon={Receipt}
-            active={activeGroup === 'movements'}
-            expanded={expandedGroup === 'movements'}
-            onToggle={() => toggleGroup('movements')}
-          />
-          {expandedGroup === 'movements' && (
-            <div className="mf-side-primary-children">
-              {movementItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}
-            </div>
-          )}
+          <ToolHeader to="/app/movimentacoes" label="Movimentações" icon={Receipt} active={activeGroup === 'movements'} expanded={expandedGroup === 'movements'} onToggle={() => toggleGroup('movements')} />
+          {expandedGroup === 'movements' && <div className="mf-side-primary-children">{movementItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
 
         <section className="mf-side-tool" aria-label="Investimentos">
-          <ToolHeader
-            to="/app/investimentos"
-            label="Investimentos"
-            icon={Landmark}
-            active={activeGroup === 'investments'}
-            expanded={expandedGroup === 'investments'}
-            onToggle={() => toggleGroup('investments')}
-          />
+          <ToolHeader to="/app/investimentos" label="Investimentos" icon={Landmark} active={activeGroup === 'investments'} expanded={expandedGroup === 'investments'} onToggle={() => toggleGroup('investments')} />
           {expandedGroup === 'investments' && (
             <div className="mf-side-primary-children">
-              {investmentItems.map((item) => (
-                <InvestmentSectionLink
-                  key={item.section}
-                  section={item.section}
-                  label={item.label}
-                  icon={item.icon}
-                  activeSection={investmentSection}
-                />
-              ))}
+              {investmentItems.map((item) => <InvestmentSectionLink key={item.section} section={item.section} label={item.label} icon={item.icon} activeSection={investmentSection} />)}
             </div>
           )}
         </section>
 
         <section className="mf-side-tool" aria-label="Planejamento">
-          <ToolHeader
-            to="/app/planejamento"
-            label="Planejamento"
-            icon={Wallet}
-            active={activeGroup === 'planning'}
-            expanded={expandedGroup === 'planning'}
-            onToggle={() => toggleGroup('planning')}
-          />
-          {expandedGroup === 'planning' && (
-            <div className="mf-side-primary-children">
-              {planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}
-            </div>
-          )}
+          <ToolHeader to="/app/planejamento" label="Planejamento" icon={Wallet} active={activeGroup === 'planning'} expanded={expandedGroup === 'planning'} onToggle={() => toggleGroup('planning')} />
+          {expandedGroup === 'planning' && <div className="mf-side-primary-children">{planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
 
         <section className="mf-side-tool" aria-label="Análises">
-          <ToolHeader
-            to="/app/analises/resumo"
-            label="Análises"
-            icon={BarChart3}
-            active={activeGroup === 'analysis'}
-            expanded={expandedGroup === 'analysis'}
-            onToggle={() => toggleGroup('analysis')}
-          />
-          {expandedGroup === 'analysis' && (
-            <div className="mf-side-primary-children">
-              {analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}
-            </div>
-          )}
+          <ToolHeader to="/app/analises/resumo" label="Análises" icon={BarChart3} active={activeGroup === 'analysis'} expanded={expandedGroup === 'analysis'} onToggle={() => toggleGroup('analysis')} />
+          {expandedGroup === 'analysis' && <div className="mf-side-primary-children">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
       </nav>
 
       <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
+      <div className="mf-side-context">
+        <section className="mf-side-tool" aria-label="Agenda Financeira">
+          <ToolHeader to="/app/agenda" label="Agenda Financeira" icon={CalendarDays} active={activeGroup === 'agenda'} expanded={expandedGroup === 'agenda'} onToggle={() => toggleGroup('agenda')} />
+          {expandedGroup === 'agenda' && <div className="mf-side-primary-children">{agendaItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
+        </section>
+      </div>
+
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
         <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
         <NavLink to="/app/integracoes" className="mf-side-shortcut" title="Integrações" aria-label="Conexões e automações"><Bot size={14} aria-hidden="true" /></NavLink>
-        <NavLink to="/app/planejamento" className="mf-side-shortcut" title="Visão do mês" aria-label="Visão do mês"><CalendarDays size={14} aria-hidden="true" /></NavLink>
+        <NavLink to="/app/agenda" className="mf-side-shortcut" title="Agenda Financeira" aria-label="Agenda Financeira"><CalendarDays size={14} aria-hidden="true" /></NavLink>
       </nav>
       <NavLink to="/app/preferencias" className="mf-side-settings"><Settings size={13} aria-hidden="true" />Preferências</NavLink>
     </aside>
