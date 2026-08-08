@@ -6,7 +6,9 @@ import { Navigate, useLocation } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
 import Dashboard from './Dashboard';
+import IntegrationTool from './IntegrationTool';
 import InvestmentTool from './InvestmentTool';
+import PlanningTool from './PlanningTool';
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -24,8 +26,12 @@ export default function DashboardBootstrap({
   const [retryKey, setRetryKey] = useState(0);
 
   const legacyInvestmentRoute = location.pathname.startsWith('/app/planejamento/investimentos');
+  const legacyAutomationRoute = location.pathname.startsWith('/app/planejamento/automacoes');
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
-  const planningRoute = location.pathname.startsWith('/app/planejamento') && !legacyInvestmentRoute;
+  const integrationRoute = location.pathname.startsWith('/app/integracoes');
+  const planningRoute = location.pathname.startsWith('/app/planejamento')
+    && !legacyInvestmentRoute
+    && !legacyAutomationRoute;
 
   useEffect(() => {
     let active = true;
@@ -37,7 +43,7 @@ export default function DashboardBootstrap({
       try {
         // During an OAuth/token transition, auth.uid() can be unavailable for a
         // very short period. Wait until Supabase confirms the same authenticated
-        // user before allowing the Dashboard to query RLS-protected tables.
+        // user before allowing the app to query RLS-protected tables.
         for (let attempt = 0; attempt < 6; attempt += 1) {
           const { data: authData, error: authError } = await supabase.auth.getUser();
           if (authError) throw authError;
@@ -96,16 +102,15 @@ export default function DashboardBootstrap({
     );
   }
 
+  if (legacyAutomationRoute) {
+    return <Navigate to="/app/integracoes" replace />;
+  }
+
   if (ready) {
     if (investmentRoute) return <InvestmentTool user={user} />;
-    return (
-      <>
-        {planningRoute && (
-          <style>{'.mf-content .mf-tab-shell > .mf-subnav button:nth-child(5){display:none!important}'}</style>
-        )}
-        <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />
-      </>
-    );
+    if (integrationRoute) return <IntegrationTool user={user} />;
+    if (planningRoute) return <PlanningTool user={user} />;
+    return <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />;
   }
 
   return (
