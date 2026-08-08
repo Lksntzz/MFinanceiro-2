@@ -61,6 +61,8 @@ Target compact breakpoint: 820px and below.
 
 The compact experience can explicitly open the full desktop interface for the current session when the user needs an advanced tool.
 
+The concurrent product-cleanup branch also changes `DashboardBootstrap.tsx`. Mobile work must avoid adding more changes to that file until integration, then reconcile the single mobile/desktop boundary deliberately after the product-cleanup branch is resolved.
+
 ## Initial mobile navigation
 
 - Início
@@ -203,6 +205,7 @@ Before merging a mobile change:
 4. Mobile checks at 320, 360, 390, 412 and 430 px.
 5. Verify keyboard-open states, scroll, safe areas and installed-PWA mode.
 6. Confirm no unrelated desktop files were modified unless the change is explicitly CORE.
+7. Reconcile the shared `DashboardBootstrap.tsx` boundary with concurrent desktop/product-cleanup work before merge.
 
 A branch-only GitHub Actions workflow validates `npm ci`, `npm run lint` and `npm run build` while Vercel preview builds are rate-limited.
 
