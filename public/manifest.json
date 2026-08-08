@@ -3,6 +3,7 @@
   "short_name": "MF Financeiro",
   "description": "Seu controle financeiro inteligente de ponta a ponta.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#050505",
   "theme_color": "#071221",
@@ -18,6 +19,20 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Novo lançamento",
+      "short_name": "Lançar",
+      "description": "Abrir o MF Quick para registrar uma despesa ou receita.",
+      "url": "/quick"
+    },
+    {
+      "name": "Escanear conta",
+      "short_name": "MF Scan",
+      "description": "Abrir a captura de boletos, Pix e documentos financeiros.",
+      "url": "/scan"
     }
   ]
 }
