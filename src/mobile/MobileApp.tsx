@@ -6,6 +6,7 @@ import {
   CreditCard as CreditCardIcon,
   ExternalLink,
   Gauge,
+  Inbox,
   Loader2,
   ReceiptText,
   ScanLine,
@@ -34,6 +35,7 @@ import MobileAppShell from './MobileAppShell';
 import { MOBILE_ROUTES } from './routes';
 import { openDesktopExperience } from './useMobileExperience';
 import MobileCanISpend from './pages/MobileCanISpend';
+import MobileInbox from './pages/MobileInbox';
 import MobileQuickAdd from './pages/MobileQuickAdd';
 import MobileScan from './pages/MobileScan';
 import './mobile.css';
@@ -145,14 +147,8 @@ function SafeToSpendCard({ summary }: { summary: FinanceSummary }) {
       <strong className="mf-mobile-safe-card__value">{formatCurrency(summary.projectedBalance)}</strong>
 
       <div className="mf-mobile-safe-card__metrics">
-        <div>
-          <small>Pode gastar por dia</small>
-          <b>{formatCurrency(summary.dailyLimit)}</b>
-        </div>
-        <div>
-          <small>Compromissos reservados</small>
-          <b>{formatCurrency(commitments)}</b>
-        </div>
+        <div><small>Pode gastar por dia</small><b>{formatCurrency(summary.dailyLimit)}</b></div>
+        <div><small>Compromissos reservados</small><b>{formatCurrency(commitments)}</b></div>
       </div>
 
       <div className="mf-mobile-safe-card__foot">
@@ -160,15 +156,36 @@ function SafeToSpendCard({ summary }: { summary: FinanceSummary }) {
         <span>{summary.daysRemaining} {summary.daysRemaining === 1 ? 'dia restante' : 'dias restantes'}</span>
       </div>
 
-      {summary.smartAlert?.message ? (
-        <p className="mf-mobile-safe-card__insight">{summary.smartAlert.message}</p>
-      ) : null}
+      {summary.smartAlert?.message ? <p className="mf-mobile-safe-card__insight">{summary.smartAlert.message}</p> : null}
 
       <button type="button" className="mf-mobile-safe-card__simulate" onClick={() => navigate(MOBILE_ROUTES.canSpend)}>
-        Simular uma compra
-        <ChevronRight size={15} />
+        Simular uma compra <ChevronRight size={15} />
       </button>
     </section>
+  );
+}
+
+function TransactionList({ transactions }: { transactions: Transaction[] }) {
+  if (!transactions.length) {
+    return <div className="mf-mobile-list-card"><div className="mf-mobile-empty">Ainda não há movimentações para mostrar.</div></div>;
+  }
+
+  return (
+    <div className="mf-mobile-list-card">
+      {transactions.map((item) => {
+        const income = item.type === 'income';
+        return (
+          <div className="mf-mobile-row" key={item.id}>
+            <div className="mf-mobile-row-icon" data-kind={income ? 'income' : 'expense'}>{income ? '+' : '−'}</div>
+            <div className="mf-mobile-row-main">
+              <strong>{item.description || item.category || 'Movimentação'}</strong>
+              <small>{item.category || 'Geral'} • {new Date(`${item.date.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')}</small>
+            </div>
+            <b className={income ? 'mf-mobile-positive' : ''}>{income ? '+' : '−'} {formatCurrency(Math.abs(item.amount))}</b>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -210,7 +227,10 @@ function HomePage({ data }: { data: MobileData }) {
           {data.pending.length ? data.pending.slice(0, 3).map((item) => (
             <div className="mf-mobile-row" key={item.id}>
               <div className="mf-mobile-row-icon"><ReceiptText size={17} /></div>
-              <div className="mf-mobile-row-main"><strong>{item.description || item.category || 'Compromisso'}</strong><small>{item.due_date ? `Vence ${new Date(`${item.due_date}T12:00:00`).toLocaleDateString('pt-BR')}` : 'Data a confirmar'}</small></div>
+              <div className="mf-mobile-row-main">
+                <strong>{item.description || item.category || 'Compromisso'}</strong>
+                <small>{item.due_date ? `Vence ${new Date(`${item.due_date}T12:00:00`).toLocaleDateString('pt-BR')}` : 'Data a confirmar'}</small>
+              </div>
               <b>{formatCurrency(Math.abs(item.amount))}</b>
             </div>
           )) : <div className="mf-mobile-empty">Nenhum compromisso pendente próximo.</div>}
@@ -218,27 +238,12 @@ function HomePage({ data }: { data: MobileData }) {
       </section>
 
       <section className="mf-mobile-section">
-        <div className="mf-mobile-section-title"><div><span>Últimas movimentações</span><small>Seu dia a dia</small></div><button type="button" onClick={() => navigate(MOBILE_ROUTES.transactions)}>Ver todas <ChevronRight size={14} /></button></div>
+        <div className="mf-mobile-section-title">
+          <div><span>Últimas movimentações</span><small>Seu dia a dia</small></div>
+          <button type="button" onClick={() => navigate(MOBILE_ROUTES.transactions)}>Ver todas <ChevronRight size={14} /></button>
+        </div>
         <TransactionList transactions={data.recent.slice(0, 5)} />
       </section>
-    </div>
-  );
-}
-
-function TransactionList({ transactions }: { transactions: Transaction[] }) {
-  if (!transactions.length) return <div className="mf-mobile-list-card"><div className="mf-mobile-empty">Ainda não há movimentações para mostrar.</div></div>;
-  return (
-    <div className="mf-mobile-list-card">
-      {transactions.map((item) => {
-        const income = item.type === 'income';
-        return (
-          <div className="mf-mobile-row" key={item.id}>
-            <div className="mf-mobile-row-icon" data-kind={income ? 'income' : 'expense'}>{income ? '+' : '−'}</div>
-            <div className="mf-mobile-row-main"><strong>{item.description || item.category || 'Movimentação'}</strong><small>{item.category || 'Geral'} • {new Date(`${item.date.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')}</small></div>
-            <b className={income ? 'mf-mobile-positive' : ''}>{income ? '+' : '−'} {formatCurrency(Math.abs(item.amount))}</b>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -276,6 +281,7 @@ function MorePage() {
     <div className="mf-mobile-page">
       <MobileHeader title="Mais" subtitle="Poucas ferramentas, só as que ajudam no celular" />
       <div className="mf-mobile-menu-list">
+        <button type="button" onClick={() => navigate(MOBILE_ROUTES.inbox)}><span className="mf-mobile-menu-icon"><Inbox size={19} /></span><div><strong>MF Inbox</strong><small>Revisar extratos e lançamentos extraídos</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.scan)}><span className="mf-mobile-menu-icon"><Camera size={19} /></span><div><strong>MF Scan</strong><small>Capturar boleto, conta, QR ou documento</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.quick)}><span className="mf-mobile-menu-icon"><Sparkles size={19} /></span><div><strong>MF Quick</strong><small>Lançamento rápido em poucos toques</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={openDesktopExperience}><span className="mf-mobile-menu-icon"><ExternalLink size={19} /></span><div><strong>Abrir versão completa</strong><small>Planejamento, análises, importações e ferramentas avançadas</small></div><ChevronRight size={18} /></button>
@@ -347,9 +353,7 @@ export default function MobileApp({ user }: { user: User }) {
       const monthTransactions = (monthResult.data || []).map(normalizeTransaction);
       const cycleTransactions = (cycleResult.data || []).map(normalizeTransaction);
       const derivedBalance = accounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
-      const settings = settingsResult.data
-        ? ({ ...settingsResult.data, current_balance: derivedBalance } as UserSettings)
-        : null;
+      const settings = settingsResult.data ? ({ ...settingsResult.data, current_balance: derivedBalance } as UserSettings) : null;
 
       let summary: FinanceSummary | null = null;
       if (settings) {
@@ -386,6 +390,7 @@ export default function MobileApp({ user }: { user: User }) {
     const path = location.pathname.replace(/\/+$/, '') || '/app';
     if (path === MOBILE_ROUTES.quick) return 'quick';
     if (path === MOBILE_ROUTES.scan) return 'scan';
+    if (path === MOBILE_ROUTES.inbox) return 'inbox';
     if (path === MOBILE_ROUTES.canSpend) return 'canSpend';
     if (path.startsWith(MOBILE_ROUTES.cards)) return 'cards';
     if (path.startsWith(MOBILE_ROUTES.transactions)) return 'transactions';
@@ -398,6 +403,7 @@ export default function MobileApp({ user }: { user: User }) {
 
   if (page === 'quick') return <MobileQuickAdd userId={user.id} accounts={data.accounts} categories={data.categories} onSaved={refresh} />;
   if (page === 'scan') return <MobileScan userId={user.id} accounts={data.accounts} categories={data.categories} onSaved={refresh} />;
+  if (page === 'inbox') return <MobileInbox userId={user.id} accounts={data.accounts} categories={data.categories} onImported={refresh} />;
   if (page === 'canSpend') {
     if (data.summary) return <MobileCanISpend summary={data.summary} />;
     return <div className="mf-mobile-loading"><strong>Simulação indisponível</strong><span>Complete suas configurações financeiras para calcular o impacto de uma compra.</span><button type="button" className="mf-mobile-primary-button" onClick={() => navigate(MOBILE_ROUTES.home)}>Voltar para o início</button></div>;
