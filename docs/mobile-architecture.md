@@ -207,7 +207,7 @@ Before merging a mobile change:
 6. Confirm no unrelated desktop files were modified unless the change is explicitly CORE.
 7. Reconcile the shared `DashboardBootstrap.tsx` boundary with concurrent desktop/product-cleanup work before merge.
 
-A branch-only GitHub Actions workflow validates `npm ci`, `npm run lint` and `npm run build` while Vercel preview builds are rate-limited.
+A branch-only GitHub Actions workflow validates `npm ci`, `npm run lint` and `npm run build`. Vercel preview deployment for the mobile branch is also required before merge.
 
 ## Implementation phases
 
