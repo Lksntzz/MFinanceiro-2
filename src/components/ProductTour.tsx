@@ -15,12 +15,18 @@ const t = (id: string, label: string, steps: TourStep[]): TourDefinition => ({ i
 
 function resolveTour(pathname: string): TourDefinition | null {
   const path = pathname.replace(/\/+$/, '') || '/app';
-  if (path === '/app') return t('home-v2', 'Início', [
-    { id: 'welcome', title: 'Bem-vindo ao MF Financeiro', description: 'Em poucos passos, conheça os pontos essenciais do seu painel financeiro.' },
-    s('balance', 'Seu saldo em destaque', 'Acompanhe o saldo consolidado das suas contas e calibre quando necessário.', ['.mf-kpi-grid .mf-kpi:first-child']),
-    s('launch', 'Registre entradas e saídas', 'Use Lançar para registrar movimentações rapidamente.', ['.mf-side-launch', '.mf-top-actions .primary']),
-    s('indicators', 'Acompanhe seu ritmo financeiro', 'Limite, ciclo atual e gasto de hoje ajudam a entender seu ritmo no período.', ['.mf-kpi-grid']),
-    s('navigation', 'Explore suas ferramentas', 'Movimentações, Investimentos, Planejamento, Análises e Agenda ficam na navegação principal.', NAV),
+  if (path === '/app') return t('home-v3', 'Início', [
+    { id: 'welcome', title: 'Bem-vindo ao MF Financeiro', description: 'Vamos passar pelos principais blocos da sua visão financeira, cada um com uma função diferente.' },
+    s('balance', 'Saldo atual', 'Aqui você acompanha o saldo consolidado das suas contas. Este é o ponto de partida para entender sua posição financeira hoje.', ['.mf-kpi-grid .mf-kpi:nth-child(1)']),
+    s('limit', 'Seu limite financeiro', 'Este valor mostra quanto você pode gastar dentro do seu planejamento sem comprometer o equilíbrio do período.', ['.mf-kpi-grid .mf-kpi:nth-child(2)']),
+    s('cycle', 'Ciclo atual', 'Veja em qual período financeiro você está e quantos dias ainda faltam para o fechamento do ciclo.', ['.mf-kpi-grid .mf-kpi:nth-child(3)']),
+    s('today', 'Gasto de hoje', 'Acompanhe quanto já saiu hoje e compare rapidamente com o limite disponível.', ['.mf-kpi-grid .mf-kpi:nth-child(4)']),
+    s('status', 'Status do ciclo', 'Este alerta resume como o seu ciclo está se comportando e chama atenção para situações que merecem acompanhamento.', ['.mf-alert-grid .mf-alert:nth-child(1)']),
+    s('insight', 'Insight financeiro', 'Aqui o MF Financeiro transforma seus dados em uma leitura rápida para ajudar você a perceber tendências e tomar decisões.', ['.mf-alert-grid .mf-alert:nth-child(2)']),
+    s('evolution', 'Evolução do saldo', 'Este gráfico mostra como seu saldo mudou ao longo do tempo, para você enxergar a direção da sua vida financeira.', ['.mf-dashboard-grid > .mf-chart-card:nth-of-type(1)', '.mf-dashboard-grid .mf-chart-card:nth-child(3)']),
+    s('rhythm', 'Ritmo de gastos', 'Compare entradas e saídas por dia, semana ou mês e entenda a velocidade com que o dinheiro está entrando e saindo.', ['.mf-dashboard-grid > .mf-chart-card:nth-of-type(2)', '.mf-dashboard-grid .mf-chart-card:nth-child(4)']),
+    s('launch', 'Registre entradas e saídas', 'Use Lançar sempre que quiser registrar uma nova movimentação manualmente.', ['.mf-side-launch', '.mf-top-actions .primary']),
+    s('navigation', 'Explore suas ferramentas', 'Movimentações, Investimentos, Planejamento, Análises e Agenda ficam organizados na navegação principal.', NAV),
   ]);
   if (path === '/app/movimentacoes') return t('movements-v1', 'Movimentações', [
     s('intro', 'Suas movimentações', 'Aqui fica o histórico central de entradas e saídas do MF Financeiro.'),
