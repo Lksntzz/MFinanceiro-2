@@ -6,8 +6,10 @@ import { Navigate, useLocation } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
 import Dashboard from './Dashboard';
+import FinancialAgendaTool from './FinancialAgendaTool';
 import IntegrationTool from './IntegrationTool';
 import InvestmentTool from './InvestmentTool';
+import PlanningStrategyTool from './PlanningStrategyTool';
 import PlanningTool from './PlanningTool';
 
 const wait = (milliseconds: number) =>
@@ -27,11 +29,28 @@ export default function DashboardBootstrap({
 
   const legacyInvestmentRoute = location.pathname.startsWith('/app/planejamento/investimentos');
   const legacyAutomationRoute = location.pathname.startsWith('/app/planejamento/automacoes');
+  const legacyGoalsRoute = location.pathname.startsWith('/app/analises/metas');
+  const legacyFixedRoute = location.pathname.startsWith('/app/planejamento/contas-fixas');
+  const legacySubscriptionsRoute = location.pathname.startsWith('/app/planejamento/assinaturas');
+  const legacyCommitmentsRoute = location.pathname.startsWith('/app/planejamento/compromissos');
+  const legacyIncomeRoute = location.pathname.startsWith('/app/planejamento/receitas')
+    || location.pathname.startsWith('/app/planejamento/renda');
+  const legacyCalendarRoute = location.pathname.startsWith('/app/planejamento/calendario');
+
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
+  const agendaRoute = location.pathname.startsWith('/app/agenda');
+  const planningStrategyRoute = location.pathname.startsWith('/app/planejamento/metas')
+    || location.pathname.startsWith('/app/planejamento/projecoes');
   const planningRoute = location.pathname.startsWith('/app/planejamento')
     && !legacyInvestmentRoute
-    && !legacyAutomationRoute;
+    && !legacyAutomationRoute
+    && !legacyFixedRoute
+    && !legacySubscriptionsRoute
+    && !legacyCommitmentsRoute
+    && !legacyIncomeRoute
+    && !legacyCalendarRoute
+    && !planningStrategyRoute;
 
   useEffect(() => {
     let active = true;
@@ -94,21 +113,43 @@ export default function DashboardBootstrap({
   }, [user.id, retryKey]);
 
   if (legacyInvestmentRoute) {
-    return (
-      <Navigate
-        to={{ pathname: '/app/investimentos', search: location.search }}
-        replace
-      />
-    );
+    return <Navigate to={{ pathname: '/app/investimentos', search: location.search }} replace />;
   }
 
   if (legacyAutomationRoute) {
     return <Navigate to="/app/integracoes" replace />;
   }
 
+  if (legacyGoalsRoute) {
+    return <Navigate to="/app/planejamento/metas" replace />;
+  }
+
+  if (legacyFixedRoute) {
+    return <Navigate to="/app/agenda/contas-fixas" replace />;
+  }
+
+  if (legacySubscriptionsRoute) {
+    return <Navigate to="/app/agenda/assinaturas" replace />;
+  }
+
+  if (legacyCommitmentsRoute) {
+    const requestedKind = new URLSearchParams(location.search).get('tipo');
+    return <Navigate to={requestedKind === 'assinaturas' ? '/app/agenda/assinaturas' : '/app/agenda/contas-fixas'} replace />;
+  }
+
+  if (legacyIncomeRoute) {
+    return <Navigate to="/app/agenda/receitas" replace />;
+  }
+
+  if (legacyCalendarRoute) {
+    return <Navigate to="/app/agenda" replace />;
+  }
+
   if (ready) {
     if (investmentRoute) return <InvestmentTool user={user} />;
     if (integrationRoute) return <IntegrationTool user={user} />;
+    if (agendaRoute) return <FinancialAgendaTool user={user} />;
+    if (planningStrategyRoute) return <PlanningStrategyTool user={user} />;
     if (planningRoute) return <PlanningTool user={user} />;
     return <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />;
   }
