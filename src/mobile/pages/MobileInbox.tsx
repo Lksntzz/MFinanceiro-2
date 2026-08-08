@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
-import { formatCurrency } from '../../lib/formatters';
 import { supabase } from '../../lib/supabase';
 import type { FinancialAccount, TransactionCategory } from '../../types';
 import { MOBILE_ROUTES } from '../routes';
@@ -76,6 +75,7 @@ type MobileInboxProps = {
 
 const ALLOWED_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const EXTRACTION_SELECT = 'id,user_id,account_id,source_file_path,source_file_name,source_mime_type,source_file_size,source_file_hash,document_type,status,provider,model,document_confidence,result_metadata,error_message,created_at,updated_at';
 
 function parseMoneyInput(value: string) {
   const clean = value.trim().replace(/\s/g, '');
@@ -162,7 +162,7 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     try {
       const { data, error: loadError } = await supabase
         .from('mf_document_extractions')
-        .select('id,user_id,account_id,source_file_path,source_file_name,source_mime_type,source_file_size,source_file_hash,document_type,status,provider,model,document_confidence,result_metadata,error_message,created_at,updated_at')
+        .select(EXTRACTION_SELECT)
         .eq('user_id', userId)
         .eq('document_type', 'statement')
         .in('status', ['uploaded', 'processing', 'reviewing', 'failed'])
@@ -179,8 +179,8 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
 
   useEffect(() => { void refreshQueue(); }, [refreshQueue]);
 
-  async function processExtraction(extraction: InboxExtraction) {
-    if (busy) return;
+  async function processExtraction(extraction: InboxExtraction, force = false) {
+    if (busy && !force) return;
     setBusy(`ocr-${extraction.id}`);
     setError(null);
     setNotice(null);
@@ -190,10 +190,18 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
       });
       if (invokeError) throw invokeError;
       if (data?.error) throw new Error(String(data.error));
+
+      const { data: refreshedExtraction, error: refreshError } = await supabase
+        .from('mf_document_extractions')
+        .select(EXTRACTION_SELECT)
+        .eq('id', extraction.id)
+        .eq('user_id', userId)
+        .single();
+      if (refreshError || !refreshedExtraction) throw refreshError || new Error('O OCR terminou, mas a revisão não pôde ser carregada.');
+
       setNotice('OCR concluído. Revise os lançamentos antes de importar.');
       await refreshQueue();
-      const next = { ...extraction, status: 'reviewing' as const };
-      await openExtraction(next);
+      await openExtraction(refreshedExtraction as InboxExtraction);
     } catch (processError: any) {
       setError(processError?.message || 'Não foi possível analisar o extrato.');
       await refreshQueue();
@@ -243,16 +251,22 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
           status: 'uploaded',
           result_metadata: { uploaded_from: 'MF Inbox Mobile' },
         })
-        .select('*')
+        .select(EXTRACTION_SELECT)
         .single();
       if (insertError || !extraction) throw insertError || new Error('Não foi possível registrar o documento.');
 
       setNotice('Extrato enviado. Iniciando análise segura.');
       await refreshQueue();
-      await processExtraction(extraction as InboxExtraction);
+      await processExtraction(extraction as InboxExtraction, true);
     } catch (uploadError: any) {
       if (uploaded) {
-        await supabase.storage.from('mf-import-documents').remove([objectPath]);
+        const { data: registered } = await supabase
+          .from('mf_document_extractions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('source_file_path', objectPath)
+          .maybeSingle();
+        if (!registered) await supabase.storage.from('mf-import-documents').remove([objectPath]);
       }
       setError(uploadError?.message || 'Não foi possível enviar o extrato.');
     } finally {
@@ -514,7 +528,7 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
               <button type="button" onClick={() => void processExtraction(selected)} disabled={busy === `ocr-${selected.id}`}><RefreshCw size={16} />Processar extrato</button>
             </section>
           ) : selected.status === 'processing' ? (
-            <section className="mf-mobile-inbox-state-card"><Loader2 className="animate-spin" size={27} /><strong>Analisando o extrato</strong><p>Quando o OCR terminar, os lançamentos aparecerão para sua revisão.</p><button type="button" onClick={() => void refreshQueue()}><RefreshCw size={16} />Atualizar fila</button></section>
+            <section className="mf-mobile-inbox-state-card"><Loader2 className="animate-spin" size={27} /><strong>Analisando o extrato</strong><p>Quando o OCR terminar, os lançamentos aparecerão para sua revisão.</p><button type="button" onClick={() => { setSelected(null); void refreshQueue(); }}><RefreshCw size={16} />Atualizar fila</button></section>
           ) : loadingItems ? (
             <section className="mf-mobile-inbox-state-card"><Loader2 className="animate-spin" size={27} /><strong>Carregando revisão</strong></section>
           ) : (
