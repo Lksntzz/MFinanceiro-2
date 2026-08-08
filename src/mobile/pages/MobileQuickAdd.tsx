@@ -16,6 +16,13 @@ type MobileQuickAddProps = {
   onSaved: () => Promise<void> | void;
 };
 
+function parseMoneyInput(value: string) {
+  const clean = value.trim().replace(/\s/g, '');
+  if (!clean) return Number.NaN;
+  if (clean.includes(',')) return Number(clean.replace(/\./g, '').replace(',', '.'));
+  return Number(clean);
+}
+
 export default function MobileQuickAdd({ userId, accounts, categories, onSaved }: MobileQuickAddProps) {
   const navigate = useNavigate();
   const [type, setType] = useState<EntryType>('expense');
@@ -34,7 +41,7 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
 
   const selectedCategory = compatibleCategories.find((item) => item.id === categoryId) || compatibleCategories[0];
   const effectiveCategoryId = selectedCategory?.id || '';
-  const parsedAmount = Number(String(amount).replace(',', '.'));
+  const parsedAmount = parseMoneyInput(amount);
 
   async function saveEntry(event: React.FormEvent) {
     event.preventDefault();
@@ -65,7 +72,7 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
         p_account_id: accountId,
         p_category_id: effectiveCategoryId,
         p_category: selectedCategory.name,
-        p_payment_method: 'pix',
+        p_payment_method: 'unspecified',
         p_status: 'paid',
         p_card_id: null,
         p_installment_count: 1,
