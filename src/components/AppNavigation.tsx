@@ -32,12 +32,11 @@ type NavigationItem = {
 
 type InvestmentSection = 'portfolio' | 'income' | 'planning';
 
-// Investments stays top-level in the primary navigation while the legacy route remains compatible.
 const primaryItems: NavigationItem[] = [
   { to: '/app', label: 'Início', icon: LayoutDashboard, end: true },
   { to: '/app/movimentacoes', label: 'Movimentações', icon: Receipt },
+  { to: '/app/investimentos', label: 'Investimentos', icon: Landmark },
   { to: '/app/planejamento/contas', label: 'Planejamento', icon: Wallet },
-  { to: '/app/planejamento/investimentos', label: 'Investimentos', icon: Landmark },
   { to: '/app/analises/resumo', label: 'Análises', icon: BarChart3 },
 ];
 
@@ -99,7 +98,7 @@ function InvestmentSectionLink({
 
   return (
     <NavLink
-      to={{ pathname: '/app/planejamento/investimentos', search }}
+      to={{ pathname: '/app/investimentos', search }}
       className={`mf-side-item compact ${active ? 'active' : ''}`}
       title={label}
       aria-label={label}
@@ -112,8 +111,9 @@ function InvestmentSectionLink({
 
 export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
   const location = useLocation();
-  const inPlanning = location.pathname.startsWith('/app/planejamento');
-  const inInvestments = location.pathname.startsWith('/app/planejamento/investimentos');
+  const inInvestments = location.pathname.startsWith('/app/investimentos')
+    || location.pathname.startsWith('/app/planejamento/investimentos');
+  const inPlanning = location.pathname.startsWith('/app/planejamento') && !inInvestments;
   const inAnalysis = location.pathname.startsWith('/app/analises');
   const requestedInvestmentSection = new URLSearchParams(location.search).get('section');
   const investmentSection: InvestmentSection = requestedInvestmentSection === 'income'
@@ -164,7 +164,7 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
             <nav className="mf-side-group-items" aria-label="Navegação de análises">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</nav>
           </section>
         )}
-        {!inPlanning && !inAnalysis && <p className="mf-side-context-copy">Visão rápida, histórico e próximos passos.</p>}
+        {!inPlanning && !inInvestments && !inAnalysis && <p className="mf-side-context-copy">Visão rápida, histórico e próximos passos.</p>}
       </div>
 
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
