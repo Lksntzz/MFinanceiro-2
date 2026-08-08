@@ -84,6 +84,8 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
     return () => { active = false; };
   }, [user.id, retryKey]);
 
+  if (ready && mobileExperience && launchRoute) return <Navigate to="/quick" replace />;
+
   if (ready && mobileExperience) {
     return (
       <Suspense fallback={<div className="mf-mobile-loading"><span>Carregando MF Mobile...</span></div>}>
