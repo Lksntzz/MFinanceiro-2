@@ -99,8 +99,8 @@
 .mf-side-settings { min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; color: rgba(255,255,255,.38); font-size: 9px; font-weight: 800; }
 .mf-side-settings:hover, .mf-side-settings.active { color: #fff; background: rgba(255,255,255,.04); }
 
-/* Movimentações já usa a árvore lateral como navegação local. */
-.mf-content.history-active .history-shell > .mf-subnav {
+/* As ferramentas roteadas usam a árvore lateral como navegação local. */
+.mf-content .mf-tab-shell > .mf-subnav {
   display: none;
 }
 
