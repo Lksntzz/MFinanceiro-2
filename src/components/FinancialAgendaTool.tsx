@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { AlertCircle, CalendarDays, Eye, EyeOff, LogOut, Plus, Wallet, X } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router';
+import { AlertCircle, CalendarDays, Eye, EyeOff, LogOut, Plus, X } from 'lucide-react';
+import { useLocation } from 'react-router';
 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
@@ -38,7 +38,6 @@ function sectionFromPath(pathname: string): AgendaSection {
 export default function FinancialAgendaTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
   const location = useLocation();
-  const navigate = useNavigate();
   const section = sectionFromPath(location.pathname);
 
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -100,13 +99,6 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
       <section className="mf-content">
         {loading ? <div className="mf-loading">Carregando agenda financeira...</div> : (
           <div className="mf-tab-shell">
-            <div className="mf-subnav" aria-label="Agenda financeira">
-              <button className={section === 'calendar' ? 'active' : ''} onClick={() => navigate('/app/agenda')}>Calendário</button>
-              <button className={section === 'fixed' ? 'active' : ''} onClick={() => navigate('/app/agenda/contas-fixas')}>Contas fixas</button>
-              <button className={section === 'subscriptions' ? 'active' : ''} onClick={() => navigate('/app/agenda/assinaturas')}>Assinaturas</button>
-              <button className={section === 'income' ? 'active' : ''} onClick={() => navigate('/app/agenda/receitas')}>Receitas previstas</button>
-            </div>
-
             {section === 'calendar' && (
               <div className="space-y-4 animate-fade-in">
                 <div><h2 className="text-xl font-black">Agenda Financeira</h2><p className="text-sm text-white/40">Entradas, vencimentos e compromissos organizados por data.</p></div>
