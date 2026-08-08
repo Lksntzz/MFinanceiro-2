@@ -3,7 +3,13 @@ import { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Auth from './components/Auth';
 import ConfigRequired from './components/ConfigRequired';
-import { fetchMaintenanceConfig, isMaintenanceAdmin, MaintenanceConfig } from './lib/maintenance';
+import {
+  fetchMaintenanceConfig,
+  isMaintenanceAdmin,
+  MAINTENANCE_BROADCAST_EVENT,
+  MAINTENANCE_CHANNEL,
+  MaintenanceConfig,
+} from './lib/maintenance';
 
 const DashboardBootstrap = lazy(() => import('./components/DashboardBootstrap'));
 const MaintenanceScreen = lazy(() => import('./components/MaintenanceScreen'));
@@ -13,6 +19,7 @@ const ADMIN_OAUTH_INTENT = 'mf-admin-oauth-intent';
 const STORAGE_EMAIL = 'mf-auth-email';
 const AWAITING_CONFIRMATION_EMAIL = 'mf-awaiting-email-confirmation';
 const CONFIRMED_EMAIL_STORAGE = 'mf-confirmed-email';
+const MAINTENANCE_FALLBACK_POLL_MS = 30_000;
 
 function normalizeMaintenanceRow(row: any): MaintenanceConfig {
   return {
@@ -246,6 +253,7 @@ export default function App() {
     if (!isSupabaseConfigured()) return;
 
     let active = true;
+    let refreshInFlight = false;
 
     const applyMaintenance = (next: MaintenanceConfig) => {
       if (!active) return;
@@ -253,15 +261,20 @@ export default function App() {
     };
 
     const refreshMaintenance = async () => {
+      if (!active || refreshInFlight) return;
+      refreshInFlight = true;
+
       try {
         applyMaintenance(await fetchMaintenanceConfig(supabase));
       } catch (err) {
         console.warn('Falha ao atualizar o modo de manutenção:', err);
+      } finally {
+        refreshInFlight = false;
       }
     };
 
     const realtimeChannel = supabase
-      .channel('mf-global-maintenance')
+      .channel(MAINTENANCE_CHANNEL)
       .on(
         'postgres_changes',
         {
@@ -276,14 +289,16 @@ export default function App() {
           else void refreshMaintenance();
         },
       )
-      .on('broadcast', { event: 'maintenance-changed' }, ({ payload }) => {
+      .on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, ({ payload }) => {
         if (payload) applyMaintenance(normalizeMaintenanceRow(payload));
       })
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') void refreshMaintenance();
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') void refreshMaintenance();
       });
 
     const onFocus = () => void refreshMaintenance();
+    const onOnline = () => void refreshMaintenance();
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void refreshMaintenance();
     };
@@ -292,13 +307,20 @@ export default function App() {
       if (next) applyMaintenance(next);
     };
 
+    const fallbackPollId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshMaintenance();
+    }, MAINTENANCE_FALLBACK_POLL_MS);
+
     window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
     window.addEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       active = false;
+      window.clearInterval(fallbackPollId);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
       window.removeEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       void supabase.removeChannel(realtimeChannel);
