@@ -11,6 +11,8 @@ interface CalendarEvent {
   amount: number;
   type: 'income' | 'expense';
   status: string;
+  affectsSummary?: boolean;
+  informational?: boolean;
 }
 
 type BillOccurrence = {
@@ -19,6 +21,14 @@ type BillOccurrence = {
   amount: number;
   status: string;
   fixed_bill?: { name?: string | null } | null;
+};
+
+type CalendarProps = {
+  fixedBills?: any[];
+  settings: any;
+  subscriptions?: any[];
+  cards?: any[];
+  installments?: any[];
 };
 
 function monthKey(date: Date) {
@@ -30,7 +40,13 @@ function safeRecurringDay(raw: unknown, reference: Date) {
   return Math.min(requested, getDaysInMonth(reference));
 }
 
-export default function FinancialCalendar({ fixedBills = [], settings }: { fixedBills: any[]; settings: any }) {
+export default function FinancialCalendar({
+  fixedBills = [],
+  settings,
+  subscriptions = [],
+  cards = [],
+  installments = [],
+}: CalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [occurrences, setOccurrences] = useState<BillOccurrence[]>([]);
   const [occurrencesLoaded, setOccurrencesLoaded] = useState(false);
@@ -90,6 +106,11 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
     };
   }, [userId, currentDate.getFullYear(), currentDate.getMonth()]);
 
+  const annualSubscriptionsWithoutMonth = subscriptions.filter((item) =>
+    !['inactive', 'cancelled', 'canceled'].includes(String(item.status || '').toLowerCase())
+    && String(item.billing_cycle || '').toLowerCase().includes('year'),
+  ).length;
+
   const events = useMemo<CalendarEvent[]>(() => {
     const billEvents: CalendarEvent[] = occurrencesLoaded
       ? occurrences
@@ -116,7 +137,52 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
             status: String(bill.status || 'pending'),
           }));
 
-    const list = [...billEvents];
+    const list: CalendarEvent[] = [...billEvents];
+
+    subscriptions
+      .filter((item) => !['inactive', 'cancelled', 'canceled'].includes(String(item.status || '').toLowerCase()))
+      .filter((item) => !String(item.billing_cycle || '').toLowerCase().includes('year'))
+      .forEach((item) => {
+        list.push({
+          id: `subscription-${item.id}`,
+          day: safeRecurringDay(item.due_day, currentDate),
+          name: `Assinatura: ${String(item.name || 'Serviço')}`,
+          amount: Math.abs(Number(item.amount || 0)),
+          type: 'expense',
+          status: String(item.status || 'pending'),
+        });
+      });
+
+    cards
+      .filter((card) => Number(card.used || 0) > 0)
+      .forEach((card) => {
+        list.push({
+          id: `card-${card.id}`,
+          day: safeRecurringDay(card.due_day, currentDate),
+          name: `Fatura: ${String(card.name || 'Cartão')}`,
+          amount: Math.abs(Number(card.used || 0)),
+          type: 'expense',
+          status: 'pending',
+        });
+      });
+
+    const cardIds = new Set(cards.map((card) => String(card.id)));
+    installments
+      .filter((item) => Number(item.current_installment || 1) <= Number(item.total_installments || 1))
+      .forEach((item) => {
+        const includedInCardBill = Boolean(item.card_id) && cardIds.has(String(item.card_id));
+        list.push({
+          id: `installment-${item.id}`,
+          day: safeRecurringDay(item.due_day, currentDate),
+          name: `Parcela: ${String(item.description || 'Parcelamento')}`,
+          amount: Math.abs(Number(item.monthly_amount || 0)),
+          type: 'expense',
+          status: 'pending',
+          affectsSummary: !includedInCardBill,
+          informational: includedInCardBill,
+        });
+      });
+
     const netSalary = Math.max(0, Number(settings?.net_salary_estimated || 0));
     const firstPayday = Number(settings?.payday_1 || 0);
     const secondPayday = settings?.payday_cycle === 'biweekly' ? Number(settings?.payday_2 || 0) : 0;
@@ -127,7 +193,7 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
       list.push({
         id: 'income-1',
         day: safeRecurringDay(firstPayday, currentDate),
-        name: secondPayday ? 'Salário (1ª parte)' : 'Salário',
+        name: secondPayday ? 'Renda prevista (1ª parte)' : 'Renda prevista',
         amount: (netSalary * firstPercentage) / 100,
         type: 'income',
         status: 'ready',
@@ -137,7 +203,7 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
       list.push({
         id: 'income-2',
         day: safeRecurringDay(secondPayday, currentDate),
-        name: 'Salário (2ª parte)',
+        name: 'Renda prevista (2ª parte)',
         amount: (netSalary * secondPercentage) / 100,
         type: 'income',
         status: 'ready',
@@ -145,10 +211,10 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
     }
 
     return list.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name));
-  }, [fixedBills, settings, occurrences, occurrencesLoaded, currentDate]);
+  }, [fixedBills, settings, occurrences, occurrencesLoaded, currentDate, subscriptions, cards, installments]);
 
   const summary = useMemo(() => {
-    const pendingExpenses = events.filter((event) => event.type === 'expense' && event.status !== 'paid');
+    const pendingExpenses = events.filter((event) => event.type === 'expense' && event.status !== 'paid' && event.affectsSummary !== false);
     const incomes = events.filter((event) => event.type === 'income');
     const today = new Date();
     const isCurrentMonth = today.getFullYear() === currentDate.getFullYear() && today.getMonth() === currentDate.getMonth();
@@ -165,7 +231,7 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
       <div className="flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary/10 text-brand-primary"><CalendarIcon size={20} /></div>
-          <div><h2 className="text-xl font-black capitalize">{format(currentDate, 'MMMM yyyy', { locale: ptBR })}</h2><p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Calendário de obrigações</p></div>
+          <div><h2 className="text-xl font-black capitalize">{format(currentDate, 'MMMM yyyy', { locale: ptBR })}</h2><p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Agenda de entradas e compromissos</p></div>
         </div>
         <div className="flex gap-2">
           <button aria-label="Mês anterior" onClick={() => setCurrentDate((value) => addMonths(value, -1))} className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"><ChevronLeft size={20} /></button>
@@ -179,17 +245,17 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
         {Array.from({ length: getDay(monthStart) }).map((_, index) => <div key={`empty-${index}`} className="rounded-xl border border-white/[0.03] bg-white/[0.01]" />)}
         {days.map((date) => {
           const dayEvents = events.filter((event) => event.day === date.getDate());
-          const visible = dayEvents.slice(0, 2);
+          const visible = dayEvents.slice(0, 3);
           return (
             <article key={date.toISOString()} className={`min-h-0 rounded-xl border p-1.5 ${isToday(date) ? 'border-brand-primary/30 bg-brand-primary/5' : 'border-white/5 bg-white/[0.03]'}`}>
               <div className={`text-[10px] font-bold ${isToday(date) ? 'text-brand-primary' : 'text-white/35'}`}>{date.getDate()}</div>
               <div className="mt-1 space-y-1">
                 {visible.map((event) => (
-                  <div key={event.id} title={`${event.name}: ${money(event.amount)}`} className={`truncate rounded-md px-1.5 py-1 text-[8px] font-bold ${event.type === 'income' ? 'bg-green-500/10 text-green-400' : event.status === 'paid' ? 'bg-white/5 text-white/30 line-through' : 'bg-red-500/10 text-red-400'}`}>
-                    {event.type === 'income' ? '+' : '-'} {event.name}
+                  <div key={event.id} title={`${event.name}: ${money(event.amount)}${event.informational ? ' · já incluído na fatura' : ''}`} className={`truncate rounded-md px-1.5 py-1 text-[8px] font-bold ${event.type === 'income' ? 'bg-green-500/10 text-green-400' : event.informational ? 'bg-violet-500/10 text-violet-300' : event.status === 'paid' ? 'bg-white/5 text-white/30 line-through' : 'bg-red-500/10 text-red-400'}`}>
+                    {event.type === 'income' ? '+' : event.informational ? '•' : '-'} {event.name}
                   </div>
                 ))}
-                {dayEvents.length > 2 && <div className="text-[8px] text-white/25">+{dayEvents.length - 2} evento(s)</div>}
+                {dayEvents.length > 3 && <div className="text-[8px] text-white/25">+{dayEvents.length - 3} evento(s)</div>}
               </div>
             </article>
           );
@@ -199,8 +265,14 @@ export default function FinancialCalendar({ fixedBills = [], settings }: { fixed
       <section className="grid shrink-0 grid-cols-1 md:grid-cols-3 gap-3">
         <Summary icon={ArrowUpCircle} label="Próxima entrada" value={summary.nextIncome ? `Dia ${summary.nextIncome.day} • ${money(summary.nextIncome.amount)}` : 'Nenhuma entrada prevista'} tone="positive" />
         <Summary icon={ArrowDownCircle} label="Próxima saída pendente" value={summary.nextExpense ? `Dia ${summary.nextExpense.day} • ${money(summary.nextExpense.amount)}` : 'Nenhuma saída pendente'} tone="negative" />
-        <Summary icon={DollarSign} label="Saldo previsto do mês" value={money(summary.balance)} tone={summary.balance >= 0 ? 'brand' : 'negative'} />
+        <Summary icon={DollarSign} label="Fluxo previsto do mês" value={money(summary.balance)} tone={summary.balance >= 0 ? 'brand' : 'negative'} />
       </section>
+
+      {(annualSubscriptionsWithoutMonth > 0 || installments.some((item) => item.card_id)) && (
+        <p className="shrink-0 text-[9px] leading-relaxed text-white/30">
+          Parcelas vinculadas a cartões aparecem como referência, mas não são somadas novamente à fatura. {annualSubscriptionsWithoutMonth > 0 ? `${annualSubscriptionsWithoutMonth} assinatura(s) anual(is) não entram no calendário porque o mês da renovação ainda não é armazenado.` : ''}
+        </p>
+      )}
     </div>
   );
 }
