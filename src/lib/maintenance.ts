@@ -5,6 +5,9 @@ export interface MaintenanceConfig {
   maintenance_message: string;
 }
 
+export const MAINTENANCE_CHANNEL = 'mf-global-maintenance';
+export const MAINTENANCE_BROADCAST_EVENT = 'maintenance-changed';
+
 const DEFAULT_MESSAGE =
   'Estamos em manutenção para melhorias. Tente novamente em alguns minutos.';
 
@@ -114,6 +117,52 @@ export async function fetchMaintenanceConfig(
     maintenance_mode: false,
     maintenance_message: DEFAULT_MESSAGE,
   };
+}
+
+export async function broadcastMaintenanceConfig(
+  db: SupabaseClient,
+  config: MaintenanceConfig,
+): Promise<void> {
+  const channel = db.channel(MAINTENANCE_CHANNEL);
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      void db.removeChannel(channel);
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      finish(new Error('Tempo limite ao publicar a mudança de manutenção.'));
+    }, 5000);
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          const sendStatus = await channel.send({
+            type: 'broadcast',
+            event: MAINTENANCE_BROADCAST_EVENT,
+            payload: config,
+          });
+
+          if (sendStatus === 'ok') finish();
+          else finish(new Error(`Falha ao publicar manutenção: ${sendStatus}`));
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error('Falha ao publicar manutenção.'));
+        }
+        return;
+      }
+
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        finish(new Error(`Canal de manutenção indisponível: ${status}`));
+      }
+    });
+  });
 }
 
 export function isMaintenanceAdmin(session: Session | null): boolean {
