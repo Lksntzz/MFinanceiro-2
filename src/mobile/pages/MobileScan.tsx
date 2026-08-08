@@ -26,6 +26,9 @@ type MobileScanProps = {
   accounts: FinancialAccount[];
   categories: TransactionCategory[];
   onSaved: () => Promise<void> | void;
+  initialFile?: File | null;
+  initialText?: string;
+  captureSource?: string;
 };
 
 type DetectedBarcode = { rawValue: string; format?: string };
@@ -82,11 +85,20 @@ function confidenceLabel(confidence?: MobileScannedDraft['confidence']) {
   return 'Confirmação necessária';
 }
 
-export default function MobileScan({ userId, accounts, categories, onSaved }: MobileScanProps) {
+export default function MobileScan({
+  userId,
+  accounts,
+  categories,
+  onSaved,
+  initialFile = null,
+  initialText = '',
+  captureSource = 'MF Scan Mobile',
+}: MobileScanProps) {
   const navigate = useNavigate();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialHandledRef = useRef(false);
   const [rawInput, setRawInput] = useState('');
   const [parsed, setParsed] = useState<ParsedFinancialCode | null>(null);
   const [draft, setDraft] = useState<MobileScannedDraft | null>(null);
@@ -201,6 +213,22 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
     }
   }
 
+  useEffect(() => {
+    if (initialHandledRef.current) return;
+    if (initialFile) {
+      initialHandledRef.current = true;
+      void handleFile(initialFile);
+      return;
+    }
+    const sharedText = initialText.trim();
+    if (!sharedText) return;
+    initialHandledRef.current = true;
+    setRawInput(sharedText);
+    const result = parseFinancialCode(sharedText);
+    applyDraft(result.draft, result);
+    if (result.kind === 'unknown') setNotice('O conteúdo compartilhado foi recebido. Confira e complete os dados antes de salvar.');
+  }, [initialFile, initialText]);
+
   async function saveReviewedEntry(event: React.FormEvent) {
     event.preventDefault();
     if (saving || saved) return;
@@ -224,6 +252,7 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
     setSaving(true);
     try {
       const paymentMethod = parsed?.kind === 'pix' ? 'pix' : parsed?.kind === 'boleto' ? 'boleto' : 'other';
+      const sourceLabel = captureSource === 'MF Share Mobile' ? 'MF Share' : 'MF Scan';
       const { error: rpcError } = await supabase.rpc('mf_create_finance_entry_v3', {
         p_type: 'expense',
         p_amount: amount,
@@ -237,8 +266,8 @@ export default function MobileScan({ userId, accounts, categories, onSaved }: Mo
         p_card_id: null,
         p_installment_count: 1,
         p_due_date: review.status === 'pending' && review.dueDate ? review.dueDate : null,
-        p_notes: parsed?.label ? `Capturado pelo MF Scan: ${parsed.label}` : 'Capturado pelo MF Scan',
-        p_source: 'MF Scan Mobile',
+        p_notes: parsed?.label ? `Capturado pelo ${sourceLabel}: ${parsed.label}` : `Capturado pelo ${sourceLabel}`,
+        p_source: captureSource,
       });
       if (rpcError) throw rpcError;
 
