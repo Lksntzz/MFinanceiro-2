@@ -127,6 +127,8 @@ The mobile flow is:
 9. import only explicitly confirmed, valid rows through `mf_commit_statement_import_v3`;
 10. mark the extraction completed after the import succeeds.
 
+An OCR category is only preselected when it matches a real compatible user category. Unknown or incompatible categories do not fall back to an arbitrary category: the row remains incomplete until the user chooses a valid category or rejects that row.
+
 The final statement import uses the existing external-id/fingerprint duplicate protection. The mobile Inbox uses balance mode `keep`, so historical statement rows can be added without silently recalibrating the user's current account balance.
 
 A failed OCR remains in the Inbox and can be retried. A document in `processing` remains read-only until the backend finishes. The UI never treats AI confidence as confirmation.
