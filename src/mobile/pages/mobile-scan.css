@@ -1,0 +1,255 @@
+.mf-mobile-scan-capture,
+.mf-mobile-scan-review {
+  padding: 18px 18px calc(32px + env(safe-area-inset-bottom));
+}
+
+.mf-mobile-scan-hero {
+  padding: 24px 10px 20px;
+  text-align: center;
+}
+
+.mf-mobile-scan-hero h2 {
+  margin: 16px 0 7px;
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.mf-mobile-scan-hero p {
+  max-width: 330px;
+  margin: 0 auto;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mf-mobile-scan-main-action {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 18px;
+  background: #00f2ff;
+  color: #001014;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 14px 34px rgba(0, 242, 255, 0.19);
+}
+
+.mf-mobile-scan-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.mf-mobile-scan-secondary-actions button {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.78);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mf-mobile-code-paste {
+  margin-top: 20px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 19px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mf-mobile-code-paste__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mf-mobile-code-paste textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  outline: 0;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mf-mobile-code-paste textarea:focus {
+  border-color: rgba(0, 242, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(0, 242, 255, 0.06);
+}
+
+.mf-mobile-code-paste button,
+.mf-mobile-secondary-button {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 9px;
+  border: 1px solid rgba(0, 242, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(0, 242, 255, 0.065);
+  color: #00f2ff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mf-mobile-scan-safety {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 12px 13px;
+  border: 1px solid rgba(73, 218, 168, 0.12);
+  border-radius: 15px;
+  background: rgba(73, 218, 168, 0.045);
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.mf-mobile-scan-safety svg {
+  flex: 0 0 auto;
+  color: #49daa8;
+}
+
+.mf-mobile-scan-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mf-mobile-scan-preview-image {
+  width: 100%;
+  max-height: 230px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: #0a0a0a;
+}
+
+.mf-mobile-file-chip {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.mf-mobile-file-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-mobile-scan-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 15px;
+  border: 1px solid rgba(0, 242, 255, 0.1);
+  border-radius: 17px;
+  background: rgba(0, 242, 255, 0.035);
+}
+
+.mf-mobile-scan-result-head > div {
+  min-width: 0;
+}
+
+.mf-mobile-scan-result-head span,
+.mf-mobile-scan-result-head small {
+  display: block;
+}
+
+.mf-mobile-scan-result-head span {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.mf-mobile-scan-result-head small {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.mf-mobile-scan-result-head svg {
+  flex: 0 0 auto;
+  color: #00f2ff;
+}
+
+.mf-mobile-feedback.warning {
+  border-color: rgba(255, 193, 92, 0.14);
+  background: rgba(255, 193, 92, 0.055);
+  color: rgba(255, 218, 155, 0.8);
+}
+
+.mf-mobile-scan-amount {
+  margin-top: 2px;
+}
+
+.mf-mobile-scan-code-details {
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 11px 12px;
+}
+
+.mf-mobile-scan-code-details summary {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mf-mobile-scan-code-details code {
+  display: block;
+  max-height: 110px;
+  margin-top: 9px;
+  overflow: auto;
+  word-break: break-all;
+  white-space: pre-wrap;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.mf-mobile-scan-main-action:focus-visible,
+.mf-mobile-scan-secondary-actions button:focus-visible,
+.mf-mobile-code-paste button:focus-visible,
+.mf-mobile-secondary-button:focus-visible {
+  outline: 2px solid #00f2ff;
+  outline-offset: 2px;
+}
+
+.mf-mobile-scan-main-action:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
