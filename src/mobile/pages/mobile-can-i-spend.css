@@ -1,0 +1,210 @@
+.mf-mobile-can-spend {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 2px calc(30px + env(safe-area-inset-bottom));
+}
+
+.mf-mobile-can-spend__header-icon {
+  cursor: default;
+}
+
+.mf-mobile-can-spend__intro {
+  padding: 17px;
+  border: 1px solid rgba(0, 242, 255, 0.13);
+  border-radius: 20px;
+  background: rgba(0, 242, 255, 0.045);
+}
+
+.mf-mobile-can-spend__intro span,
+.mf-mobile-can-spend__intro small,
+.mf-mobile-can-spend__intro strong {
+  display: block;
+}
+
+.mf-mobile-can-spend__intro span {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mf-mobile-can-spend__intro strong {
+  margin-top: 6px;
+  font-size: 27px;
+  letter-spacing: -0.04em;
+}
+
+.mf-mobile-can-spend__intro small {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.mf-mobile-can-spend__amount {
+  margin-top: 2px;
+}
+
+.mf-mobile-can-spend__result,
+.mf-mobile-can-spend__placeholder {
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mf-mobile-can-spend__result {
+  padding: 17px;
+}
+
+.mf-mobile-can-spend__result[data-tone='success'] {
+  border-color: rgba(73, 218, 168, 0.18);
+  background: rgba(73, 218, 168, 0.045);
+}
+
+.mf-mobile-can-spend__result[data-tone='warning'] {
+  border-color: rgba(255, 196, 92, 0.18);
+  background: rgba(255, 196, 92, 0.045);
+}
+
+.mf-mobile-can-spend__result[data-tone='danger'] {
+  border-color: rgba(248, 113, 113, 0.2);
+  background: rgba(248, 113, 113, 0.05);
+}
+
+.mf-mobile-can-spend__result-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.mf-mobile-can-spend__result-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.mf-mobile-can-spend__result[data-tone='success'] .mf-mobile-can-spend__result-icon {
+  color: #5cf1bd;
+}
+
+.mf-mobile-can-spend__result[data-tone='warning'] .mf-mobile-can-spend__result-icon {
+  color: #ffd080;
+}
+
+.mf-mobile-can-spend__result[data-tone='danger'] .mf-mobile-can-spend__result-icon {
+  color: #fca5a5;
+}
+
+.mf-mobile-can-spend__result-head > div {
+  min-width: 0;
+}
+
+.mf-mobile-can-spend__result-head strong {
+  display: block;
+  font-size: 13px;
+}
+
+.mf-mobile-can-spend__result-head p {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.44);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.mf-mobile-can-spend__numbers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.mf-mobile-can-spend__numbers > div {
+  min-width: 0;
+  padding: 11px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.19);
+}
+
+.mf-mobile-can-spend__numbers small,
+.mf-mobile-can-spend__numbers b {
+  display: block;
+}
+
+.mf-mobile-can-spend__numbers small {
+  color: rgba(255, 255, 255, 0.32);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mf-mobile-can-spend__numbers b {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-mobile-can-spend__comparison {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.39);
+  font-size: 9px;
+}
+
+.mf-mobile-can-spend__comparison svg {
+  flex: 0 0 auto;
+}
+
+.mf-mobile-can-spend__comparison b {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.mf-mobile-can-spend__placeholder {
+  padding: 24px 18px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.mf-mobile-can-spend__placeholder svg {
+  color: #00f2ff;
+}
+
+.mf-mobile-can-spend__placeholder strong {
+  display: block;
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+}
+
+.mf-mobile-can-spend__placeholder p {
+  max-width: 330px;
+  margin: 6px auto 0;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.mf-mobile-can-spend__disclaimer {
+  padding: 0 5px;
+  color: rgba(255, 255, 255, 0.26);
+  font-size: 8px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+@media (max-width: 350px) {
+  .mf-mobile-can-spend__numbers {
+    grid-template-columns: 1fr;
+  }
+}
