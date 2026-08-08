@@ -9,6 +9,7 @@ export const DEFAULT_USER_SETTINGS = (userId: string): Omit<UserSettings, 'id'> 
   deductions: 0,
   payday_cycle: 'monthly' as const,
   payday_1: 5,
+  workspace_name: 'MF Financeiro',
   // Ensure any newer fields have safe defaults here
 });
 

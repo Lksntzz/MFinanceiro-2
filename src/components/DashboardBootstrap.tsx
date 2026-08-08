@@ -29,6 +29,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   const legacyCommitmentsRoute = location.pathname.startsWith('/app/planejamento/compromissos');
   const legacyIncomeRoute = location.pathname.startsWith('/app/planejamento/receitas') || location.pathname.startsWith('/app/planejamento/renda');
   const legacyCalendarRoute = location.pathname.startsWith('/app/planejamento/calendario');
+  const legacyPreferencesRoute = location.pathname.startsWith('/app/preferencias');
 
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
@@ -80,6 +81,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   }
   if (legacyIncomeRoute) return <Navigate to="/app/agenda/receitas" replace />;
   if (legacyCalendarRoute) return <Navigate to="/app/agenda" replace />;
+  if (legacyPreferencesRoute) return <Navigate to="/app/agenda/receitas" replace />;
 
   if (ready) {
     let tool: React.ReactNode;
