@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Navigate, useLocation } from 'react-router';
 
 import { supabase } from '../lib/supabase';
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
+import { useMobileExperience } from '../mobile/useMobileExperience';
 import Dashboard from './Dashboard';
 import FinancialAgendaTool from './FinancialAgendaTool';
 import IntegrationTool from './IntegrationTool';
@@ -13,10 +14,12 @@ import PlanningStrategyTool from './PlanningStrategyTool';
 import PlanningTool from './PlanningTool';
 import ProductTour from './ProductTour';
 
+const MobileApp = lazy(() => import('../mobile/MobileApp'));
 const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user: User; isMaintenanceBypass?: boolean }) {
   const location = useLocation();
+  const mobileExperience = useMobileExperience();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -69,6 +72,14 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
     void prepareDashboard();
     return () => { active = false; };
   }, [user.id, retryKey]);
+
+  if (ready && mobileExperience) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Carregando MF Mobile...</span></div>}>
+        <MobileApp user={user} />
+      </Suspense>
+    );
+  }
 
   if (legacyInvestmentRoute) return <Navigate to={{ pathname: '/app/investimentos', search: location.search }} replace />;
   if (legacyAutomationRoute) return <Navigate to="/app/integracoes" replace />;
