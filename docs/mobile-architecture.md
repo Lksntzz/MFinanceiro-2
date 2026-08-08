@@ -52,9 +52,11 @@ Every future change should be classified before implementation:
 
 The existing desktop implementation remains untouched until the mobile shell is ready.
 
-The mobile experience will be mounted only at the application boundary. Desktop components should not be progressively compressed with more global media-query overrides.
+The mobile experience is mounted only at the application boundary. Desktop components should not be progressively compressed with more global media-query overrides.
 
 Target compact breakpoint: 820px and below.
+
+The compact experience can explicitly open the full desktop interface for the current session when the user needs an advanced tool.
 
 ## Initial mobile navigation
 
@@ -70,17 +72,35 @@ The central action opens the lightweight capture layer rather than a desktop mod
 
 ### MF Quick
 
-Fast expense/income capture with minimal fields. Designed to be callable from a direct route and later from iOS/Android shortcuts.
+Fast expense/income capture with minimal fields. It uses the same `mf_create_finance_entry_v3` database function used by the existing financial flow.
+
+It is callable from the direct `/quick` route and is also exposed as a PWA shortcut where supported.
 
 ### MF Scan
 
-Capture financial information from camera, gallery, screenshots, PDFs, boleto/barcode and Pix QR content. The system extracts suggestions and always presents a review step before saving.
+MF Scan is a capture-and-review flow. Its first implementation supports:
 
-MF Scan must never silently create or pay a financial obligation from uncertain extraction.
+- mobile camera capture through the device file/camera picker
+- gallery images
+- image/PDF selection
+- pasted Pix Copia e Cola / barcode / digitable-line content
+- native `BarcodeDetector` when the browser exposes it
+- BR Code parsing for Pix static/dynamic identification
+- bank boleto parsing for amount and current due-date-factor suggestions when available
+- collection/agreement barcode identification without inventing fields that are not reliably encoded
+- explicit manual review before any financial entry is saved
+
+The scanner never executes a Pix or pays a boleto. It only creates a financial record after explicit user confirmation.
+
+Because `BarcodeDetector` is not supported by every mobile browser, MF Scan must degrade to capture + manual review instead of failing.
+
+PDF/document OCR is intentionally not faked in the first version. PDF files can enter the review flow, while full OCR/AI extraction is a later capability.
 
 ### MF Inbox
 
-Review queue for imported, scanned or automatically classified financial items that need user confirmation.
+Planned review queue for imported, scanned or automatically classified financial items that need user confirmation.
+
+Existing `mf_document_extractions` and `mf_document_extraction_items` already contain confidence/review fields and are RLS-protected, but they are not reused for MF Inbox until the current mobile branch passes build/preview validation and their storage semantics are intentionally integrated.
 
 ### Disponível de verdade
 
@@ -93,27 +113,45 @@ A mobile decision helper that simulates a purchase and shows its impact on the c
 ## Data rules
 
 - Mobile and desktop use the same Supabase project and user data.
-- A transaction created on mobile must immediately belong to the same ledger used by desktop.
+- A transaction created on mobile immediately belongs to the same ledger used by desktop.
+- MF Quick and confirmed MF Scan entries use the existing finance-entry RPC rather than a parallel transaction implementation.
 - Mobile-specific UI preferences may be stored separately from general financial settings.
 - Schema changes are only introduced when a mobile capability truly needs new persisted data.
+- No schema change is required for the current Home / Quick / Scan implementation.
 
 ## Styling rules
 
 - Mobile layout styles live under `src/mobile`.
+- Feature-specific styles may live next to the feature, such as `src/mobile/pages/mobile-scan.css`.
 - Existing desktop CSS should not be globally overridden for mobile-only redesign work.
 - Shared design tokens may be reused, but mobile sizing/layout classes should be scoped with `mf-mobile-*`.
 - Respect safe-area insets and touch targets.
 
+## PWA integration
+
+The existing PWA remains a single application. The manifest exposes progressive shortcuts for:
+
+- `/quick` — Novo lançamento / MF Quick
+- `/scan` — Escanear conta / MF Scan
+
+These shortcuts are progressive enhancement: unsupported operating systems simply ignore them.
+
+Deeper integrations such as iOS App Intents, Action Button, Share Extension or platform widgets require a later native-wrapper evaluation and are not simulated by the PWA.
+
 ## Delivery safety
 
-Mobile development happens on dedicated branches and Vercel previews before merge.
+Mobile development happens on dedicated branches and previews before merge.
 
 Before merging a mobile change:
 
-1. Desktop smoke check at common desktop sizes.
-2. Mobile checks at 320, 360, 390, 412 and 430 px.
-3. Verify keyboard-open states, scroll, safe areas and installed-PWA mode.
-4. Confirm no unrelated desktop files were modified unless the change is explicitly CORE.
+1. TypeScript check must pass.
+2. Production build must pass.
+3. Desktop smoke check at common desktop sizes.
+4. Mobile checks at 320, 360, 390, 412 and 430 px.
+5. Verify keyboard-open states, scroll, safe areas and installed-PWA mode.
+6. Confirm no unrelated desktop files were modified unless the change is explicitly CORE.
+
+A branch-only GitHub Actions workflow validates `npm ci`, `npm run lint` and `npm run build` while Vercel preview builds are rate-limited.
 
 ## Implementation phases
 
@@ -125,6 +163,8 @@ Before merging a mobile change:
 - scoped styling
 - shared mobile types
 
+Status: implemented on `agent/mobile-foundation`.
+
 ### Phase 1 — Daily use
 
 - Home
@@ -132,11 +172,15 @@ Before merging a mobile change:
 - Movimentações
 - Cartões
 
+Status: first implementation complete on the branch; visual/browser QA remains required.
+
 ### Phase 2 — Intelligent capture
 
 - MF Scan
 - review flow
 - MF Inbox
+
+Status: MF Scan capture/parsing/review is implemented. Full document OCR and persistent MF Inbox remain pending.
 
 ### Phase 3 — Native/mobile integrations
 
@@ -145,12 +189,16 @@ Before merging a mobile change:
 - share target where supported
 - native wrapper/app-intent evaluation for deeper iOS/Android integrations
 
+Status: quick route and PWA shortcuts implemented; share/native integrations pending.
+
 ### Phase 4 — Decision intelligence
 
 - Disponível de verdade
 - Posso gastar?
 - purchase impact
 - smarter recurring recognition
+
+Status: planned after the daily-use and capture flows pass QA.
 
 ## Non-goals
 
