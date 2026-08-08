@@ -9,6 +9,7 @@
 .mf-tour-shade {
   position: fixed;
   z-index: 1000;
+  pointer-events: auto;
   background: rgba(2, 5, 7, .68);
   backdrop-filter: blur(3px);
   transition: top .28s ease, left .28s ease, right .28s ease, bottom .28s ease, width .28s ease, height .28s ease;
@@ -19,6 +20,7 @@
 .mf-tour-spotlight {
   position: fixed;
   z-index: 1001;
+  pointer-events: auto;
   border: 1px solid rgba(0, 242, 255, .7);
   border-radius: 15px;
   box-shadow: 0 0 0 1px rgba(0, 242, 255, .18), 0 0 28px rgba(0, 242, 255, .2);
