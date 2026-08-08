@@ -65,19 +65,36 @@ A branch integrada também contém a reorganização conceitual da PR #7, inclui
 - deep links PWA revisados;
 - conflito entre PR #6 e PR #7 reconciliado no boundary.
 
+## Evolução após o checkpoint
+
+### Compartilhar para o MF
+
+Implementado como integração progressiva de PWA, sem duplicar a lógica financeira do MF Scan:
+
+- o manifest registra o MF como `share_target` para texto, URL, PDF, JPEG, PNG e WebP;
+- o service worker intercepta o POST `/share` quando a PWA instalada recebe conteúdo do sistema operacional;
+- o conteúdo fica temporariamente no IndexedDB do próprio aparelho, com limpeza de payloads antigos;
+- nenhum documento é enviado ao Supabase apenas por ter sido compartilhado;
+- `/share` abre uma tela autenticada de recepção e encaminha o arquivo/texto para o mesmo `MobileScan` usado por câmera, galeria e upload manual;
+- múltiplos documentos exigem seleção explícita e são revisados um por vez;
+- o MF Scan continua exigindo confirmação antes de gravar no ledger;
+- os lançamentos confirmados pelo compartilhamento usam o mesmo RPC `mf_create_finance_entry_v3`, com origem `MF Share Mobile`;
+- limite local do compartilhamento: 20 MB no total e até 5 arquivos aceitos por vez;
+- o fluxo é progressivo: Web Share Target como destino instalado é suportado principalmente em Android/ChromeOS; iOS continua usando câmera/arquivo/atalhos até existir wrapper/extensão nativa apropriada.
+
 ## Pendências antes do envio final
 
 - smoke test autenticado em 320 / 360 / 390 / 412 / 430 px;
 - regressão visual desktop autenticada;
 - teste do MF Inbox com extrato real;
 - teste do MF Scan em aparelho real;
+- teste de `Compartilhar para o MF` em PWA Android instalada;
 - câmera, galeria, teclado, safe areas e PWA;
 - revisar novas correções e funcionalidades que forem adicionadas após este checkpoint;
 - rodar novamente CI + preview antes do merge único.
 
 ## Próximas ideias já aprovadas para evolução mobile
 
-- compartilhamento direto para o MF;
 - OCR específico para contas e recibos, separado do OCR de extrato;
 - MF Voice;
 - recorrência inteligente;
