@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+import { Navigate, useLocation } from 'react-router';
 
 import { supabase } from '../lib/supabase';
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
 import Dashboard from './Dashboard';
+import InvestmentTool from './InvestmentTool';
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -16,9 +18,13 @@ export default function DashboardBootstrap({
   user: User;
   isMaintenanceBypass?: boolean;
 }) {
+  const location = useLocation();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+
+  const legacyInvestmentRoute = location.pathname.startsWith('/app/planejamento/investimentos');
+  const investmentRoute = location.pathname.startsWith('/app/investimentos');
 
   useEffect(() => {
     let active = true;
@@ -80,7 +86,17 @@ export default function DashboardBootstrap({
     };
   }, [user.id, retryKey]);
 
+  if (legacyInvestmentRoute) {
+    return (
+      <Navigate
+        to={{ pathname: '/app/investimentos', search: location.search }}
+        replace
+      />
+    );
+  }
+
   if (ready) {
+    if (investmentRoute) return <InvestmentTool user={user} />;
     return <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />;
   }
 
