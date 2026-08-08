@@ -36,18 +36,17 @@ const primaryItems: NavigationItem[] = [
   { to: '/app', label: 'Início', icon: LayoutDashboard, end: true },
   { to: '/app/movimentacoes', label: 'Movimentações', icon: Receipt },
   { to: '/app/investimentos', label: 'Investimentos', icon: Landmark },
-  { to: '/app/planejamento/contas', label: 'Planejamento', icon: Wallet },
+  { to: '/app/planejamento', label: 'Planejamento', icon: Wallet },
   { to: '/app/analises/resumo', label: 'Análises', icon: BarChart3 },
 ];
 
 const planningItems: NavigationItem[] = [
-  { to: '/app/planejamento/contas', label: 'Contas', icon: CircleDollarSign },
+  { to: '/app/planejamento', label: 'Visão do mês', icon: CalendarDays, end: true },
+  { to: '/app/planejamento/contas', label: 'Contas financeiras', icon: CircleDollarSign },
   { to: '/app/planejamento/cartoes', label: 'Cartões e parcelas', icon: CreditCard },
-  { to: '/app/planejamento/renda', label: 'Renda', icon: FileText },
-  { to: '/app/planejamento/contas-fixas', label: 'Contas fixas', icon: ListChecks },
-  { to: '/app/planejamento/calendario', label: 'Calendário', icon: CalendarDays },
-  { to: '/app/planejamento/assinaturas', label: 'Assinaturas', icon: ListChecks },
-  { to: '/app/planejamento/automacoes', label: 'Automação e Open Finance', icon: Bot },
+  { to: '/app/planejamento/compromissos', label: 'Compromissos recorrentes', icon: ListChecks },
+  { to: '/app/planejamento/receitas', label: 'Receitas previstas', icon: FileText },
+  { to: '/app/planejamento/orcamento', label: 'Orçamento', icon: Target },
 ];
 
 const investmentItems: Array<{
@@ -115,6 +114,8 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
     || location.pathname.startsWith('/app/planejamento/investimentos');
   const inPlanning = location.pathname.startsWith('/app/planejamento') && !inInvestments;
   const inAnalysis = location.pathname.startsWith('/app/analises');
+  const inIntegrations = location.pathname.startsWith('/app/integracoes')
+    || location.pathname.startsWith('/app/planejamento/automacoes');
   const requestedInvestmentSection = new URLSearchParams(location.search).get('section');
   const investmentSection: InvestmentSection = requestedInvestmentSection === 'income'
     ? 'income'
@@ -156,6 +157,13 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
             <span id="mf-planning-navigation-label" className="mf-side-group-label">Planejamento</span>
             <nav className="mf-side-group-items" aria-label="Navegação de planejamento">{planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</nav>
           </section>
+        ) : inIntegrations ? (
+          <section className="mf-side-group" aria-labelledby="mf-integrations-navigation-label">
+            <span id="mf-integrations-navigation-label" className="mf-side-group-label">Integrações</span>
+            <nav className="mf-side-group-items" aria-label="Navegação de integrações">
+              <NavigationLink item={{ to: '/app/integracoes', label: 'Conexões e automações', icon: Bot, end: true }} compact />
+            </nav>
+          </section>
         ) : null}
 
         {inAnalysis && (
@@ -164,13 +172,13 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
             <nav className="mf-side-group-items" aria-label="Navegação de análises">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</nav>
           </section>
         )}
-        {!inPlanning && !inInvestments && !inAnalysis && <p className="mf-side-context-copy">Visão rápida, histórico e próximos passos.</p>}
+        {!inPlanning && !inInvestments && !inAnalysis && !inIntegrations && <p className="mf-side-context-copy">Visão rápida, histórico e próximos passos.</p>}
       </div>
 
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
         <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
-        <NavLink to="/app/planejamento/automacoes" className="mf-side-shortcut" title="Automações" aria-label="Automações e Open Finance"><Bot size={14} aria-hidden="true" /></NavLink>
-        <NavLink to="/app/planejamento/calendario" className="mf-side-shortcut" title="Calendário" aria-label="Calendário financeiro"><CalendarDays size={14} aria-hidden="true" /></NavLink>
+        <NavLink to="/app/integracoes" className="mf-side-shortcut" title="Integrações" aria-label="Conexões e automações"><Bot size={14} aria-hidden="true" /></NavLink>
+        <NavLink to="/app/planejamento" className="mf-side-shortcut" title="Visão do mês" aria-label="Visão do mês"><CalendarDays size={14} aria-hidden="true" /></NavLink>
       </nav>
       <NavLink to="/app/preferencias" className="mf-side-settings"><Settings size={13} aria-hidden="true" />Preferências</NavLink>
     </aside>
