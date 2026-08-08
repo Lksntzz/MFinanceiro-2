@@ -215,16 +215,14 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
           <ToolHeader to="/app/analises/resumo" label="Análises" icon={BarChart3} active={activeGroup === 'analysis'} expanded={expandedGroup === 'analysis'} onToggle={() => toggleGroup('analysis')} />
           {expandedGroup === 'analysis' && <div className="mf-side-primary-children">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
-      </nav>
 
-      <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
-
-      <div className="mf-side-context">
         <section className="mf-side-tool" aria-label="Agenda Financeira">
           <ToolHeader to="/app/agenda" label="Agenda Financeira" icon={CalendarDays} active={activeGroup === 'agenda'} expanded={expandedGroup === 'agenda'} onToggle={() => toggleGroup('agenda')} />
           {expandedGroup === 'agenda' && <div className="mf-side-primary-children">{agendaItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
-      </div>
+      </nav>
+
+      <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
         <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
