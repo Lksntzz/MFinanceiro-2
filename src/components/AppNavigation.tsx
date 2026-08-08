@@ -15,7 +15,6 @@ import {
   PieChart,
   Plus,
   Receipt,
-  Settings,
   Sparkles,
   Target,
   TrendingUp,
@@ -229,7 +228,6 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
         <NavLink to="/app/integracoes" className="mf-side-shortcut" title="Integrações" aria-label="Conexões e automações"><Bot size={14} aria-hidden="true" /></NavLink>
         <NavLink to="/app/agenda" className="mf-side-shortcut" title="Agenda Financeira" aria-label="Agenda Financeira"><CalendarDays size={14} aria-hidden="true" /></NavLink>
       </nav>
-      <NavLink to="/app/preferencias" className="mf-side-settings"><Settings size={13} aria-hidden="true" />Preferências</NavLink>
     </aside>
   );
 }
