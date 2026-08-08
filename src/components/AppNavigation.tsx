@@ -221,13 +221,14 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
           <ToolHeader to="/app/agenda" label="Agenda Financeira" icon={CalendarDays} active={activeGroup === 'agenda'} expanded={expandedGroup === 'agenda'} onToggle={() => toggleGroup('agenda')} />
           {expandedGroup === 'agenda' && <div className="mf-side-primary-children">{agendaItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
+
+        <NavigationLink item={{ to: '/app/integracoes', label: 'Conexões', icon: Bot }} />
       </nav>
 
       <button type="button" className="mf-side-launch" onClick={launch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
         <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
-        <NavLink to="/app/integracoes" className="mf-side-shortcut" title="Integrações" aria-label="Conexões e automações"><Bot size={14} aria-hidden="true" /></NavLink>
         <NavLink to="/app/agenda" className="mf-side-shortcut" title="Agenda Financeira" aria-label="Agenda Financeira"><CalendarDays size={14} aria-hidden="true" /></NavLink>
       </nav>
     </aside>
