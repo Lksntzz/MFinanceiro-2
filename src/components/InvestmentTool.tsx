@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { AlertCircle, Eye, EyeOff, LogOut, Plus, Wallet } from 'lucide-react';
+import { useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
@@ -24,6 +25,7 @@ function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
 
 export default function InvestmentTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
+  const navigate = useNavigate();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,14 +73,18 @@ export default function InvestmentTool({ user }: { user: User }) {
   }, [refreshFinancialContext]);
 
   return (
-    <div className="mf-app-shell mf-routed-app">
-      <AppNavigation onLaunch={() => undefined} />
+    <div className="mf-app-shell mf-routed-app mf-investment-product-cleanup">
+      <style>{`
+        .mf-investment-product-cleanup button[title="Análise local"],
+        .mf-investment-product-cleanup details { display: none !important; }
+      `}</style>
+      <AppNavigation onLaunch={() => navigate('/app')} />
 
       <header className="mf-topbar">
         <div className="mf-brand">
           <div className="mf-brand-icon"><Wallet size={20} /></div>
           <div>
-            <h1>{settings?.workspace_name || 'MFinanceiro'}</h1>
+            <h1>{settings?.workspace_name || 'MF Financeiro'}</h1>
             <span>{settings?.display_name ? `Olá, ${settings.display_name.split(/\s+/)[0]}` : 'Investimentos'}</span>
           </div>
         </div>
@@ -95,7 +101,7 @@ export default function InvestmentTool({ user }: { user: User }) {
           <button type="button" onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">
             {isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
-          <button type="button" className="primary"><Plus size={16} />Lançar</button>
+          <button type="button" className="primary" onClick={() => navigate('/app')}><Plus size={16} />Lançar</button>
           <button
             type="button"
             onClick={async () => {
