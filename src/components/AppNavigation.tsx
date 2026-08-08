@@ -20,7 +20,7 @@ import {
   Upload,
   Wallet,
 } from 'lucide-react';
-import { NavLink, useLocation } from 'react-router';
+import { NavLink, useLocation, useNavigate } from 'react-router';
 
 type NavigationItem = {
   to: string;
@@ -155,12 +155,14 @@ function groupForPath(pathname: string): ToolGroup | null {
 
 export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const activeGroup = groupForPath(location.pathname);
   const [expandedGroup, setExpandedGroup] = useState<ToolGroup | null>(activeGroup);
   const requestedInvestmentSection = new URLSearchParams(location.search).get('section');
   const investmentSection: InvestmentSection = requestedInvestmentSection === 'planning' ? 'planning' : 'portfolio';
   const isAnalysisRoute = location.pathname.startsWith('/app/analises');
   const isMovementsRoute = location.pathname.startsWith('/app/movimentacoes');
+  const isHomeRoute = location.pathname === '/app';
 
   useEffect(() => {
     if (activeGroup) setExpandedGroup(activeGroup);
@@ -170,10 +172,16 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
     setExpandedGroup((current) => current === group ? null : group);
   }
 
+  function launch() {
+    if (isHomeRoute) onLaunch();
+    else navigate('/app/lancar');
+  }
+
   return (
     <aside className="mf-side-panel" aria-label="Navegação financeira">
       <style>{`
         .history-shell > div:first-child button[class*="border-red-500"] { display: none !important; }
+        ${!isHomeRoute ? '.mf-top-actions > button.primary { display: none !important; }' : ''}
         ${isAnalysisRoute ? '.mf-content .mf-tab-shell > .mf-subnav { display: none !important; }' : ''}
         ${isMovementsRoute ? `
           .mf-content .history-shell > .mf-subnav button:nth-child(3) { font-size: 0 !important; }
@@ -215,7 +223,7 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
         </section>
       </nav>
 
-      <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
+      <button type="button" className="mf-side-launch" onClick={launch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
         <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
