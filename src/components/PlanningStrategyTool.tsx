@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { AlertCircle, Eye, EyeOff, LogOut, Plus, Target, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../lib/formatters';
@@ -30,6 +30,7 @@ function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
 export default function PlanningStrategyTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
   const showGoals = location.pathname.endsWith('/metas');
 
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -94,16 +95,16 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
 
   return (
     <div className="mf-app-shell mf-routed-app">
-      <AppNavigation onLaunch={() => undefined} />
+      <AppNavigation onLaunch={() => navigate('/app')} />
       <header className="mf-topbar">
         <div className="mf-brand">
           <div className="mf-brand-icon"><Target size={20} /></div>
-          <div><h1>{settings?.workspace_name || 'MFinanceiro'}</h1><span>{settings?.display_name ? `Olá, ${settings.display_name.split(/\s+/)[0]}` : 'Planejamento'}</span></div>
+          <div><h1>{settings?.workspace_name || 'MF Financeiro'}</h1><span>{showGoals ? 'Metas financeiras' : 'Simulador'}</span></div>
         </div>
         <div className="mf-top-actions">
           <ProfileCenter user={user} settings={settings} accounts={accounts} open={showProfile} onOpenChange={setShowProfile} onSaved={refresh} />
           <button type="button" onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-          <button type="button" className="primary"><Plus size={16} />Lançar</button>
+          <button type="button" className="primary" onClick={() => navigate('/app')}><Plus size={16} />Lançar</button>
           <button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.replace('/'); }} title="Sair"><LogOut size={17} /></button>
         </div>
       </header>
@@ -116,20 +117,20 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
         ) : (
           <div className="space-y-4 animate-fade-in">
             <div>
-              <h2 className="text-xl font-black">Projeções e cenários</h2>
-              <p className="text-sm text-white/40">Simule entradas e gastos extras sem alterar seus lançamentos reais.</p>
+              <h2 className="text-xl font-black">Simulador</h2>
+              <p className="text-sm text-white/40">Teste “e se?” sem alterar nenhum lançamento real: uma renda extra, uma compra maior ou um gasto inesperado.</p>
             </div>
 
             <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
               <article className="mf-card mf-kpi"><span>Saldo atual</span><strong>{formatCurrency(projection.balance, isPrivate)}</strong></article>
               <article className="mf-card mf-kpi"><span>Receita prevista</span><strong>{formatCurrency(projection.expectedIncome, isPrivate)}</strong></article>
               <article className="mf-card mf-kpi"><span>Compromissos previstos</span><strong>{formatCurrency(projection.fixed + projection.subscriptionsMonthly + projection.cardsUsed, isPrivate)}</strong></article>
-              <article className="mf-card mf-kpi accent"><span>Projeção base</span><strong>{formatCurrency(projection.base, isPrivate)}</strong></article>
+              <article className="mf-card mf-kpi accent"><span>Base antes do cenário</span><strong>{formatCurrency(projection.base, isPrivate)}</strong></article>
             </section>
 
             <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
               <article className="mf-card space-y-4">
-                <div><h3 className="font-bold">Montar cenário</h3><p className="text-xs text-white/35">Valores usados apenas nesta simulação.</p></div>
+                <div><h3 className="font-bold">Montar cenário</h3><p className="text-xs text-white/35">Nada informado aqui será salvo no histórico.</p></div>
                 <label className="block text-xs text-white/45">Entrada extra
                   <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3"><TrendingUp size={15} className="text-emerald-400" /><input className="w-full bg-transparent py-3 text-sm text-white outline-none" type="number" step="0.01" value={extraIncome} onChange={(event) => setExtraIncome(event.target.value)} /></div>
                 </label>
@@ -139,13 +140,13 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
               </article>
 
               <article className="mf-card flex flex-col justify-between gap-5">
-                <div><p className="text-xs font-bold uppercase tracking-widest text-white/35">Resultado do cenário</p><strong className="mt-2 block text-3xl">{formatCurrency(projection.adjusted, isPrivate)}</strong></div>
+                <div><p className="text-xs font-bold uppercase tracking-widest text-white/35">Resultado estimado</p><strong className="mt-2 block text-3xl">{formatCurrency(projection.adjusted, isPrivate)}</strong></div>
                 <div className="grid gap-3 md:grid-cols-3 text-sm">
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><span className="text-white/40">Base</span><strong className="mt-1 block">{formatCurrency(projection.base, isPrivate)}</strong></div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><span className="text-white/40">Entradas extras</span><strong className="mt-1 block text-emerald-400">+ {formatCurrency(Number(extraIncome || 0), isPrivate)}</strong></div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><span className="text-white/40">Gastos extras</span><strong className="mt-1 block text-red-400">- {formatCurrency(Number(extraExpense || 0), isPrivate)}</strong></div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><span className="text-white/40">Entrada testada</span><strong className="mt-1 block text-emerald-400">+ {formatCurrency(Number(extraIncome || 0), isPrivate)}</strong></div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3"><span className="text-white/40">Gasto testado</span><strong className="mt-1 block text-red-400">- {formatCurrency(Number(extraExpense || 0), isPrivate)}</strong></div>
                 </div>
-                <p className="text-xs text-white/30">A projeção usa saldo, receita prevista, contas fixas, assinaturas e cartões já cadastrados. Nenhum valor desta simulação é salvo.</p>
+                <p className="text-xs text-white/30">O simulador usa saldo, receita prevista, contas fixas, assinaturas e cartões cadastrados. O resultado é apenas uma simulação do fluxo financeiro.</p>
               </article>
             </section>
           </div>

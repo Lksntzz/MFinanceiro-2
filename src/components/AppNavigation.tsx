@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  BarChart3,
   Bot,
   CalendarDays,
   ChevronDown,
   CircleDollarSign,
   CreditCard,
   FileText,
-  HeartPulse,
   Landmark,
   LayoutDashboard,
   Lightbulb,
@@ -16,12 +14,13 @@ import {
   Plus,
   Receipt,
   Sparkles,
+  Tags,
   Target,
   TrendingUp,
   Upload,
   Wallet,
 } from 'lucide-react';
-import { NavLink, useLocation } from 'react-router';
+import { NavLink, useLocation, useNavigate } from 'react-router';
 
 type NavigationItem = {
   to: string;
@@ -30,28 +29,28 @@ type NavigationItem = {
   end?: boolean;
 };
 
-type InvestmentSection = 'portfolio' | 'income' | 'planning';
-type ToolGroup = 'movements' | 'investments' | 'planning' | 'analysis' | 'agenda';
+type InvestmentSection = 'portfolio' | 'planning';
+type ToolGroup = 'movements' | 'investments' | 'planning' | 'agenda';
 
 const movementItems: NavigationItem[] = [
   { to: '/app/movimentacoes', label: 'Movimentações', icon: Receipt, end: true },
   { to: '/app/movimentacoes/importar', label: 'Importar extrato', icon: Upload },
-  { to: '/app/movimentacoes/lotes', label: 'Lotes e conciliação', icon: ListChecks },
+  { to: '/app/movimentacoes/lotes', label: 'Histórico de importações', icon: ListChecks },
 ];
 
 const planningItems: NavigationItem[] = [
   { to: '/app/planejamento', label: 'Visão do mês', icon: CalendarDays, end: true },
   { to: '/app/planejamento/contas', label: 'Contas financeiras', icon: CircleDollarSign },
+  { to: '/app/planejamento/categorias', label: 'Categorias', icon: Tags },
   { to: '/app/planejamento/cartoes', label: 'Cartões e parcelas', icon: CreditCard },
   { to: '/app/planejamento/orcamento', label: 'Orçamento', icon: Target },
   { to: '/app/planejamento/metas', label: 'Metas financeiras', icon: Target },
-  { to: '/app/planejamento/projecoes', label: 'Projeções e cenários', icon: TrendingUp },
+  { to: '/app/planejamento/projecoes', label: 'Simulador', icon: TrendingUp },
 ];
 
 const agendaItems: NavigationItem[] = [
   { to: '/app/agenda', label: 'Calendário', icon: CalendarDays, end: true },
-  { to: '/app/agenda/contas-fixas', label: 'Contas fixas', icon: ListChecks },
-  { to: '/app/agenda/assinaturas', label: 'Assinaturas', icon: Receipt },
+  { to: '/app/agenda/recorrencias', label: 'Recorrências', icon: ListChecks },
   { to: '/app/agenda/receitas', label: 'Receitas previstas', icon: FileText },
 ];
 
@@ -61,14 +60,7 @@ const investmentItems: Array<{
   icon: React.ComponentType<{ size?: number }>;
 }> = [
   { section: 'portfolio', label: 'Carteira', icon: PieChart },
-  { section: 'income', label: 'Proventos', icon: TrendingUp },
   { section: 'planning', label: 'Planejamento de aportes', icon: Sparkles },
-];
-
-const analysisItems: NavigationItem[] = [
-  { to: '/app/analises/resumo', label: 'Visão geral', icon: BarChart3 },
-  { to: '/app/analises/insights', label: 'Insights', icon: Lightbulb },
-  { to: '/app/analises/saude', label: 'Saúde financeira', icon: HeartPulse },
 ];
 
 function NavigationLink({ item, compact = false }: { item: NavigationItem; compact?: boolean }) {
@@ -158,20 +150,19 @@ function groupForPath(pathname: string): ToolGroup | null {
   if (pathname.startsWith('/app/investimentos') || pathname.startsWith('/app/planejamento/investimentos')) return 'investments';
   if (pathname.startsWith('/app/agenda')) return 'agenda';
   if (pathname.startsWith('/app/planejamento')) return 'planning';
-  if (pathname.startsWith('/app/analises')) return 'analysis';
   return null;
 }
 
 export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const activeGroup = groupForPath(location.pathname);
   const [expandedGroup, setExpandedGroup] = useState<ToolGroup | null>(activeGroup);
   const requestedInvestmentSection = new URLSearchParams(location.search).get('section');
-  const investmentSection: InvestmentSection = requestedInvestmentSection === 'income'
-    ? 'income'
-    : requestedInvestmentSection === 'planning'
-      ? 'planning'
-      : 'portfolio';
+  const investmentSection: InvestmentSection = requestedInvestmentSection === 'planning' ? 'planning' : 'portfolio';
+  const isAnalysisRoute = location.pathname.startsWith('/app/analises');
+  const isMovementsRoute = location.pathname.startsWith('/app/movimentacoes');
+  const isHomeRoute = location.pathname === '/app';
 
   useEffect(() => {
     if (activeGroup) setExpandedGroup(activeGroup);
@@ -181,8 +172,22 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
     setExpandedGroup((current) => current === group ? null : group);
   }
 
+  function launch() {
+    if (isHomeRoute) onLaunch();
+    else navigate('/app/lancar');
+  }
+
   return (
     <aside className="mf-side-panel" aria-label="Navegação financeira">
+      <style>{`
+        .history-shell > div:first-child button[class*="border-red-500"] { display: none !important; }
+        ${!isHomeRoute ? '.mf-top-actions > button.primary { display: none !important; }' : ''}
+        ${isAnalysisRoute ? '.mf-content .mf-tab-shell > .mf-subnav { display: none !important; }' : ''}
+        ${isMovementsRoute ? `
+          .mf-content .history-shell > .mf-subnav button:nth-child(3) { font-size: 0 !important; }
+          .mf-content .history-shell > .mf-subnav button:nth-child(3)::after { content: 'Histórico de importações'; font-size: 12px; }
+        ` : ''}
+      `}</style>
       <div className="mf-side-brand" aria-label="MF Financeiro">
         <div className="mf-side-brand-mark" aria-hidden="true">M</div>
         <div className="mf-side-brand-copy"><strong>MF Financeiro</strong><small>Controle financeiro inteligente</small></div>
@@ -210,22 +215,20 @@ export default function AppNavigation({ onLaunch }: { onLaunch: () => void }) {
           {expandedGroup === 'planning' && <div className="mf-side-primary-children">{planningItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
 
-        <section className="mf-side-tool" aria-label="Análises">
-          <ToolHeader to="/app/analises/resumo" label="Análises" icon={BarChart3} active={activeGroup === 'analysis'} expanded={expandedGroup === 'analysis'} onToggle={() => toggleGroup('analysis')} />
-          {expandedGroup === 'analysis' && <div className="mf-side-primary-children">{analysisItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
-        </section>
+        <NavigationLink item={{ to: '/app/analises/insights', label: 'Insights', icon: Lightbulb }} />
 
         <section className="mf-side-tool" aria-label="Agenda Financeira">
           <ToolHeader to="/app/agenda" label="Agenda Financeira" icon={CalendarDays} active={activeGroup === 'agenda'} expanded={expandedGroup === 'agenda'} onToggle={() => toggleGroup('agenda')} />
           {expandedGroup === 'agenda' && <div className="mf-side-primary-children">{agendaItems.map((item) => <NavigationLink key={item.to} item={item} compact />)}</div>}
         </section>
+
+        <NavigationLink item={{ to: '/app/integracoes', label: 'Conexões', icon: Bot }} />
       </nav>
 
-      <button type="button" className="mf-side-launch" onClick={onLaunch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
+      <button type="button" className="mf-side-launch" onClick={launch} aria-label="Criar novo lançamento"><Plus size={15} aria-hidden="true" />Lançar</button>
 
       <nav className="mf-side-shortcuts" aria-label="Atalhos rápidos">
         <NavLink to="/app/movimentacoes/importar" className="mf-side-shortcut" title="Importar extrato" aria-label="Importar extrato"><Upload size={14} aria-hidden="true" /></NavLink>
-        <NavLink to="/app/integracoes" className="mf-side-shortcut" title="Integrações" aria-label="Conexões e automações"><Bot size={14} aria-hidden="true" /></NavLink>
         <NavLink to="/app/agenda" className="mf-side-shortcut" title="Agenda Financeira" aria-label="Agenda Financeira"><CalendarDays size={14} aria-hidden="true" /></NavLink>
       </nav>
     </aside>
