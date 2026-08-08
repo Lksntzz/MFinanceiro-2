@@ -89,7 +89,7 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
   return (
     <div className="mf-mobile-focus-page">
       <header className="mf-mobile-focus-header">
-        <button type="button" className="mf-mobile-icon-button" onClick={() => navigate(-1)} aria-label="Voltar">
+        <button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.home)} aria-label="Voltar para a Home">
           <ArrowLeft size={21} />
         </button>
         <div>
