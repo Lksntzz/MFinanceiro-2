@@ -22,6 +22,7 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [categories, setCategories] = useState<TransactionCategory[]>([]);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [fileConfirmed, setFileConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,11 +96,7 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
     );
   }
 
-  if (payload.files.length > 1 && !selectedFile) {
-    return null;
-  }
-
-  if (payload.files.length > 1) {
+  if (payload.files.length > 1 && !fileConfirmed) {
     return (
       <div className="mf-mobile-share-picker">
         <header>
@@ -115,7 +112,7 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
             </button>
           ))}
         </div>
-        <button type="button" className="mf-mobile-primary-button" onClick={() => setSelectedFileIndex((value) => value)}>Revisar selecionado</button>
+        <button type="button" className="mf-mobile-primary-button" onClick={() => setFileConfirmed(true)}>Revisar selecionado</button>
         <button type="button" className="mf-mobile-secondary-button" onClick={() => navigate(MOBILE_ROUTES.home)}>Cancelar</button>
       </div>
     );
