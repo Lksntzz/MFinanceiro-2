@@ -193,7 +193,7 @@ export default function Insights({ summary, transactions, fixedBills }: Insights
   const highestProjection = intelligence.projections[2];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 animate-fade-in">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 animate-fade-in [&>*]:shrink-0">
       <section className="glass-card relative overflow-hidden !p-5 border-brand-primary/20 bg-brand-primary/[0.05]">
         <BrainCircuit className="absolute -right-3 -top-3 text-brand-primary/10" size={110} aria-hidden="true" />
         <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
