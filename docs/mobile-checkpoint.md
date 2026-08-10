@@ -30,8 +30,8 @@ A partir deste checkpoint, novas correções e melhorias relacionadas ao mobile 
 - MF Inbox persistente;
 - Disponível de verdade;
 - Posso gastar?;
-- atalhos PWA para lançamento e scanner;
-- suporte a deep links `/quick` e `/scan` via fallback SPA;
+- atalhos PWA para lançamento, scanner e MF Voice;
+- suporte a deep links `/quick`, `/scan`, `/voice` e `/recurrences` via fallback SPA;
 - `/app/lancar` redireciona para MF Quick no modo mobile.
 
 ### Desktop / produto
@@ -130,6 +130,26 @@ Implementado como uma entrada adicional do MF Quick, sem criar um assistente fin
 - CI do HEAD do MF Voice: instalação, TypeScript e production build success;
 - Preview Vercel do HEAD do MF Voice: READY.
 
+### Recorrência inteligente
+
+Implementada como detector local de padrões no histórico, usando a infraestrutura de recorrências que o desktop já possui:
+
+- rota mobile dedicada `/recurrences`, acessível pelo MF Quick e com fallback SPA;
+- analisa até sete meses recentes de despesas no ledger e exige pelo menos três meses de padrão antes de sugerir;
+- identifica recorrência por descrição normalizada, cobertura mensal, proximidade do dia do mês e frequência;
+- **não exige valor idêntico**: contas de energia, água e outras cobranças variáveis podem ser reconhecidas como recorrentes;
+- calcula um valor mediano apenas como referência inicial e sinaliza quando o histórico é variável;
+- rejeita padrões de alta frequência dentro do mesmo mês para reduzir falsos positivos como supermercado, mobilidade e compras frequentes;
+- exclui sugestões que já se parecem com contas fixas ou assinaturas existentes;
+- apresenta confiança, motivo, valor típico, dia esperado e quantidade de meses observados;
+- usuário revisa nome, valor de referência, dia esperado e categoria antes de confirmar;
+- somente após confirmação chama o RPC existente `mf_create_fixed_bill_recurring`, que valida o usuário autenticado e gera as ocorrências futuras;
+- “Ignorar por enquanto” é local ao aparelho via `localStorage`; não cria estado novo no banco;
+- nenhuma recorrência é criada automaticamente;
+- nenhuma migration/schema novo foi necessária;
+- CI do HEAD: TypeScript e production build success;
+- Preview Vercel do HEAD: READY.
+
 ## Pendências antes do envio final
 
 - smoke test autenticado em 320 / 360 / 390 / 412 / 430 px;
@@ -140,12 +160,12 @@ Implementado como uma entrada adicional do MF Quick, sem criar um assistente fin
 - deploy e validação controlada do `document-ocr` apenas na etapa de release;
 - teste do OCR documental em conta, boleto/conta de consumo, recibo e comprovante real;
 - teste do MF Voice em navegadores/aparelhos reais, incluindo permissão de microfone e fallback de ditado;
+- validar recorrências inteligentes com histórico real, incluindo contas variáveis e comerciantes de alta frequência;
 - câmera, galeria, teclado, safe areas e PWA;
 - revisar novas correções e funcionalidades que forem adicionadas após este checkpoint;
 - rodar novamente CI + preview antes do merge único.
 
 ## Próximas ideias já aprovadas para evolução mobile
 
-- recorrência inteligente;
 - shortcuts/widgets e integrações nativas quando houver wrapper adequado;
 - manter o mobile como companheiro financeiro diário, sem duplicar toda a complexidade do desktop.
