@@ -14,6 +14,7 @@ const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/webp",
 ]);
+const MAX_OCR_FILE_SIZE = 8 * 1024 * 1024;
 
 const responseSchema = {
   type: "object",
@@ -169,6 +170,11 @@ Deno.serve(async (request: Request) => {
     if (!["uploaded", "failed"].includes(extraction.status)) throw new Error("Este documento já está sendo processado ou revisado.");
     if (!ALLOWED_MIME_TYPES.has(extraction.source_mime_type)) throw new Error("Formato de documento não suportado.");
 
+    const sourceFileSize = Number(extraction.source_file_size || 0);
+    if (!Number.isFinite(sourceFileSize) || sourceFileSize < 1 || sourceFileSize > MAX_OCR_FILE_SIZE) {
+      throw new Error("O OCR visual aceita documentos de até 8 MB.");
+    }
+
     const { error: startError } = await supabase
       .from("mf_document_extractions")
       .update({ status: "processing", provider: "google-gemini", model, error_message: null, started_at: new Date().toISOString() })
@@ -189,6 +195,7 @@ Deno.serve(async (request: Request) => {
     ]);
     if (downloadError || !file) throw new Error("Não foi possível ler o documento privado enviado.");
     if (categoryError) throw categoryError;
+    if (file.size < 1 || file.size > MAX_OCR_FILE_SIZE) throw new Error("O arquivo privado não está dentro do limite permitido para OCR visual.");
 
     const categoryNames = (categoryRows || [])
       .map((row) => cleanText(row.name, 120))
