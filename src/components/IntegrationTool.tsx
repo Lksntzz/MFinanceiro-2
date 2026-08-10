@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { AlertCircle, Bot, Eye, EyeOff, LogOut, Plus, Wallet } from 'lucide-react';
+import { AlertCircle, Bot, ChevronDown, Eye, EyeOff, LogOut, Plus, Wallet } from 'lucide-react';
+
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { FinancialAccount, TransactionCategory, UserSettings } from '../types';
@@ -11,12 +12,7 @@ import ProfileCenter from './ProfileCenter';
 function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
   return rows.map((row) => {
     const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
+    return { ...item, opening_balance: Number(item.opening_balance || 0), current_balance: Number(item.current_balance || 0), transaction_count: Number(item.transaction_count || 0) } as FinancialAccount;
   });
 }
 
@@ -47,42 +43,22 @@ export default function IntegrationTool({ user }: { user: User }) {
       setCategories((categoriesResult.data || []) as TransactionCategory[]);
       setSettings(settingsResult.data ? ({ ...settingsResult.data, current_balance: balance } as UserSettings) : null);
     } catch (refreshError: any) {
-      console.error('Falha ao carregar integrações:', refreshError);
-      setError(refreshError?.message || 'Não foi possível carregar conexões e automações.');
-    } finally {
-      setLoading(false);
-    }
+      console.error('Falha ao carregar conexões:', refreshError);
+      setError(refreshError?.message || 'Não foi possível carregar suas conexões.');
+    } finally { setLoading(false); }
   }, [user.id]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  return (
-    <div className="mf-app-shell mf-routed-app">
-      <AppNavigation onLaunch={() => undefined} />
-      <header className="mf-topbar">
-        <div className="mf-brand">
-          <div className="mf-brand-icon"><Wallet size={20} /></div>
-          <div><h1>{settings?.workspace_name || 'MFinanceiro'}</h1><span>{settings?.display_name ? `Olá, ${settings.display_name.split(/\s+/)[0]}` : 'Integrações'}</span></div>
-        </div>
-        <div className="mf-top-actions">
-          <ProfileCenter user={user} settings={settings} accounts={accounts} open={showProfile} onOpenChange={setShowProfile} onSaved={refresh} />
-          <button type="button" onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-          <button type="button" className="primary"><Plus size={16} />Lançar</button>
-          <button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.replace('/'); }} title="Sair"><LogOut size={17} /></button>
-        </div>
-      </header>
-      {error && <div className="mf-error"><AlertCircle size={16} />{error}</div>}
-      <section className="mf-content">
-        {loading ? <div className="mf-loading">Carregando integrações...</div> : (
-          <div className="space-y-4 animate-fade-in">
-            <div>
-              <h2 className="flex items-center gap-2 text-xl font-black"><Bot size={20} />Conexões e automações</h2>
-              <p className="text-sm text-white/40">Conexões bancárias, Open Finance e regras automáticas ficam fora do Planejamento.</p>
-            </div>
-            <AutomationCenter userId={user.id} accounts={accounts} categories={categories} />
-          </div>
-        )}
-      </section>
-    </div>
-  );
+  return <div className="mf-app-shell mf-routed-app">
+    <AppNavigation onLaunch={() => window.location.assign('/app/lancar')} />
+    <header className="mf-topbar"><div className="mf-brand"><div className="mf-brand-icon"><Wallet size={20} /></div><div><h1>{settings?.workspace_name || 'MFinanceiro'}</h1><span>{settings?.display_name ? `Olá, ${settings.display_name.split(/\s+/)[0]}` : 'Conexões'}</span></div></div><div className="mf-top-actions"><ProfileCenter user={user} settings={settings} accounts={accounts} open={showProfile} onOpenChange={setShowProfile} onSaved={refresh} /><button type="button" onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button><button type="button" className="primary" onClick={() => window.location.assign('/app/lancar')}><Plus size={16} />Lançar</button><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.replace('/'); }} title="Sair"><LogOut size={17} /></button></div></header>
+    {error && <div className="mf-error"><AlertCircle size={16} />{error}</div>}
+    <section className="mf-content">
+      {loading ? <div className="mf-loading">Carregando conexões...</div> : <div className="space-y-4 animate-fade-in">
+        <div><h2 className="flex items-center gap-2 text-xl font-black"><Bot size={20} />Conexões</h2><p className="text-sm text-white/40">Conecte fontes e mantenha o fluxo financeiro organizado. Regras automáticas aparecem como configuração da conexão, não como uma ferramenta separada.</p></div>
+        <details className="mf-automation-disclosure" open><summary><span><strong>Regras e automações</strong><small>Use somente quando quiser reduzir trabalho repetitivo dentro das suas conexões.</small></span><ChevronDown size={16} /></summary><div className="mf-automation-content"><AutomationCenter userId={user.id} accounts={accounts} categories={categories} /></div></details>
+      </div>}
+    </section>
+  </div>;
 }

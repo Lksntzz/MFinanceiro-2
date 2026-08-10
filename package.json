@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "security:check": "tsx scripts/security-policy-check.ts",
+    "product:check": "tsx scripts/product-maturity-check.ts",
     "mobile:check": "tsx scripts/mobile-logic-check.ts"
   },
   "dependencies": {
