@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { parseFinancialCode } from '../src/mobile/lib/financial-code-parser';
+import { projectInvoiceForPurchase } from '../src/mobile/lib/purchase-impact';
 import { detectRecurringExpenses, type RecurrenceHistoryItem } from '../src/mobile/lib/recurrence-detector';
 import { unreviewedSharedFiles, type MobileSharedFile } from '../src/mobile/lib/mobile-share-store';
 import { parseVoiceEntry } from '../src/mobile/lib/voice-entry-parser';
@@ -66,6 +67,10 @@ function sharedFile(name: string, size: number, lastModified: number): MobileSha
     lastModified,
     blob: new Blob(['x'], { type: 'application/pdf' }),
   };
+}
+
+function localDate(year: number, monthIndex: number, day: number) {
+  return new Date(year, monthIndex, day, 12, 0, 0, 0);
 }
 
 const categories = [
@@ -135,6 +140,31 @@ const accounts = [
   assert.equal(parsed.kind, 'collection');
 }
 
+// Purchase impact: buying before closing stays on the current closing cycle.
+{
+  const projection = projectInvoiceForPurchase(localDate(2026, 7, 4), 5, 12);
+  assert.equal(projection.closeDate.getMonth(), 7);
+  assert.equal(projection.closeDate.getDate(), 5);
+  assert.equal(projection.dueDate.getMonth(), 7);
+  assert.equal(projection.dueDate.getDate(), 12);
+}
+
+// Purchase impact: buying after closing moves to the next invoice.
+{
+  const projection = projectInvoiceForPurchase(localDate(2026, 7, 6), 5, 12);
+  assert.equal(projection.closeDate.getMonth(), 8);
+  assert.equal(projection.dueDate.getMonth(), 8);
+  assert.equal(projection.dueDate.getDate(), 12);
+}
+
+// Purchase impact: due day before closing day belongs to the following month.
+{
+  const projection = projectInvoiceForPurchase(localDate(2026, 7, 10), 25, 5);
+  assert.equal(projection.closeDate.getMonth(), 7);
+  assert.equal(projection.dueDate.getMonth(), 8);
+  assert.equal(projection.dueDate.getDate(), 5);
+}
+
 // Variable utility bill: monthly rhythm matters more than identical amount.
 {
   const rows: RecurrenceHistoryItem[] = [
@@ -186,4 +216,4 @@ const accounts = [
   assert.equal(unreviewedSharedFiles([files[0]], 0).length, 0);
 }
 
-console.log('Mobile logic checks passed: voice, financial codes, recurrence detection and shared-document queue.');
+console.log('Mobile logic checks passed: voice, financial codes, purchase impact, recurrence detection and shared-document queue.');
