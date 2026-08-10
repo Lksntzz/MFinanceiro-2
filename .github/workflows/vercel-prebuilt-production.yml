@@ -16,9 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERCEL_ORG_ID: team_Q4OjsxC51APH6ge4YFvJhrSu
+  VERCEL_TEAM_ID: team_Q4OjsxC51APH6ge4YFvJhrSu
   VERCEL_PROJECT_ID: prj_GAVmGXR2XkGzOUKgmghlwDtvDcuH
-  VERCEL_SCOPE: lucasmanga95-4135s-projects
 
 jobs:
   deploy:
@@ -50,15 +49,24 @@ jobs:
       - name: TypeScript check
         run: npm run lint
 
-      - name: Link Vercel project
+      - name: Verify Vercel project access
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@58.9.1 link --yes --project="$VERCEL_PROJECT_ID" --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_TEAM_ID" \
+            > /dev/null
+
+      - name: Write local Vercel project link
+        run: |
+          mkdir -p .vercel
+          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_TEAM_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
 
       - name: Pull Vercel production configuration
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@58.9.1 pull --yes --environment=production --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@58.9.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build production artifact locally
         env:
@@ -68,4 +76,4 @@ jobs:
       - name: Deploy prebuilt artifact to production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@58.9.1 deploy --prebuilt --prod --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@58.9.1 deploy --prebuilt --prod -T "$VERCEL_TEAM_ID" --token="$VERCEL_TOKEN"
