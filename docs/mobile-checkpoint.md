@@ -110,6 +110,26 @@ Implementação preparada na branch, propositalmente desligada até o envio fina
 6. testar câmera, galeria, PDF e Compartilhar para o MF em aparelho real;
 7. manter confirmação humana obrigatória antes de criar o lançamento.
 
+### MF Voice
+
+Implementado como uma entrada adicional do MF Quick, sem criar um assistente financeiro paralelo:
+
+- rota mobile dedicada `/voice`, com rewrite SPA e entrada direta pelo boundary;
+- atalho dentro do MF Quick e shortcut adicional no manifest PWA;
+- usa `SpeechRecognition`/`webkitSpeechRecognition` quando o navegador disponibiliza reconhecimento de fala;
+- comportamento progressivo: sem suporte nativo, a tela continua utilizável pelo ditado do teclado ou frase digitada;
+- idioma configurado para `pt-BR`, reconhecimento de uma frase por vez;
+- parser local identifica despesa/receita, valor, categoria provável e conta provável por regras determinísticas;
+- exemplos cobertos incluem frases como “Gastei 48 reais de gasolina” e equivalentes de receita;
+- categorias e contas são sempre limitadas aos dados existentes do próprio usuário;
+- a frase reconhecida fica editável e o usuário precisa revisar tipo, valor, categoria, conta e descrição;
+- nenhuma gravação acontece apenas pela fala;
+- lançamento confirmado usa `mf_create_finance_entry_v3`, com origem `MF Voice Mobile`;
+- o MF não armazena o áudio nesta versão; apenas a frase revisada pode ser registrada em notas do lançamento;
+- erros/permissão negada/não detecção de fala têm fallback para edição manual;
+- CI do HEAD do MF Voice: instalação, TypeScript e production build success;
+- Preview Vercel do HEAD do MF Voice: READY.
+
 ## Pendências antes do envio final
 
 - smoke test autenticado em 320 / 360 / 390 / 412 / 430 px;
@@ -119,13 +139,13 @@ Implementação preparada na branch, propositalmente desligada até o envio fina
 - teste de `Compartilhar para o MF` em PWA Android instalada;
 - deploy e validação controlada do `document-ocr` apenas na etapa de release;
 - teste do OCR documental em conta, boleto/conta de consumo, recibo e comprovante real;
+- teste do MF Voice em navegadores/aparelhos reais, incluindo permissão de microfone e fallback de ditado;
 - câmera, galeria, teclado, safe areas e PWA;
 - revisar novas correções e funcionalidades que forem adicionadas após este checkpoint;
 - rodar novamente CI + preview antes do merge único.
 
 ## Próximas ideias já aprovadas para evolução mobile
 
-- MF Voice;
 - recorrência inteligente;
 - shortcuts/widgets e integrações nativas quando houver wrapper adequado;
 - manter o mobile como companheiro financeiro diário, sem duplicar toda a complexidade do desktop.
