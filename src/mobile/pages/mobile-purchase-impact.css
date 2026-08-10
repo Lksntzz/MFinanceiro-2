@@ -1,0 +1,154 @@
+.mf-purchase-impact__form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.mf-purchase-impact__split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+}
+
+.mf-purchase-impact__result {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(0, 242, 255, 0.18);
+  border-radius: 22px;
+  background: rgba(0, 242, 255, 0.045);
+}
+
+.mf-purchase-impact__result[data-tone='warning'] {
+  border-color: rgba(245, 190, 80, 0.26);
+  background: rgba(245, 190, 80, 0.05);
+}
+
+.mf-purchase-impact__result[data-tone='danger'] {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(248, 113, 113, 0.05);
+}
+
+.mf-purchase-impact__headline,
+.mf-purchase-impact__timeline-title,
+.mf-purchase-impact__invoice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mf-purchase-impact__headline small,
+.mf-purchase-impact__metrics small {
+  display: block;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mf-purchase-impact__headline strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 18px;
+  text-transform: capitalize;
+}
+
+.mf-purchase-impact__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.mf-purchase-impact__metrics > div {
+  padding: 12px;
+  border-radius: 15px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.mf-purchase-impact__metrics b {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.mf-purchase-impact__cycle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.mf-purchase-impact__cycle svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #00f2ff;
+}
+
+.mf-purchase-impact__cycle strong,
+.mf-purchase-impact__cycle span {
+  display: block;
+}
+
+.mf-purchase-impact__cycle strong {
+  font-size: 11px;
+}
+
+.mf-purchase-impact__cycle span {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+}
+
+.mf-purchase-impact__timeline {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+}
+
+.mf-purchase-impact__timeline-title {
+  padding: 12px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.mf-purchase-impact__timeline-title > span {
+  flex: 1;
+}
+
+.mf-purchase-impact__invoice {
+  min-height: 42px;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  font-size: 10px;
+}
+
+.mf-purchase-impact__invoice span {
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.mf-purchase-impact__timeline > small {
+  display: block;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 9px;
+}
+
+.mf-purchase-impact__note {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+@media (max-width: 359px) {
+  .mf-purchase-impact__split,
+  .mf-purchase-impact__metrics {
+    grid-template-columns: 1fr;
+  }
+}
