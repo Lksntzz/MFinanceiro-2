@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 
+import { inferAdaptiveCategory } from '../src/mobile/lib/adaptive-category';
 import { parseFinancialCode } from '../src/mobile/lib/financial-code-parser';
 import { projectInvoiceForPurchase } from '../src/mobile/lib/purchase-impact';
 import { detectRecurringExpenses, type RecurrenceHistoryItem } from '../src/mobile/lib/recurrence-detector';
 import { unreviewedSharedFiles, type MobileSharedFile } from '../src/mobile/lib/mobile-share-store';
 import { parseVoiceEntry } from '../src/mobile/lib/voice-entry-parser';
-import type { FinancialAccount, TransactionCategory } from '../src/types';
+import type { FinancialAccount, Transaction, TransactionCategory } from '../src/types';
 
 function tlv(id: string, value: string) {
   return `${id}${String(value.length).padStart(2, '0')}${value}`;
@@ -38,6 +39,20 @@ function account(id: string, name: string, institutionName: string, isDefault = 
     current_balance: 0,
     transaction_count: 0,
   } as FinancialAccount;
+}
+
+function ledger(id: string, description: string, categoryId: string, categoryName: string, type: 'expense' | 'income' = 'expense'): Transaction {
+  return {
+    id,
+    user_id: 'user-test',
+    amount: 100,
+    category_id: categoryId,
+    category: categoryName,
+    description,
+    date: '2026-07-01',
+    type,
+    status: 'paid',
+  };
 }
 
 function history(
@@ -165,6 +180,41 @@ const accounts = [
   assert.equal(projection.dueDate.getDate(), 5);
 }
 
+// Adaptive categorization: three consistent confirmations are enough for a high-confidence suggestion.
+{
+  const rows = [
+    ledger('s1', 'SHELL POSTO 1045', 'fuel', 'Combustível'),
+    ledger('s2', 'SHELL POSTO AV PAULISTA', 'fuel', 'Combustível'),
+    ledger('s3', 'SHELL POSTO', 'fuel', 'Combustível'),
+  ];
+  const suggestion = inferAdaptiveCategory({ merchantText: 'Shell', type: 'expense', history: rows, categories });
+  assert.equal(suggestion?.categoryId, 'fuel');
+  assert.equal(suggestion?.confidence, 'high');
+  assert.equal(suggestion?.matchCount, 3);
+}
+
+// Adaptive categorization: two confirmations suggest, but do not auto-apply with high confidence.
+{
+  const rows = [
+    ledger('a1', 'AMAZON BR', 'food', 'Alimentação'),
+    ledger('a2', 'AMAZON COMPRA ONLINE', 'food', 'Alimentação'),
+  ];
+  const suggestion = inferAdaptiveCategory({ merchantText: 'Amazon', type: 'expense', history: rows, categories });
+  assert.equal(suggestion?.categoryId, 'food');
+  assert.equal(suggestion?.confidence, 'medium');
+}
+
+// Adaptive categorization: broad merchant prefixes must not conflate unrelated merchants.
+{
+  const rows = [
+    ledger('m1', 'MERCADO CENTRAL', 'market', 'Supermercado'),
+    ledger('m2', 'MERCADO CENTRAL LOJA 2', 'market', 'Supermercado'),
+    ledger('m3', 'MERCADO CENTRAL', 'market', 'Supermercado'),
+  ];
+  const suggestion = inferAdaptiveCategory({ merchantText: 'Mercado Pago', type: 'expense', history: rows, categories });
+  assert.equal(suggestion, null);
+}
+
 // Variable utility bill: monthly rhythm matters more than identical amount.
 {
   const rows: RecurrenceHistoryItem[] = [
@@ -216,4 +266,4 @@ const accounts = [
   assert.equal(unreviewedSharedFiles([files[0]], 0).length, 0);
 }
 
-console.log('Mobile logic checks passed: voice, financial codes, purchase impact, recurrence detection and shared-document queue.');
+console.log('Mobile logic checks passed: voice, financial codes, purchase impact, adaptive categorization, recurrence detection and shared-document queue.');
