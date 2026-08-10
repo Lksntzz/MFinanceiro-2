@@ -188,7 +188,7 @@ drop trigger if exists mf_audit_global_settings_change on public.mf_global_setti
 create trigger mf_audit_global_settings_change
 after update on public.mf_global_settings
 for each row
-when (old is distinct from new)
+when (old.* is distinct from new.*)
 execute function public.mf_audit_global_settings_change();
 
 comment on table public.mf_admin_audit_events is
