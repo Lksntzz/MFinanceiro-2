@@ -13,6 +13,9 @@ export interface UserPreferences {
   compactHome: boolean;
 }
 
+export const MIN_HOME_WIDGETS = 3;
+export const MAX_HOME_WIDGETS = 5;
+
 export const HOME_WIDGET_OPTIONS: Array<{ id: HomeWidgetId; label: string; description: string }> = [
   { id: 'status', label: 'Situação atual', description: 'Saldo, limite diário, ciclo e gasto de hoje.' },
   { id: 'alerts', label: 'Atenção e leitura', description: 'Alertas do ciclo e leitura financeira.' },
@@ -26,7 +29,7 @@ export const HOME_WIDGET_OPTIONS: Array<{ id: HomeWidgetId; label: string; descr
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   version: 1,
-  homeWidgets: ['status', 'alerts', 'quality', 'balance_chart', 'rhythm_chart', 'categories', 'recent', 'cards'],
+  homeWidgets: ['status', 'alerts', 'quality', 'recent', 'cards'],
   notifications: {
     commitments: true,
     cards: true,
@@ -53,8 +56,8 @@ export function allToursSkipKey(userId: string) {
 function sanitizeWidgets(value: unknown): HomeWidgetId[] {
   if (!Array.isArray(value)) return DEFAULT_USER_PREFERENCES.homeWidgets;
   const valid = new Set(HOME_WIDGET_OPTIONS.map((item) => item.id));
-  const widgets = value.filter((item): item is HomeWidgetId => typeof item === 'string' && valid.has(item as HomeWidgetId));
-  return widgets.length ? [...new Set(widgets)] : DEFAULT_USER_PREFERENCES.homeWidgets;
+  const widgets = [...new Set(value.filter((item): item is HomeWidgetId => typeof item === 'string' && valid.has(item as HomeWidgetId)))].slice(0, MAX_HOME_WIDGETS);
+  return widgets.length >= MIN_HOME_WIDGETS ? widgets : DEFAULT_USER_PREFERENCES.homeWidgets;
 }
 
 export function loadUserPreferences(userId: string): UserPreferences {
