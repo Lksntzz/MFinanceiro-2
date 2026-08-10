@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router';
 
 import { formatCurrency } from '../../lib/formatters';
 import type { CreditCard, FinanceSummary } from '../../types';
+import { projectInvoiceForPurchase, safeCardDate } from '../lib/purchase-impact';
 import { MOBILE_ROUTES } from '../routes';
 import './mobile-purchase-impact.css';
 
@@ -14,31 +15,11 @@ type MobilePurchaseImpactProps = {
   summary: FinanceSummary | null;
 };
 
-type InvoiceProjection = {
-  closeDate: Date;
-  dueDate: Date;
-};
-
 function parseMoneyInput(value: string) {
   const clean = value.trim().replace(/\s/g, '');
   if (!clean) return Number.NaN;
   if (clean.includes(',')) return Number(clean.replace(/\./g, '').replace(',', '.'));
   return Number(clean);
-}
-
-function safeDate(year: number, monthIndex: number, day: number) {
-  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-  return new Date(year, monthIndex, Math.min(Math.max(1, day), lastDay), 12, 0, 0, 0);
-}
-
-export function projectInvoiceForPurchase(purchaseDate: Date, closingDay: number, dueDay: number): InvoiceProjection {
-  const purchaseDay = purchaseDate.getDate();
-  const closeMonthOffset = purchaseDay <= closingDay ? 0 : 1;
-  const closeMonth = purchaseDate.getMonth() + closeMonthOffset;
-  const closeDate = safeDate(purchaseDate.getFullYear(), closeMonth, closingDay);
-  const dueMonthOffset = dueDay > closingDay ? 0 : 1;
-  const dueDate = safeDate(closeDate.getFullYear(), closeDate.getMonth() + dueMonthOffset, dueDay);
-  return { closeDate, dueDate };
 }
 
 function impactTone(availableAfter: number, cycleFreeAfter: number | null) {
@@ -83,7 +64,7 @@ export default function MobilePurchaseImpact({ cards, summary }: MobilePurchaseI
     const invoices = Array.from({ length: Math.min(installmentCount, 6) }, (_, index) => {
       const closeDate = addMonths(firstInvoice.closeDate, index);
       const dueMonthOffset = Number(card.due_day || 1) > Number(card.closing_day || 1) ? 0 : 1;
-      const dueDate = safeDate(closeDate.getFullYear(), closeDate.getMonth() + dueMonthOffset, Number(card.due_day || 1));
+      const dueDate = safeCardDate(closeDate.getFullYear(), closeDate.getMonth() + dueMonthOffset, Number(card.due_day || 1));
       return { index: index + 1, dueDate, amount: monthlyAmount };
     });
 
