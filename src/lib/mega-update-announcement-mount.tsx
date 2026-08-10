@@ -7,14 +7,14 @@ import { supabase } from './supabase';
 // every approved web rollout should update this object with concise user-facing
 // language describing what changed and the benefit, without technical details.
 const WEB_UPDATE = {
-  id: '2026-08-09-web-experience-polish',
-  title: 'Experiência web aprimorada',
+  id: '2026-08-09-web-product-audit',
+  title: 'Experiência web mais integrada',
   dateLabel: '9 de agosto de 2026',
-  summary: 'A navegação superior, o perfil e as telas de planejamento foram refinados para deixar o uso do MF Financeiro mais claro, consistente e confortável.',
+  summary: 'O MF Financeiro recebeu uma revisão de experiência para deixar as principais áreas mais consistentes, conectadas e fáceis de acompanhar no dia a dia.',
   highlights: [
-    'Perfil e cabeçalhos mais estáveis, evitando informações temporárias durante o carregamento.',
-    'Notificações disponíveis de forma mais consistente nas principais áreas da versão web.',
-    'Planejamento com melhor espaçamento e organização visual para facilitar leitura e navegação.',
+    'Telas, cards e formulários ganharam uma hierarquia visual mais consistente para facilitar leitura e navegação.',
+    'Planejamento e Agenda agora trabalham de forma mais integrada, reunindo melhor os compromissos que impactam o mês.',
+    'Navegação, feedbacks e estados de uso foram refinados para deixar as ações mais claras e previsíveis.',
   ],
 } as const;
 
