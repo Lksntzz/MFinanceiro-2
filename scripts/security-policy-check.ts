@@ -48,7 +48,49 @@ const dashboard = read('src/components/Dashboard.tsx');
 assert.equal(dashboard.includes('mf_delete_all_finance_entries'), false, 'bulk ledger deletion must not exist in Dashboard');
 
 const accessControl = read('src/lib/access-control.ts');
-assert.equal(accessControl.includes('supabase.rpc("check_access_request_status"'), false, 'browser must not call privileged access status RPC directly');
+assert.ok(accessControl.includes("supabase.functions.invoke('access-request'"), 'public access requests must go through the non-enumerating Edge Function');
+assert.equal(/resolveAuthState|fetchAccessStatus|check_access_request_status|mf_resolve_access_entry/.test(accessControl), false, 'browser access control must not expose account/request state discovery');
+
+const authUi = read('src/components/Auth.tsx');
+assert.equal(/signUp\s*\(|resolveAuthState|Verificando se este e-mail já possui conta|Conta encontrada/.test(authUi), false, 'public auth UI must not enumerate accounts or create users directly');
+assert.ok(authUi.includes("signInWithPassword"), 'existing users must retain password login');
+
+const app = read('src/App.tsx');
+assert.ok(app.includes("const ACTIVATION_PATH = '/activate'"), 'invite activation route must remain explicit');
+assert.ok(app.includes('<InviteActivation session={session} />'), 'invite activation route must use the authenticated invite session');
+
+const accessMigration = read('supabase/migrations/20260810234500_secure_access_invites.sql');
+for (const required of [
+  'activation_token_hash',
+  'mf_prepare_access_request',
+  'mf_before_user_created',
+  'supabase_auth_admin',
+  'service_role',
+  'extensions.digest',
+  'revoke execute on function public.mf_resolve_access_entry',
+  'revoke execute on function public.check_access_request_status',
+  'revoke execute on function public.submit_access_request',
+]) {
+  assert.ok(accessMigration.includes(required), `secure access migration missing: ${required}`);
+}
+
+const retiredResolver = read('supabase/functions/resolve-auth-state/index.ts');
+assert.ok(retiredResolver.includes('endpoint_retired'), 'legacy auth-state resolver must stay retired');
+assert.equal(/listUsers|check_access_request_status|SUPABASE_SERVICE_ROLE_KEY/.test(retiredResolver), false, 'retired auth-state resolver must not retain privileged discovery logic');
+
+const accessRequestFunction = read('supabase/functions/access-request/index.ts');
+for (const required of [
+  'mf_prepare_access_request',
+  'inviteUserByEmail',
+  'mf_access_request_id',
+  'mf_invite_token',
+  'EdgeRuntime.waitUntil',
+  'Cache-Control',
+  'no-store',
+]) {
+  assert.ok(accessRequestFunction.includes(required), `access-request function missing: ${required}`);
+}
+assert.equal(accessRequestFunction.includes('listUsers'), false, 'access-request function must not enumerate Auth users');
 
 const serviceWorker = read('public/sw.js');
 for (const required of [
@@ -74,6 +116,7 @@ const forbiddenBrowserRpcs = [
   'mf_fixed_bill_cycle_bounds',
   'mf_resolve_access_entry',
   'mf_sync_fixed_bill_snapshots',
+  'submit_access_request',
 ];
 
 for (const file of sourceFiles(join(root, 'src'))) {
@@ -95,4 +138,4 @@ if (existsSync(legacyOrchestratorPath)) {
   assert.equal(/setInterval\s*\([^)]*window\.location|setInterval\s*\(sync\s*,/s.test(orchestrator), false, 'product guidance must use router state instead of navigation polling');
 }
 
-console.log('Security policy checks passed: permissions, DB hardening, browser RPC boundaries, destructive paths, service-worker cache isolation, legacy surfaces and architecture boundaries.');
+console.log('Security policy checks passed: permissions, DB hardening, invite-only auth, browser RPC boundaries, destructive paths, service-worker cache isolation, legacy surfaces and architecture boundaries.');
