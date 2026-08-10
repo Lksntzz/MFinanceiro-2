@@ -9,7 +9,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeShareReceiverPlugin.class);
-        NativeShareStore.capture(this, getIntent());
         super.onCreate(savedInstanceState);
     }
 
