@@ -1,0 +1,172 @@
+name: Mobile roadmap one-shot patch
+
+on:
+  push:
+    branches:
+      - agent/mobile-roadmap-remaining
+    paths:
+      - .github/workflows/mobile-roadmap-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mobile-roadmap-remaining
+
+      - name: Apply explicit OCR flow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/mobile/pages/MobileScan.tsx')
+          text = path.read_text()
+
+          text = text.replace(
+              "  const [fileName, setFileName] = useState('');\n  const [previewUrl, setPreviewUrl] = useState<string | null>(null);",
+              "  const [fileName, setFileName] = useState('');\n  const [selectedFile, setSelectedFile] = useState<File | null>(null);\n  const [previewUrl, setPreviewUrl] = useState<string | null>(null);",
+          )
+
+          text = text.replace(
+              "    setFileName('');\n    setParsed(null);",
+              "    setFileName('');\n    setSelectedFile(null);\n    setParsed(null);",
+          )
+
+          text = text.replace(
+              "    setOcrExtractionId('');\n    setFileName(file.name || 'captura');",
+              "    setOcrExtractionId('');\n    setFileName(file.name || 'captura');\n    setSelectedFile(file);",
+          )
+
+          start = text.index("      if (DOCUMENT_OCR_ENABLED) {\n")
+          end = text.index("      if (localParsed) {\n", start)
+          text = text[:start] + text[end:]
+
+          old_pdf = """        setNotice(DOCUMENT_OCR_ENABLED
+          ? 'PDF recebido. O OCR visual não retornou dados confiáveis; complete a revisão manualmente.'
+          : 'PDF recebido. O OCR visual está preparado para a publicação final; por enquanto, confirme os dados manualmente.');"""
+          new_pdf = """        setNotice(DOCUMENT_OCR_ENABLED
+          ? 'PDF recebido. Para extrair empresa, valor e vencimento, toque em “Analisar com IA”.'
+          : 'PDF recebido. Confirme os dados manualmente.');"""
+          if old_pdf not in text:
+              raise SystemExit('PDF notice pattern not found')
+          text = text.replace(old_pdf, new_pdf)
+
+          marker = """  useEffect(() => {
+    if (initialHandledRef.current) return;"""
+          if marker not in text:
+              raise SystemExit('initial effect marker not found')
+
+          analyze_fn = r'''  async function analyzeSelectedFileWithOcr() {
+    if (!selectedFile || !DOCUMENT_OCR_ENABLED || processing) return;
+    setProcessing(true);
+    setError(null);
+    setNotice(null);
+    setSaved(false);
+
+    try {
+      const ocrResult = await analyzeDocumentWithOcr({
+        file: selectedFile,
+        userId,
+        accountId: review.accountId || accounts.find((item) => item.is_default)?.id || accounts[0]?.id || null,
+        captureSource,
+      });
+
+      if (!ocrResult) {
+        setNotice('OCR visual indisponível neste ambiente. Você ainda pode confirmar os dados manualmente.');
+        return;
+      }
+
+      setOcrExtractionId(ocrResult.extractionId);
+      const metadata = ocrResult.metadata;
+      const fallbackDraft = draft || {
+        description: selectedFile.name.replace(/\.[^.]+$/, '') || 'Documento capturado',
+        documentKind: selectedFile.type === 'application/pdf' ? 'pdf' : 'image',
+        confidence: 'low' as const,
+      };
+      const mergedDraft: MobileScannedDraft = {
+        amount: Number(metadata.amount || 0) > 0 ? Number(metadata.amount) : fallbackDraft.amount,
+        description: metadata.description || metadata.merchant_name || fallbackDraft.description,
+        merchant: metadata.merchant_name || fallbackDraft.merchant,
+        category: metadata.category_hint || fallbackDraft.category,
+        dueDate: metadata.due_date || fallbackDraft.dueDate,
+        documentKind: metadata.document_kind || fallbackDraft.documentKind,
+        barcode: fallbackDraft.barcode,
+        pixPayload: fallbackDraft.pixPayload,
+        confidence: reviewConfidence(ocrResult.documentConfidence),
+      };
+      applyDraft(mergedDraft, parsed);
+
+      const suggestedCategory = metadata.category_hint
+        ? expenseCategories.find((category) => category.name.trim().toLocaleLowerCase('pt-BR') === String(metadata.category_hint).trim().toLocaleLowerCase('pt-BR'))
+        : null;
+      setReview((current) => ({
+        ...current,
+        categoryId: suggestedCategory?.id || current.categoryId,
+        status: metadata.payment_status === 'paid' ? 'paid' : metadata.payment_status === 'pending' ? 'pending' : current.status,
+        dueDate: metadata.payment_status === 'paid' ? '' : metadata.due_date || current.dueDate,
+      }));
+
+      const warning = firstUsefulWarning(metadata);
+      setNotice(warning || 'Documento analisado com IA. Confira todos os campos antes de registrar.');
+    } catch (ocrError: any) {
+      const fallbackMessage = ocrError?.message || 'O OCR visual não conseguiu concluir a leitura.';
+      setNotice(`${fallbackMessage} A captura continua disponível para revisão manual.`);
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+'''
+          text = text.replace(marker, analyze_fn + marker)
+
+          result_head = """          <div className=\"mf-mobile-scan-result-head\">
+            <div><span>{parsed?.label || 'Documento capturado'}</span><small>{confidenceLabel(draft.confidence)}</small></div>
+            <ShieldCheck size={21} />
+          </div>
+
+"""
+          if result_head not in text:
+              raise SystemExit('result head marker not found')
+          ai_button = result_head + """          {selectedFile && DOCUMENT_OCR_ENABLED && !ocrExtractionId && !saved ? (
+            <button className=\"mf-mobile-secondary-button\" type=\"button\" onClick={() => void analyzeSelectedFileWithOcr()} disabled={processing}>
+              {processing ? <Loader2 className=\"animate-spin\" size={18} /> : <ScanLine size={18} />}
+              {processing ? 'Analisando documento...' : 'Analisar com IA'}
+            </button>
+          ) : null}
+
+"""
+          text = text.replace(result_head, ai_button)
+
+          text = text.replace(
+              "disabled={saving || saved || !userId}",
+              "disabled={saving || processing || saved || !userId}",
+          )
+
+          path.write_text(text)
+
+          env = Path('.env.example')
+          env_text = env.read_text()
+          env_text = env_text.replace(
+              '# Manter false até a Edge Function document-ocr estar publicada e validada.\nVITE_DOCUMENT_OCR_ENABLED="false"',
+              '# A Edge Function document-ocr está publicada. Use false somente para desligar o recurso em um ambiente específico.\nVITE_DOCUMENT_OCR_ENABLED="true"',
+          )
+          env.write_text(env_text)
+          PY
+
+      - name: Commit generated patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/mobile/pages/MobileScan.tsx .env.example
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: enable explicit document OCR review"
+          git push origin HEAD:agent/mobile-roadmap-remaining
