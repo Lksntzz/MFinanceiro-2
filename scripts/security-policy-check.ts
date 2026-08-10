@@ -50,6 +50,23 @@ assert.equal(dashboard.includes('mf_delete_all_finance_entries'), false, 'bulk l
 const accessControl = read('src/lib/access-control.ts');
 assert.equal(accessControl.includes('supabase.rpc("check_access_request_status"'), false, 'browser must not call privileged access status RPC directly');
 
+const serviceWorker = read('public/sw.js');
+for (const required of [
+  "const CACHE_PREFIX = 'mfinanceiro-assets-'",
+  'MAX_CACHED_ASSETS',
+  "url.pathname.startsWith('/assets/')",
+  '!url.search',
+  "request.headers.has('authorization')",
+  "request.headers.has('apikey')",
+  "cacheControl.includes('private')",
+  "cacheControl.includes('no-store')",
+  'trimAssetCache(cache)',
+]) {
+  assert.ok(serviceWorker.includes(required), `service worker cache policy missing: ${required}`);
+}
+assert.equal(serviceWorker.includes("key.startsWith('mfinanceiro-')"), false, 'service worker must not delete unrelated MF caches');
+assert.equal(/if \(request\.method === ['"]GET['"]\)[\s\S]{0,500}cache\.put/.test(serviceWorker), false, 'service worker must not cache arbitrary GET responses');
+
 const forbiddenBrowserRpcs = [
   'check_access_request_status',
   'mf_create_finance_entry_v2',
@@ -78,4 +95,4 @@ if (existsSync(legacyOrchestratorPath)) {
   assert.equal(/setInterval\s*\([^)]*window\.location|setInterval\s*\(sync\s*,/s.test(orchestrator), false, 'product guidance must use router state instead of navigation polling');
 }
 
-console.log('Security policy checks passed: permissions, DB hardening, browser RPC boundaries, destructive paths, legacy surfaces and architecture boundaries.');
+console.log('Security policy checks passed: permissions, DB hardening, browser RPC boundaries, destructive paths, service-worker cache isolation, legacy surfaces and architecture boundaries.');
