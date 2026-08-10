@@ -84,7 +84,7 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
       {(error || message) && <div className={`rounded-xl border px-4 py-3 text-xs ${error ? 'border-red-500/25 bg-red-500/10 text-red-200' : 'border-green-500/25 bg-green-500/10 text-green-200'}`}>{error || message}</div>}
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,.8fr)]">
-        <form onSubmit={saveSimple} className="glass-card space-y-4">
+        <form onSubmit={saveSimple} className="glass-card mf-tool-surface space-y-4">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-brand-primary/15 p-2 text-brand-primary"><WalletCards size={18} /></div>
             <div><h3 className="text-sm font-bold">Renda recorrente principal</h3><p className="mt-1 text-[10px] text-white/40">Use o valor líquido que você espera ter disponível no mês.</p></div>
@@ -99,7 +99,7 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
           <p className="text-[10px] leading-relaxed text-white/30">Receitas pontuais continuam sendo registradas como entradas pelo botão “Lançar”. Esta tela serve para a base recorrente usada nas projeções.</p>
         </form>
 
-        <section className="glass-card space-y-3">
+        <section className="glass-card mf-tool-surface space-y-3">
           <div className="flex items-center gap-3"><CalendarDays size={18} className="text-brand-primary" /><div><h3 className="text-sm font-bold">Como o mês está configurado</h3><p className="text-[10px] text-white/40">Resumo usado pela Agenda e pelo Planejamento.</p></div></div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="text-[9px] uppercase tracking-widest text-white/35">Renda prevista</div>

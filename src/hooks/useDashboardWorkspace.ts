@@ -216,8 +216,10 @@ export function useDashboardWorkspace(userId: string) {
     const filter = `user_id=eq.${userId}`;
     const scheduleRefresh = () => {
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = window.setTimeout(() => void refresh(), 220);
+      refreshTimerRef.current = window.setTimeout(() => void refresh(), 120);
     };
+
+    window.addEventListener('mf:finance-data-changed', scheduleRefresh);
 
     const channel = supabase
       .channel(`dashboard-workspace-${userId}`)
@@ -231,6 +233,7 @@ export function useDashboardWorkspace(userId: string) {
       .subscribe();
 
     return () => {
+      window.removeEventListener('mf:finance-data-changed', scheduleRefresh);
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
       void supabase.removeChannel(channel);
     };

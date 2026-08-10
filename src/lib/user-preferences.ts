@@ -3,7 +3,7 @@ export type HomeWidgetId = 'status' | 'alerts' | 'balance_chart' | 'rhythm_chart
 export type NotificationPreferenceKey = 'commitments' | 'cards' | 'quality' | 'release';
 
 export interface UserPreferences {
-  version: 1;
+  version: 2;
   homeWidgets: HomeWidgetId[];
   notifications: Record<NotificationPreferenceKey, boolean>;
   toursAutoStart: boolean;
@@ -13,8 +13,10 @@ export interface UserPreferences {
   compactHome: boolean;
 }
 
+type StoredUserPreferences = Omit<Partial<UserPreferences>, 'version'> & { version?: number };
+
 export const MIN_HOME_WIDGETS = 3;
-export const MAX_HOME_WIDGETS = 5;
+export const MAX_HOME_WIDGETS = 8;
 
 export const HOME_WIDGET_OPTIONS: Array<{ id: HomeWidgetId; label: string; description: string }> = [
   { id: 'status', label: 'Situação atual', description: 'Saldo, limite diário, ciclo e gasto de hoje.' },
@@ -28,8 +30,8 @@ export const HOME_WIDGET_OPTIONS: Array<{ id: HomeWidgetId; label: string; descr
 ];
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
-  version: 1,
-  homeWidgets: ['status', 'alerts', 'quality', 'recent', 'cards'],
+  version: 2,
+  homeWidgets: ['status', 'alerts', 'quality', 'balance_chart', 'rhythm_chart', 'categories', 'recent', 'cards'],
   notifications: {
     commitments: true,
     cards: true,
@@ -63,13 +65,14 @@ function sanitizeWidgets(value: unknown): HomeWidgetId[] {
 export function loadUserPreferences(userId: string): UserPreferences {
   if (typeof window === 'undefined' || !userId) return DEFAULT_USER_PREFERENCES;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(userPreferencesKey(userId)) || '{}') as Partial<UserPreferences>;
+    const parsed = JSON.parse(window.localStorage.getItem(userPreferencesKey(userId)) || '{}') as StoredUserPreferences;
     const globalToursSkipped = window.localStorage.getItem(allToursSkipKey(userId)) === 'skipped';
+    const homeWidgets = parsed.version === 2 ? sanitizeWidgets(parsed.homeWidgets) : DEFAULT_USER_PREFERENCES.homeWidgets;
     return {
       ...DEFAULT_USER_PREFERENCES,
       ...parsed,
-      version: 1,
-      homeWidgets: sanitizeWidgets(parsed.homeWidgets),
+      version: 2,
+      homeWidgets,
       notifications: {
         ...DEFAULT_USER_PREFERENCES.notifications,
         ...(parsed.notifications || {}),
@@ -86,7 +89,7 @@ export function saveUserPreferences(userId: string, preferences: UserPreferences
   const normalized: UserPreferences = {
     ...DEFAULT_USER_PREFERENCES,
     ...preferences,
-    version: 1,
+    version: 2,
     homeWidgets: sanitizeWidgets(preferences.homeWidgets),
     notifications: {
       ...DEFAULT_USER_PREFERENCES.notifications,
