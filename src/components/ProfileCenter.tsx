@@ -57,8 +57,12 @@ export default function ProfileCenter({ user, settings, accounts, open, onOpenCh
   const memberSince = user.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '—';
   const role = String(user.app_metadata?.role || '').toLowerCase();
   const isAdmin = role === 'admin' || role === 'owner';
-  const ownsNotificationButton = typeof window !== 'undefined'
-    && window.location.pathname.replace(/\/+$/, '') !== '/app';
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') : '';
+  const ownsNotificationButton = currentPath === '/app/lancar'
+    || currentPath.startsWith('/app/investimentos')
+    || currentPath.startsWith('/app/integracoes')
+    || currentPath.startsWith('/app/agenda')
+    || currentPath.startsWith('/app/planejamento');
 
   const visibleRoutedNotifications = useMemo(
     () => routedNotifications.filter((item) => !dismissedNotifications.includes(item.id)),
