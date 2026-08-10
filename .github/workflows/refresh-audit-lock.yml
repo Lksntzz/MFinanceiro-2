@@ -1,7 +1,11 @@
 name: Refresh Safe Audit Lock
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - agent/mobile-product-integration
+    paths:
+      - .github/workflows/refresh-audit-lock.yml
 
 permissions:
   contents: write
