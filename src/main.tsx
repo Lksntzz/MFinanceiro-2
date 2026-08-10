@@ -11,6 +11,7 @@ import './index.css';
 import './layout-tuning.css';
 import './navigation.css';
 import './stage6.css';
+import './web-product-refinements.css';
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 let versionReloadStarted = false;
