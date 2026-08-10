@@ -1,13 +1,25 @@
+@import '../mobile.css';
+@import '../mobile-hardening.css';
+
 .mf-mobile-share-state,
 .mf-mobile-share-picker {
   min-height: 100dvh;
   background: #050505;
   color: #f7fbff;
-  padding: max(28px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+  padding-top: max(28px, env(safe-area-inset-top));
+  padding-right: max(20px, env(safe-area-inset-right));
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
+  padding-left: max(20px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 14px;
+  box-sizing: border-box;
+}
+
+.mf-mobile-share-state *,
+.mf-mobile-share-picker * {
+  box-sizing: border-box;
 }
 
 .mf-mobile-share-state {
@@ -68,6 +80,7 @@
   background: rgba(255, 255, 255, 0.035);
   color: inherit;
   text-align: left;
+  touch-action: manipulation;
 }
 
 .mf-mobile-share-files button[data-active='true'] {
