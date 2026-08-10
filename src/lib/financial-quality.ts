@@ -73,7 +73,7 @@ export function assessDataQuality({
       issues.push({
         id: 'generic-categories', severity: 'medium', title: 'Muitos lançamentos genéricos',
         description: `${genericCount} dos ${recent.length} lançamentos recentes estão em categorias genéricas.`,
-        actionLabel: 'Revisar movimentações', actionPath: '/app/movimentacoes',
+        actionLabel: 'Organizar genéricos', actionPath: '/app/movimentacoes?assist=categorias',
       });
     }
   }

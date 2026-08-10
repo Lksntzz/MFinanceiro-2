@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { AlertCircle, Bot, ChevronDown, Eye, EyeOff, LogOut, Plus, Wallet } from 'lucide-react';
+import { AlertCircle, Bot, ChevronDown, Eye, EyeOff, Landmark, LogOut, Plus, Wallet } from 'lucide-react';
 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
@@ -56,7 +56,8 @@ export default function IntegrationTool({ user }: { user: User }) {
     {error && <div className="mf-error"><AlertCircle size={16} />{error}</div>}
     <section className="mf-content">
       {loading ? <div className="mf-loading">Carregando conexões...</div> : <div className="space-y-4 animate-fade-in">
-        <div><h2 className="flex items-center gap-2 text-xl font-black"><Bot size={20} />Conexões</h2><p className="text-sm text-white/40">Conecte fontes e mantenha o fluxo financeiro organizado. Regras automáticas aparecem como configuração da conexão, não como uma ferramenta separada.</p></div>
+        <div><h2 className="flex items-center gap-2 text-xl font-black"><Bot size={20} />Conexões</h2><p className="text-sm text-white/40">Use regras para reduzir trabalho repetitivo. As conexões bancárias serão liberadas quando a experiência estiver pronta para uso contínuo.</p></div>
+        <div className="mf-open-finance-coming-soon" role="status"><div className="flex min-w-0 gap-3"><Landmark size={19} className="mt-0.5 shrink-0 text-brand-primary" /><div><strong>Conexão bancária via Open Finance</strong><p>Em breve você poderá conectar bancos e trazer contas e movimentações para o MF com sincronização. Até lá, o acesso fica bloqueado para evitar fluxos incompletos.</p></div></div><span>Em breve</span></div>
         <details className="mf-automation-disclosure"><summary><span><strong>Regras e automações</strong><small>Use somente quando quiser reduzir trabalho repetitivo dentro das suas conexões.</small></span><ChevronDown size={16} /></summary><div className="mf-automation-content"><AutomationCenter userId={user.id} accounts={accounts} categories={categories} /></div></details>
       </div>}
     </section>

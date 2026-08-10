@@ -122,7 +122,7 @@ export default function FinancialCategoriesTool({ user }: { user: User }) {
 
           {loading ? <div className="mf-loading">Carregando categorias...</div> : (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-              <section className="glass-card space-y-4">
+              <section className="glass-card mf-tool-surface space-y-4">
                 <div className="flex items-center gap-3"><Tags size={18} className="text-brand-primary" /><div><h3 className="text-sm font-bold">Categorias ativas</h3><p className="text-[10px] text-white/40">Use poucas categorias claras; detalhes podem ficar na descrição do lançamento.</p></div></div>
                 <div className="flex max-h-[430px] flex-wrap content-start gap-2 overflow-y-auto no-scrollbar">
                   {categories.map((category) => (
@@ -135,7 +135,7 @@ export default function FinancialCategoriesTool({ user }: { user: User }) {
                 <p className="text-[10px] text-white/35">{activeCategories.length} categoria(s) ativa(s). Categorias do sistema ficam protegidas para manter relatórios consistentes.</p>
               </section>
 
-              <form onSubmit={createCategory} className="glass-card space-y-3">
+              <form onSubmit={createCategory} className="glass-card mf-tool-surface space-y-3">
                 <div><h3 className="text-sm font-bold">Nova categoria</h3><p className="mt-1 text-[10px] text-white/40">Crie apenas quando nenhuma categoria existente representar bem o lançamento.</p></div>
                 <label className="block text-[10px] text-white/50">Nome<input required value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Ex.: Pets" className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-brand-primary" /></label>
                 <label className="block text-[10px] text-white/50">Aplicação<select value={categoryType} onChange={(event) => setCategoryType(event.target.value as typeof categoryType)} className="mt-1 w-full rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs"><option value="both">Entradas e saídas</option><option value="expense">Somente saídas</option><option value="income">Somente entradas</option></select></label>

@@ -19,13 +19,19 @@
 .mf-automation-disclosure[open] > summary svg { transform:rotate(180deg); }
 .mf-automation-content { border-top:1px solid rgba(255,255,255,.07); padding:12px; }
 
+.mf-open-finance-coming-soon { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; border:1px solid rgba(0,242,255,.16); border-radius:16px; padding:14px 16px; background:linear-gradient(135deg,rgba(0,242,255,.055),rgba(139,92,246,.035)); }
+.mf-open-finance-coming-soon strong { display:block; color:rgba(255,255,255,.86); font-size:12px; }
+.mf-open-finance-coming-soon p { margin:4px 0 0; max-width:720px; color:rgba(255,255,255,.42); font-size:10px; line-height:1.5; }
+.mf-open-finance-coming-soon span { flex:none; border:1px solid rgba(0,242,255,.2); border-radius:999px; padding:5px 9px; background:rgba(0,242,255,.08); color:#67e8f9; font-size:8px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+.mf-automation-content [role="tablist"][aria-label="Automação e Open Finance"] > button:last-child { display:none; }
+
 /*
  * Desktop/web spacing contract.
  *
- * `.mf-card` is intentionally only the visual surface (border, radius and
- * background). Feature cards that hold direct copy need their own interior
- * breathing room. Keeping this rule explicit avoids double-padding older KPI,
- * chart and glass-card components that already own their spacing.
+ * `.mf-card` and `glass-card` are intentionally visual surfaces (border,
+ * radius and background). Feature cards that hold direct copy need their own
+ * interior breathing room. Keeping this rule explicit avoids double-padding
+ * older KPI, chart and glass-card components that already own their spacing.
  */
 @media (min-width: 821px) {
   .mf-onboarding-checklist,
@@ -34,6 +40,7 @@
     padding: clamp(11px, .85vh, 14px) clamp(12px, .85vw, 16px);
   }
 
+  .mf-tool-surface,
   .mf-card[aria-label="Progresso do planejamento"],
   .mf-routed-app .mf-tab-shell > .space-y-4 > form.mf-card,
   .mf-routed-app .mf-tab-shell > .space-y-4 > .grid[class~="xl:grid-cols-3"] > .mf-card,

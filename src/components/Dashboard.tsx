@@ -25,6 +25,23 @@ import ProfileCenter from './ProfileCenter';
 
 const ImportarExtratos = lazy(() => import('./ImportarExtratos'));
 
+function dismissedAlertsKey(userId: string) {
+  return `mf-dismissed-alerts:v1:${userId}`;
+}
+
+function loadDismissedAlerts(userId: string): string[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(dismissedAlertsKey(userId)) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string').slice(-250) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistDismissedAlerts(userId: string, ids: string[]) {
+  try { window.localStorage.setItem(dismissedAlertsKey(userId), JSON.stringify(ids.slice(-250))); } catch { /* optional local preference */ }
+}
+
 export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: boolean }) {
   const { isPrivate, setIsPrivate } = useApp();
   const { preferences } = useUserPreferences(user.id);
@@ -33,29 +50,49 @@ export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: 
   const workspace = useDashboardWorkspace(user.id);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>(() => loadDismissedAlerts(user.id));
 
   const path = location.pathname.replace(/\/+$/, '') || '/app';
   const historySubTab: 'list' | 'import' | 'batches' = path === '/app/movimentacoes/importar' ? 'import' : path === '/app/movimentacoes/lotes' ? 'batches' : 'list';
   const isAdmin = ['admin', 'owner'].includes(String(user.app_metadata?.role || '').toLowerCase());
+  const monthKey = new Date().toISOString().slice(0, 7);
 
   const qualityIssues = useMemo(() => assessDataQuality({ accounts: workspace.accounts, categories: workspace.categories, cards: workspace.cards, fixedBills: workspace.fixedBills, transactions: workspace.financeTransactions }), [workspace.accounts, workspace.cards, workspace.categories, workspace.financeTransactions, workspace.fixedBills]);
 
   const notifications = useMemo(() => {
     const rows: any[] = [];
     if (preferences.notifications.commitments) {
-      workspace.fixedBills.filter((bill: any) => bill.status !== 'paid').filter((bill) => !dismissedAlerts.includes(`fixed-${bill.id}`)).forEach((bill: any) => rows.push({ id: `fixed-${bill.id}`, type: 'fixed', title: bill.name, amount: Number(bill.amount || 0), dueDate: Number(bill.due_day || 1), status: 'pending', originalData: bill }));
+      workspace.fixedBills.filter((bill: any) => bill.status !== 'paid').forEach((bill: any) => {
+        const id = `fixed-${bill.id}-${monthKey}`;
+        if (!dismissedAlerts.includes(id)) rows.push({ id, type: 'fixed', title: bill.name, amount: Number(bill.amount || 0), dueDate: Number(bill.due_day || 1), status: 'pending', originalData: bill });
+      });
     }
     if (preferences.notifications.cards) {
-      workspace.cards.filter((card: any) => Number(card.limit || 0) > 0 && Number(card.used || 0) / Number(card.limit || 1) >= .8).filter((card) => !dismissedAlerts.includes(`card-limit-${card.id}`)).forEach((card: any) => rows.push({ id: `card-limit-${card.id}`, type: 'card', title: `${card.name || 'Cartão'} · limite em atenção`, amount: Number(card.used || 0), dueDate: Number(card.due_day || 1), status: 'pending', detail: `${Math.round((Number(card.used || 0) / Number(card.limit || 1)) * 100)}% do limite utilizado`, originalData: card }));
+      workspace.cards.filter((card: any) => Number(card.limit || 0) > 0 && Number(card.used || 0) / Number(card.limit || 1) >= .8).forEach((card: any) => {
+        const usagePercent = Math.round((Number(card.used || 0) / Number(card.limit || 1)) * 100);
+        const id = `card-limit-${card.id}-${Math.floor(usagePercent / 5) * 5}`;
+        if (!dismissedAlerts.includes(id)) rows.push({ id, type: 'card', title: `${card.name || 'Cartão'} · limite em atenção`, amount: Number(card.used || 0), dueDate: Number(card.due_day || 1), status: 'pending', detail: `${usagePercent}% do limite utilizado`, originalData: card });
+      });
     }
     if (preferences.notifications.quality) {
-      qualityIssues.slice(0, 3).filter((issue) => !dismissedAlerts.includes(`quality-${issue.id}`)).forEach((issue) => rows.push({ id: `quality-${issue.id}`, type: 'quality', title: issue.title, amount: 0, status: 'attention', detail: issue.description, actionPath: issue.actionPath, actionLabel: issue.actionLabel, originalData: issue }));
+      qualityIssues.slice(0, 3).forEach((issue) => {
+        const id = `quality-${issue.id}-${issue.description}`;
+        if (!dismissedAlerts.includes(id)) rows.push({ id, type: 'quality', title: issue.title, amount: 0, status: 'attention', detail: issue.description, actionPath: issue.actionPath, actionLabel: issue.actionLabel, originalData: issue });
+      });
     }
     return rows;
-  }, [dismissedAlerts, preferences.notifications.cards, preferences.notifications.commitments, preferences.notifications.quality, qualityIssues, workspace.cards, workspace.fixedBills]);
+  }, [dismissedAlerts, monthKey, preferences.notifications.cards, preferences.notifications.commitments, preferences.notifications.quality, qualityIssues, workspace.cards, workspace.fixedBills]);
 
   const recent = useMemo(() => [...workspace.transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [workspace.transactions]);
+
+  function dismissAlert(id: string) {
+    setDismissedAlerts((current) => {
+      if (current.includes(id)) return current;
+      const next = [...current, id].slice(-250);
+      persistDismissedAlerts(user.id, next);
+      return next;
+    });
+  }
 
   async function deleteWithUndo(id: string) {
     const snapshot = workspace.transactions.find((transaction) => transaction.id === id) as any;
@@ -101,13 +138,13 @@ export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: 
       <Suspense fallback={<div className="mf-loading">Carregando módulo...</div>}>
         <Routes>
           <Route path="/app" element={<><OnboardingChecklist userId={user.id} settings={workspace.settings} transactionCount={workspace.transactionCount} hasCommitment={workspace.fixedBills.length > 0 || workspace.cards.length > 0} hasAccount={workspace.accounts.some((account) => account.is_active !== false)} onProfile={() => setShowProfile(true)} onNavigate={navigate} /><DashboardHome transactions={workspace.financeTransactions} recentTransactions={recent} summary={workspace.summary} settings={workspace.settings} cards={workspace.cards} balance={workspace.balance} isPrivate={isPrivate} visibleWidgets={preferences.homeWidgets} qualityIssues={qualityIssues} />{(workspace.loading || workspace.analyticsLoading) && <div className="mf-loading">{workspace.loading ? 'Atualizando dados...' : 'Consolidando histórico completo...'}</div>}{workspace.analyticsIncomplete && <div className="mf-error" role="status"><AlertCircle size={16} />As análises estão usando apenas os lançamentos recentes porque o histórico completo não pôde ser consolidado.</div>}</>} />
-          <Route path="/app/movimentacoes/*" element={<div className="mf-tab-shell history-shell"><div className="mf-subnav"><button className={historySubTab === 'list' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes')}>Movimentações</button><button className={historySubTab === 'import' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes/importar')}>Importar extrato</button><button className={historySubTab === 'batches' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes/lotes')}>Histórico de importações</button></div>{historySubTab === 'list' ? <History transactions={workspace.transactions} onDelete={(id) => void deleteWithUndo(id)} currentBalance={workspace.balance} balanceConfirmed={workspace.settings?.balance_confirmed === true} totalCount={workspace.transactionCount} hasMore={workspace.hasMoreTransactions} isLoadingMore={workspace.loadingMoreTransactions} onLoadMore={workspace.loadMore} /> : historySubTab === 'import' ? <ImportarExtratos accounts={workspace.accounts} onImport={importWithAudit} onCancel={() => navigate('/app/movimentacoes')} accountHolderName={workspace.settings?.display_name || String(user.user_metadata?.name || '').trim() || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} /> : <ImportBatches userId={user.id} accounts={workspace.accounts} />}</div>} />
+          <Route path="/app/movimentacoes/*" element={<div className="mf-tab-shell history-shell"><div className="mf-subnav"><button className={historySubTab === 'list' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes')}>Movimentações</button><button className={historySubTab === 'import' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes/importar')}>Importar extrato</button><button className={historySubTab === 'batches' ? 'active' : ''} onClick={() => navigate('/app/movimentacoes/lotes')}>Histórico de importações</button></div>{historySubTab === 'list' ? <History userId={user.id} transactions={workspace.transactions} onDelete={(id) => void deleteWithUndo(id)} onDataChanged={workspace.refresh} currentBalance={workspace.balance} balanceConfirmed={workspace.settings?.balance_confirmed === true} totalCount={workspace.transactionCount} hasMore={workspace.hasMoreTransactions} isLoadingMore={workspace.loadingMoreTransactions} onLoadMore={workspace.loadMore} /> : historySubTab === 'import' ? <ImportarExtratos accounts={workspace.accounts} onImport={importWithAudit} onCancel={() => navigate('/app/movimentacoes')} accountHolderName={workspace.settings?.display_name || String(user.user_metadata?.name || '').trim() || undefined} internalAccountAliases={user.email ? [user.email.split('@')[0]] : []} /> : <ImportBatches userId={user.id} accounts={workspace.accounts} />}</div>} />
           <Route path="/app/analises/insights" element={<div className="mf-tab-shell">{workspace.analyticsLoading && <div className="mf-loading">Consolidando histórico completo...</div>}{workspace.analyticsIncomplete && <div className="mf-error" role="status"><AlertCircle size={16} />O histórico completo ainda não está disponível; os Insights podem estar temporariamente limitados.</div>}<Insights summary={workspace.summary} transactions={workspace.financeTransactions} fixedBills={workspace.fixedBills} /></div>} />
           <Route path="/app/admin" element={isAdmin ? <div className="space-y-4"><AdminMfaSecurity /><AdminMaintenanceControl /><AdminAccessRequests user={user} /></div> : <Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
       </Suspense>
     </section>
-    <NotificationCenter isOpen={showNotificationCenter} onClose={() => setShowNotificationCenter(false)} notifications={notifications as any} showReleaseUpdate={preferences.notifications.release} onPay={(item: any) => item.type === 'fixed' ? workspace.payFixedBill(item.originalData) : undefined} onNavigate={(nextPath) => { setShowNotificationCenter(false); navigate(nextPath); }} onDismiss={(id) => setDismissedAlerts((current) => [...current, id])} />
+    <NotificationCenter isOpen={showNotificationCenter} onClose={() => setShowNotificationCenter(false)} notifications={notifications as any} showReleaseUpdate={preferences.notifications.release} onPay={(item: any) => item.type === 'fixed' ? workspace.payFixedBill(item.originalData) : undefined} onNavigate={(nextPath) => { setShowNotificationCenter(false); navigate(nextPath); }} onDismiss={dismissAlert} />
   </div>;
 }
