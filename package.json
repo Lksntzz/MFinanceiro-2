@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "security:check": "tsx scripts/security-policy-check.ts",
+    "security:check": "tsx scripts/security-policy-check.ts && tsx scripts/maintenance-rpc-contract-check.ts",
     "product:check": "tsx scripts/product-maturity-check.ts",
     "mobile:check": "tsx scripts/mobile-logic-check.ts && tsx scripts/native-shell-check.ts && tsx scripts/mobile-layout-contract-check.ts",
     "native:sync": "npm run build && cap sync",
