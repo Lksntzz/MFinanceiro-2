@@ -6,7 +6,9 @@ import {createRoot} from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import App from './App.tsx';
 import AccessibilityLayer from './components/AccessibilityLayer';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import { AppProvider } from './context/AppContext';
+import { installGlobalOperationalObservers } from './lib/operational-observability';
 import { installNativeDeepLinkBridge } from './mobile/native/native-deep-links';
 import { installNativeShareBridge } from './mobile/native/native-share';
 import './index.css';
@@ -64,8 +66,10 @@ window.addEventListener('load', () => {
     if (import.meta.env.PROD) {
       navigator.serviceWorker.register('/sw.js').then((registration) => {
         registration.update().catch(() => {});
-      }).catch((registrationError) => {
-        console.log('SW registration failed: ', registrationError);
+      }).catch(() => {
+        void import('./lib/operational-observability').then(({ reportOperationalEvent }) =>
+          reportOperationalEvent('runtime.service_worker_registration_failed', 'service-worker', 'warning'),
+        );
       });
     } else {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
@@ -77,16 +81,19 @@ window.addEventListener('load', () => {
   startAppVersionWatcher();
 });
 
+installGlobalOperationalObservers();
 void installNativeDeepLinkBridge();
 void installNativeShareBridge();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AccessibilityLayer />
-      <AppProvider>
-        <App />
-      </AppProvider>
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <AccessibilityLayer />
+        <AppProvider>
+          <App />
+        </AppProvider>
+      </BrowserRouter>
+    </AppErrorBoundary>
   </StrictMode>,
 );
