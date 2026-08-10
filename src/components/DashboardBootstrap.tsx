@@ -20,6 +20,7 @@ import TransactionLaunchTool from './TransactionLaunchTool';
 const MobileApp = lazy(() => import('../mobile/MobileApp'));
 const MobileShareReceiver = lazy(() => import('../mobile/pages/MobileShareReceiver'));
 const MobileVoice = lazy(() => import('../mobile/pages/MobileVoice'));
+const MobileRecurrences = lazy(() => import('../mobile/pages/MobileRecurrences'));
 const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user: User; isMaintenanceBypass?: boolean }) {
@@ -45,6 +46,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
 
   const shareRoute = location.pathname === '/share';
   const voiceRoute = location.pathname === '/voice';
+  const recurrenceRoute = location.pathname === '/recurrences';
   const launchRoute = location.pathname === '/app/lancar';
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
@@ -100,6 +102,14 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
     return (
       <Suspense fallback={<div className="mf-mobile-loading"><span>Carregando MF Voice...</span></div>}>
         <MobileVoice userId={user.id} />
+      </Suspense>
+    );
+  }
+
+  if (ready && recurrenceRoute) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Procurando recorrências...</span></div>}>
+        <MobileRecurrences userId={user.id} />
       </Suspense>
     );
   }
