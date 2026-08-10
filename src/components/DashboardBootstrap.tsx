@@ -19,6 +19,7 @@ import TransactionLaunchTool from './TransactionLaunchTool';
 
 const MobileApp = lazy(() => import('../mobile/MobileApp'));
 const MobileShareReceiver = lazy(() => import('../mobile/pages/MobileShareReceiver'));
+const MobileVoice = lazy(() => import('../mobile/pages/MobileVoice'));
 const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user: User; isMaintenanceBypass?: boolean }) {
@@ -43,6 +44,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   const legacyFinancialHealthRoute = location.pathname.startsWith('/app/analises/saude');
 
   const shareRoute = location.pathname === '/share';
+  const voiceRoute = location.pathname === '/voice';
   const launchRoute = location.pathname === '/app/lancar';
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
@@ -90,6 +92,14 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
     return (
       <Suspense fallback={<div className="mf-mobile-loading"><span>Recebendo conteúdo no MF...</span></div>}>
         <MobileShareReceiver userId={user.id} />
+      </Suspense>
+    );
+  }
+
+  if (ready && voiceRoute) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Carregando MF Voice...</span></div>}>
+        <MobileVoice userId={user.id} />
       </Suspense>
     );
   }
