@@ -1,15 +1,17 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 
+import { isCurrentMobileExperience } from '../mobile/useMobileExperience';
+
 export type MaintenanceSurface = 'mobile' | 'desktop';
 export type MaintenanceScope = MaintenanceSurface | 'both';
 
 export interface MaintenanceConfig {
   maintenance_mode: boolean;
   maintenance_message: string;
-  mobile_mode: boolean;
-  mobile_message: string;
-  desktop_mode: boolean;
-  desktop_message: string;
+  mobile_mode?: boolean;
+  mobile_message?: string;
+  desktop_mode?: boolean;
+  desktop_message?: string;
 }
 
 export const MAINTENANCE_CHANNEL = 'mf-global-maintenance';
@@ -55,11 +57,11 @@ function scopedConfig(
   const desktopMode = parseBoolean((desktop || legacy)?.maintenance_mode);
   const mobileMessage = parseMessage((mobile || legacy)?.maintenance_message);
   const desktopMessage = parseMessage((desktop || legacy)?.maintenance_message);
-  const legacyMessage = parseMessage(legacy?.maintenance_message);
+  const mobileExperience = isCurrentMobileExperience();
 
   return {
-    maintenance_mode: mobileMode || desktopMode,
-    maintenance_message: legacyMessage,
+    maintenance_mode: mobileExperience ? mobileMode : desktopMode,
+    maintenance_message: mobileExperience ? mobileMessage : desktopMessage,
     mobile_mode: mobileMode,
     mobile_message: mobileMessage,
     desktop_mode: desktopMode,
@@ -137,8 +139,14 @@ export function getMaintenanceForSurface(
   }
 
   return surface === 'mobile'
-    ? { maintenance_mode: config.mobile_mode, maintenance_message: config.mobile_message }
-    : { maintenance_mode: config.desktop_mode, maintenance_message: config.desktop_message };
+    ? {
+        maintenance_mode: Boolean(config.mobile_mode ?? config.maintenance_mode),
+        maintenance_message: config.mobile_message || config.maintenance_message,
+      }
+    : {
+        maintenance_mode: Boolean(config.desktop_mode ?? config.maintenance_mode),
+        maintenance_message: config.desktop_message || config.maintenance_message,
+      };
 }
 
 export async function broadcastMaintenanceConfig(
