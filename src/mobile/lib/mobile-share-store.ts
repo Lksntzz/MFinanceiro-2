@@ -60,8 +60,14 @@ export async function getMobileSharedPayload(id: string) {
   }
 }
 
+export function unreviewedSharedFiles(files: MobileSharedFile[], reviewedIndex: number) {
+  if (!Number.isInteger(reviewedIndex) || reviewedIndex < 0 || reviewedIndex >= files.length) return [...files];
+  return files.filter((_, index) => index !== reviewedIndex);
+}
+
 export async function keepOnlyUnreviewedSharedFiles(payload: MobileSharedPayload, reviewedIndex: number) {
-  const remainingFiles = payload.files.filter((_, index) => index !== reviewedIndex);
+  const remainingFiles = unreviewedSharedFiles(payload.files, reviewedIndex);
+  if (remainingFiles.length === payload.files.length) return payload;
   if (!remainingFiles.length) {
     await removeMobileSharedPayload(payload.id);
     return null;
