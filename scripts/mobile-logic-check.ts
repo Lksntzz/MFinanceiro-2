@@ -6,6 +6,7 @@ import { projectInvoiceForPurchase } from '../src/mobile/lib/purchase-impact';
 import { detectRecurringExpenses, type RecurrenceHistoryItem } from '../src/mobile/lib/recurrence-detector';
 import { unreviewedSharedFiles, type MobileSharedFile } from '../src/mobile/lib/mobile-share-store';
 import { parseVoiceEntry } from '../src/mobile/lib/voice-entry-parser';
+import { nativeUrlToPath } from '../src/mobile/native/native-deep-links';
 import type { FinancialAccount, Transaction, TransactionCategory } from '../src/types';
 
 function tlv(id: string, value: string) {
@@ -180,6 +181,22 @@ const accounts = [
   assert.equal(projection.dueDate.getDate(), 5);
 }
 
+// Native bridge: custom scheme actions map to the same mobile routes used by the PWA.
+{
+  assert.equal(nativeUrlToPath('mfinanceiro://quick'), '/quick');
+  assert.equal(nativeUrlToPath('mfinanceiro://scan'), '/scan');
+  assert.equal(nativeUrlToPath('mfinanceiro://pulse'), '/app/mobile/pulse');
+  assert.equal(nativeUrlToPath('mfinanceiro://inbox'), '/app/mobile/inbox/documentos');
+  assert.equal(nativeUrlToPath('mfinanceiro://unknown'), null);
+}
+
+// Native bridge: universal links are accepted only for the production MF domain.
+{
+  assert.equal(nativeUrlToPath('https://mfinanceiro.com.br/quick?source=siri'), '/quick?source=siri');
+  assert.equal(nativeUrlToPath('https://mfinanceiro.com.br/app/mobile/pulse'), '/app/mobile/pulse');
+  assert.equal(nativeUrlToPath('https://example.com/quick'), null);
+}
+
 // Adaptive categorization: three consistent confirmations are enough for a high-confidence suggestion.
 {
   const rows = [
@@ -266,4 +283,4 @@ const accounts = [
   assert.equal(unreviewedSharedFiles([files[0]], 0).length, 0);
 }
 
-console.log('Mobile logic checks passed: voice, financial codes, purchase impact, adaptive categorization, recurrence detection and shared-document queue.');
+console.log('Mobile logic checks passed: voice, financial codes, purchase impact, native deep links, adaptive categorization, recurrence detection and shared-document queue.');
