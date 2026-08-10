@@ -1,0 +1,100 @@
+/*
+ * Final web-only refinements from the 2026-08 product audit.
+ *
+ * This layer intentionally starts at 821px so the dedicated mobile experience
+ * under src/mobile remains independent.
+ */
+
+@media (min-width: 821px) {
+  /*
+   * One global launch action.
+   * Routed workspaces already expose “Lançar” in the sidebar, so a second
+   * primary button in the top bar only creates competing hierarchy.
+   */
+  .mf-routed-app .mf-top-actions > button.primary {
+    display: none !important;
+  }
+
+  /* Keep tool content scrollable instead of clipping on short notebook screens. */
+  .mf-routed-app > .mf-content,
+  .mf-routed-app > .mf-content > .mf-tab-shell {
+    min-height: 0;
+  }
+
+  .mf-routed-app > .mf-content > .mf-tab-shell > :not(.mf-subnav) {
+    min-height: 0;
+  }
+
+  /* Empty states read as intentional product states rather than missing UI. */
+  .mf-routed-app .mf-empty {
+    width: 100%;
+    min-height: 112px;
+    display: grid;
+    place-items: center;
+    padding: 22px;
+    border: 1px dashed rgba(255, 255, 255, .11);
+    border-radius: 14px;
+    color: rgba(255, 255, 255, .43);
+    background: rgba(255, 255, 255, .018);
+    text-align: center;
+    line-height: 1.55;
+  }
+
+  /* Common inline success messages should feel like the same feedback system. */
+  .mf-routed-app .border-green-500\/25.bg-green-500\/10,
+  .mf-routed-app .border-emerald-500\/25.bg-emerald-500\/10 {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    border-radius: 12px !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .02);
+  }
+
+  /* Lists and compact rows get a consistent reading rhythm across tools. */
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) > :is(ul, ol) {
+    margin-block: 0;
+  }
+
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) > :is(ul, ol) > li + li {
+    margin-top: 8px;
+  }
+
+  /* Informational cards stay calm; only genuinely interactive controls move. */
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) {
+    transform: none !important;
+  }
+
+  .mf-routed-app .mf-content :is(button, a):not(:disabled):active {
+    transform: translateY(1px);
+  }
+
+  /* Secondary destructive actions remain subordinate to the main task. */
+  .mf-routed-app .mf-content button.text-red-400,
+  .mf-routed-app .mf-content button.hover\:text-red-400 {
+    opacity: .72;
+  }
+
+  .mf-routed-app .mf-content button.text-red-400:hover,
+  .mf-routed-app .mf-content button.hover\:text-red-400:hover {
+    opacity: 1;
+  }
+
+  /* Dense notebook viewports keep hierarchy while allowing document flow. */
+  @media (max-height: 800px) {
+    .mf-routed-app {
+      --mf-web-section-gap: clamp(15px, 1.05vw, 20px);
+      --mf-web-card-gap: clamp(11px, .8vw, 15px);
+      --mf-web-card-pad: clamp(14px, 1vw, 18px);
+    }
+
+    .mf-routed-app .mf-topbar {
+      min-height: 40px;
+      padding-bottom: 7px;
+    }
+
+    .mf-routed-app > .mf-content > .space-y-4,
+    .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 {
+      padding-bottom: 24px;
+    }
+  }
+}
