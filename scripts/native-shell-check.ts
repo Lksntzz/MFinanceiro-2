@@ -17,6 +17,7 @@ const androidManifest = read('android/app/src/main/AndroidManifest.xml');
 const androidActivity = read('android/app/src/main/java/br/com/mfinanceiro/app/MainActivity.java');
 const androidShareStore = read('android/app/src/main/java/br/com/mfinanceiro/app/NativeShareStore.java');
 const androidSharePlugin = read('android/app/src/main/java/br/com/mfinanceiro/app/NativeShareReceiverPlugin.java');
+const androidQuickTile = read('android/app/src/main/java/br/com/mfinanceiro/app/MFQuickTileService.java');
 const androidShortcuts = read('android/app/src/main/res/xml/shortcuts.xml');
 const iosInfo = read('ios/App/App/Info.plist');
 const iosDelegate = read('ios/App/App/AppDelegate.swift');
@@ -32,6 +33,16 @@ expectContains(androidManifest, 'android:mimeType="text/plain"', 'Android text s
 for (const destination of ['mfinanceiro://quick', 'mfinanceiro://scan', 'mfinanceiro://pulse']) {
   expectContains(androidShortcuts, destination, `Android shortcut ${destination}`);
 }
+
+// Android Quick Settings: the tile must be protected by the system permission, require unlock when needed,
+// and open the same MF Quick route rather than introducing a parallel native entry flow.
+expectContains(androidManifest, 'android:name=".MFQuickTileService"', 'Android MF Quick tile service');
+expectContains(androidManifest, 'android.permission.BIND_QUICK_SETTINGS_TILE', 'Android tile bind permission');
+expectContains(androidManifest, 'android.service.quicksettings.action.QS_TILE', 'Android tile intent filter');
+expectContains(androidQuickTile, 'mfinanceiro://quick', 'Android tile Quick destination');
+expectContains(androidQuickTile, 'isSecure() && isLocked()', 'Android tile lock-screen protection');
+expectContains(androidQuickTile, 'unlockAndRun(this::openQuickEntry)', 'Android tile unlock handoff');
+expectContains(androidQuickTile, 'TileServiceCompat.startActivityAndCollapse', 'Android tile activity launch compatibility');
 
 // BridgeActivity already forwards the initial intent through onNewIntent. Capture it exactly once.
 assert.equal(
@@ -78,4 +89,4 @@ for (const destination of ['mfinanceiro://quick', 'mfinanceiro://scan', 'mfinanc
   expectContains(iosDelegate, destination, `iOS shortcut ${destination}`);
 }
 
-console.log('Native shell checks passed: Android share target, native shortcuts, iOS quick actions and review-queue bridge.');
+console.log('Native shell checks passed: Android share target, native shortcuts/Quick Settings tile, iOS quick actions and review-queue bridge.');
