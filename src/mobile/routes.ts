@@ -10,6 +10,7 @@ export const MOBILE_ROUTES = {
   quick: '/quick',
   scan: '/scan',
   voice: '/voice',
+  recurrences: '/recurrences',
 } as const;
 
 export type MobileRouteKey = keyof typeof MOBILE_ROUTES;
