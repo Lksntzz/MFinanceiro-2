@@ -124,10 +124,41 @@ function findVisibleTarget(selectors?: string[]) {
   return null;
 }
 
+function getTourScopeId(tourId: string) {
+  // Tour content can evolve (v1, v2, v3...) without resetting the user's preference.
+  return tourId.replace(/-v\d+$/i, '');
+}
+
+function isResolvedPreference(value: string | null) {
+  return value === 'done' || value === 'skipped';
+}
+
+function migrateLegacyTourPreference(tourId: string, userId: string, stableStorageKey: string) {
+  try {
+    const scopeId = getTourScopeId(tourId);
+    const legacyPrefix = `mf-tour:${scopeId}-v`;
+    const userSuffix = `:${userId}`;
+
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key || !key.startsWith(legacyPrefix) || !key.endsWith(userSuffix)) continue;
+      if (window.localStorage.getItem(key) !== 'done') continue;
+      window.localStorage.setItem(stableStorageKey, 'done');
+      return true;
+    }
+  } catch {
+    // Tour preferences are optional and should never block the product.
+  }
+  return false;
+}
+
 export default function ProductTour({ userId, pathname }: { userId: string; pathname: string }) {
   const tour = useMemo(() => resolveTour(pathname), [pathname]);
-  const storageKey = useMemo(() => tour ? `mf-tour:${tour.id}:${userId}` : '', [tour?.id, userId]);
+  const tourScopeId = useMemo(() => tour ? getTourScopeId(tour.id) : '', [tour?.id]);
+  const storageKey = useMemo(() => tourScopeId ? `mf-tour:${tourScopeId}:${userId}` : '', [tourScopeId, userId]);
+  const globalSkipKey = useMemo(() => `mf-tour:all-skipped:${userId}`, [userId]);
   const [open, setOpen] = useState(false);
+  const [skipPromptOpen, setSkipPromptOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<RectState | null>(null);
   const steps = tour?.steps || [];
@@ -135,21 +166,37 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
 
   useEffect(() => {
     setOpen(false);
+    setSkipPromptOpen(false);
     setStepIndex(0);
     if (!tour || !storageKey) return;
-    let seen = false;
-    try { seen = window.localStorage.getItem(storageKey) === 'done'; } catch { seen = false; }
-    const start = () => { setStepIndex(0); setOpen(true); };
-    const timer = seen ? null : window.setTimeout(start, 650);
+
+    let shouldAutoStart = true;
+    try {
+      const globalSkipped = window.localStorage.getItem(globalSkipKey) === 'skipped';
+      const storedPreference = window.localStorage.getItem(storageKey);
+      const resolved = isResolvedPreference(storedPreference)
+        || migrateLegacyTourPreference(tour.id, userId, storageKey);
+      shouldAutoStart = !globalSkipped && !resolved;
+    } catch {
+      shouldAutoStart = true;
+    }
+
+    // Manual starts always remain available, even after "Pular tudo".
+    const start = () => {
+      setStepIndex(0);
+      setSkipPromptOpen(false);
+      setOpen(true);
+    };
+    const timer = shouldAutoStart ? window.setTimeout(start, 650) : null;
     window.addEventListener('mf:start-product-tour', start);
     return () => {
       if (timer !== null) window.clearTimeout(timer);
       window.removeEventListener('mf:start-product-tour', start);
     };
-  }, [tour?.id, storageKey]);
+  }, [tour?.id, storageKey, globalSkipKey, userId]);
 
   useEffect(() => {
-    if (!open || !step) return;
+    if (!open || !step || skipPromptOpen) return;
     const updateRect = () => {
       const target = findVisibleTarget(step.selectors);
       if (!target) { setTargetRect(null); return; }
@@ -168,21 +215,44 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
     window.addEventListener('resize', updateRect);
     window.addEventListener('scroll', updateRect, true);
     return () => { observer?.disconnect(); window.removeEventListener('resize', updateRect); window.removeEventListener('scroll', updateRect, true); };
-  }, [open, step]);
+  }, [open, step, skipPromptOpen]);
 
   function finish() {
     try { if (storageKey) window.localStorage.setItem(storageKey, 'done'); } catch { /* optional */ }
+    setSkipPromptOpen(false);
     setOpen(false);
   }
-  function next() { if (stepIndex >= steps.length - 1) finish(); else setStepIndex((current) => current + 1); }
-  function previous() { setStepIndex((current) => Math.max(0, current - 1)); }
+
+  function skipCurrentTour() {
+    try { if (storageKey) window.localStorage.setItem(storageKey, 'skipped'); } catch { /* optional */ }
+    setSkipPromptOpen(false);
+    setOpen(false);
+  }
+
+  function skipAllTours() {
+    try { window.localStorage.setItem(globalSkipKey, 'skipped'); } catch { /* optional */ }
+    setSkipPromptOpen(false);
+    setOpen(false);
+  }
+
+  function next() {
+    if (skipPromptOpen) return;
+    if (stepIndex >= steps.length - 1) finish();
+    else setStepIndex((current) => current + 1);
+  }
+  function previous() {
+    if (skipPromptOpen) return;
+    setStepIndex((current) => Math.max(0, current - 1));
+  }
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') finish();
-      else if (event.key === 'ArrowRight') next();
-      else if (event.key === 'ArrowLeft') previous();
+      if (event.key === 'Escape') {
+        if (skipPromptOpen) setSkipPromptOpen(false);
+        else setSkipPromptOpen(true);
+      } else if (!skipPromptOpen && event.key === 'ArrowRight') next();
+      else if (!skipPromptOpen && event.key === 'ArrowLeft') previous();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -191,14 +261,14 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
   if (!open || !tour || !step) return null;
   const vw = window.innerWidth; const vh = window.innerHeight; const tooltipWidth = Math.min(360, vw - 24); const gap = 14;
   let tooltipTop = Math.max(16, (vh - 220) / 2); let tooltipLeft = Math.max(12, (vw - tooltipWidth) / 2);
-  if (targetRect) {
+  if (targetRect && !skipPromptOpen) {
     const below = targetRect.top + targetRect.height + gap; const above = targetRect.top - 220 - gap;
     tooltipTop = below + 210 < vh ? below : Math.max(12, above);
     tooltipLeft = Math.min(vw - tooltipWidth - 12, Math.max(12, targetRect.left + targetRect.width / 2 - tooltipWidth / 2));
   }
 
   return createPortal(<div className="mf-tour-root" role="dialog" aria-modal="true" aria-label={`Tutorial: ${tour.label}`}>
-    {targetRect ? <>
+    {targetRect && !skipPromptOpen ? <>
       <div className="mf-tour-shade" style={{ top: 0, left: 0, right: 0, height: targetRect.top }} />
       <div className="mf-tour-shade" style={{ top: targetRect.top, left: 0, width: targetRect.left, height: targetRect.height }} />
       <div className="mf-tour-shade" style={{ top: targetRect.top, left: targetRect.left + targetRect.width, right: 0, height: targetRect.height }} />
@@ -206,15 +276,30 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
       <div className="mf-tour-spotlight" style={{ top: targetRect.top, left: targetRect.left, width: targetRect.width, height: targetRect.height }} />
     </> : <div className="mf-tour-shade mf-tour-shade-full" />}
     <section className="mf-tour-card" style={{ top: tooltipTop, left: tooltipLeft, width: tooltipWidth }}>
-      <div className="mf-tour-progress" style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }} aria-label={`Passo ${stepIndex + 1} de ${steps.length}`}>
-        {steps.map((item, index) => <span key={item.id} className={index <= stepIndex ? 'active' : ''} />)}
-      </div>
-      <p className="mf-tour-kicker">{tour.label} · Passo {stepIndex + 1} de {steps.length}</p>
-      <h2>{step.title}</h2><p className="mf-tour-copy">{step.description}</p>
-      <div className="mf-tour-actions"><button type="button" className="mf-tour-skip" onClick={finish}>Pular tour</button><div>
-        {stepIndex > 0 ? <button type="button" className="mf-tour-back" onClick={previous}>Voltar</button> : null}
-        <button type="button" className="mf-tour-next" onClick={next} autoFocus>{stepIndex === steps.length - 1 ? 'Concluir' : 'Próximo'}</button>
-      </div></div>
+      {skipPromptOpen ? (
+        <div className="mf-tour-skip-confirm" role="alertdialog" aria-labelledby="mf-tour-skip-title" aria-describedby="mf-tour-skip-copy">
+          <p className="mf-tour-kicker">Preferência do tutorial</p>
+          <h2 id="mf-tour-skip-title">Deseja pular o tutorial?</h2>
+          <p id="mf-tour-skip-copy" className="mf-tour-copy">
+            Escolha se quer pular apenas o tutorial de {tour.label} ou não receber mais tours automáticos em nenhuma ferramenta.
+          </p>
+          <div className="mf-tour-skip-options">
+            <button type="button" className="mf-tour-skip-tool" onClick={skipCurrentTour}>Pular nesta ferramenta</button>
+            <button type="button" className="mf-tour-skip-all" onClick={skipAllTours}>Pular tudo</button>
+            <button type="button" className="mf-tour-continue" onClick={() => setSkipPromptOpen(false)} autoFocus>Continuar tutorial</button>
+          </div>
+        </div>
+      ) : <>
+        <div className="mf-tour-progress" style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }} aria-label={`Passo ${stepIndex + 1} de ${steps.length}`}>
+          {steps.map((item, index) => <span key={item.id} className={index <= stepIndex ? 'active' : ''} />)}
+        </div>
+        <p className="mf-tour-kicker">{tour.label} · Passo {stepIndex + 1} de {steps.length}</p>
+        <h2>{step.title}</h2><p className="mf-tour-copy">{step.description}</p>
+        <div className="mf-tour-actions"><button type="button" className="mf-tour-skip" onClick={() => setSkipPromptOpen(true)}>Pular tour</button><div>
+          {stepIndex > 0 ? <button type="button" className="mf-tour-back" onClick={previous}>Voltar</button> : null}
+          <button type="button" className="mf-tour-next" onClick={next} autoFocus>{stepIndex === steps.length - 1 ? 'Concluir' : 'Próximo'}</button>
+        </div></div>
+      </>}
     </section>
   </div>, document.body);
 }
