@@ -23,7 +23,7 @@ export type DocumentOcrResult = {
 };
 
 const ALLOWED_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_OCR_FILE_SIZE = 8 * 1024 * 1024;
 
 export const DOCUMENT_OCR_ENABLED = import.meta.env.VITE_DOCUMENT_OCR_ENABLED === 'true';
 
@@ -52,7 +52,7 @@ export async function analyzeDocumentWithOcr(options: {
 
   const { file, userId, accountId, captureSource } = options;
   if (!ALLOWED_MIME_TYPES.has(file.type)) throw new Error('OCR disponível apenas para PDF, JPEG, PNG ou WebP.');
-  if (file.size < 1 || file.size > MAX_FILE_SIZE) throw new Error('O documento para OCR deve ter até 20 MB.');
+  if (file.size < 1 || file.size > MAX_OCR_FILE_SIZE) throw new Error('O OCR visual aceita documentos de até 8 MB. Você ainda pode revisar este arquivo manualmente no MF Scan.');
 
   const objectPath = `${userId}/mobile-document-ocr/${crypto.randomUUID()}-${safeFileName(file.name || 'documento')}`;
   let uploaded = false;
