@@ -45,16 +45,18 @@ Implementar em sequência. Um item só muda para concluído depois de código e 
    - disponível como rota mobile e atalho PWA;
    - usa o mesmo resumo financeiro do núcleo do MF, sem segunda regra de cálculo.
 
-6. [NATIVE FOUNDATION DONE — STORE SIGNING PENDING] Camada nativa iOS/Android
+6. [NATIVE CORE DONE — SIGNED SYSTEM EXTENSIONS PENDING] Camada nativa iOS/Android
    - Capacitor adicionado ao React/Vite existente;
    - projetos `ios/` e `android/` reais gerados e versionados;
    - App ID atual: `br.com.mfinanceiro.app`;
    - bridge nativo reutiliza as rotas existentes do MF;
    - custom scheme `mfinanceiro://` configurado em iOS e Android;
    - Android tem atalhos nativos para Quick, Scan e Pulse;
-   - template iOS de App Intents/App Shortcuts preparado para Quick, Scan e Pulse;
+   - Android recebe PDF/imagem/texto pelo Share Sheet, copia o arquivo em cache privado e encaminha para a mesma fila `Compartilhar para o MF`/MF Scan com revisão humana;
+   - iOS tem Home Screen quick actions reais para Quick, Scan e Pulse, incluindo cold launch;
+   - template iOS de App Intents/App Shortcuts preparado para Siri/Action Button, mas não ativado sem Universal Links reais;
    - documentação preparada para WidgetKit, Share Extension, Universal Links e Android App Links;
-   - assinatura/App Store/TestFlight/Google Play, Team ID, entitlements, AASA, assetlinks e fingerprints definitivos dependem das contas/chaves reais de distribuição e não recebem valores fictícios no repositório.
+   - assinatura/App Store/TestFlight/Google Play, Team ID, Associated Domains, App Group, AASA, assetlinks e fingerprints definitivos dependem das contas/chaves reais de distribuição e não recebem valores fictícios no repositório.
 
 ## Validação automatizada
 
@@ -66,12 +68,15 @@ A branch mantém o `Mobile CI` read-only com:
 4. TypeScript;
 5. build Vite de produção.
 
-`mobile:check` agora cobre também:
+`mobile:check` cobre:
 
 - cálculo de fatura no Impacto da compra;
 - categorização adaptativa;
 - contratos de deep link nativo/custom scheme;
-- rejeição de links externos não pertencentes ao MF.
+- rejeição de links externos não pertencentes ao MF;
+- Share Target Android e limite/tipos de arquivo;
+- registro do plugin nativo Android e reaproveitamento da fila de revisão;
+- quick actions iOS para app ativo e cold launch.
 
 ## Itens já em produção antes desta branch
 
@@ -79,6 +84,8 @@ Home mobile, Movimentos, Cartões, Mais, MF Quick, MF Scan base, MF Inbox de ext
 
 ## Estado desta branch
 
-Os itens 1–5 estão implementados na branch de roadmap. O item 6 chegou ao limite executável sem credenciais/toolchain de distribuição: os shells e contratos nativos existem, mas nenhuma versão nativa deve ser considerada publicada até assinatura e QA em aparelho real.
+Os itens 1–5 estão implementados. No item 6, o núcleo nativo que não depende de identidade de loja também está implementado: shells Capacitor, links, atalhos, Share Android e contratos de integração.
+
+O que permanece externo é justamente o que exige identidade/entitlements assinados: App Intents com Universal Links verificados, WidgetKit/Control Center, Share Extension iOS via App Group, App Links verificados, assinatura e publicação nas lojas. Nenhuma versão nativa deve ser considerada publicada antes de QA em aparelho físico.
 
 Esta branch/PR permanece fora de produção até autorização explícita.
