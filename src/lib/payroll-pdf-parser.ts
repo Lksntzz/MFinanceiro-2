@@ -178,10 +178,49 @@ function detectCompetence(rows: Row[], fileName: string): string | undefined {
   const fromFile = competenceFromFileName(fileName);
   if (fromFile) return fromFile;
 
-  return undefined;
+  const compact = text.match(/(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(?:\D|$)/);
+  if (compact) return `${compact[1]}-${compact[2]}`;
+
+  const fallback = text.match(/\b(0?[1-9]|1[0-2])[\/.\-](20\d{2})\b/);
+  return fallback ? `${fallback[2]}-${String(Number(fallback[1])).padStart(2, '0')}` : undefined;
 }
 
-function classifyCategory(description: string, kind: PayrollItemKind): PayrollItemCategory {
+function findHeaderX(rows: Row[], terms: string[]): number | null {
+  for (const row of rows) {
+    const token = row.tokens.find((item) => terms.some((term) => normalize(item.text).includes(term)));
+    if (token) return token.x;
+  }
+  return null;
+}
+
+function summaries(rows: Row[]) {
+  let earnings = 0;
+  let deductions = 0;
+  let net = 0;
+  let salaryBase = 0;
+
+  rows.forEach((row) => {
+    const text = normalize(row.text);
+    const values = moneyCells(row).map((cell) => cell.amount).filter((value) => value > 0);
+    if (!values.length) return;
+
+    const earningsLabel = /total (?:de )?(?:vencimentos|proventos|creditos)/.test(text);
+    const deductionsLabel = /total (?:de )?(?:descontos|debitos)/.test(text);
+    if (earningsLabel && deductionsLabel && values.length >= 2) {
+      earnings = values[values.length - 2];
+      deductions = values[values.length - 1];
+    } else {
+      if (earningsLabel) earnings = values[values.length - 1];
+      if (deductionsLabel) deductions = values[values.length - 1];
+    }
+    if (/(liquido a receber|valor liquido|salario liquido|total liquido)/.test(text)) net = values[values.length - 1];
+    if (/(salario base|base salarial)/.test(text)) salaryBase = values[values.length - 1];
+  });
+
+  return { earnings, deductions, net, salaryBase };
+}
+
+function category(description: string): PayrollItemCategory {
   const text = normalize(description);
   if (/\binss\b|previdencia/.test(text)) return 'inss';
   if (/\birrf\b|imposto de renda/.test(text)) return 'irrf';
@@ -191,148 +230,156 @@ function classifyCategory(description: string, kind: PayrollItemKind): PayrollIt
   if (/emprestimo|consignado|financiamento/.test(text)) return 'loan';
   if (/falta|atraso|ausencia/.test(text)) return 'absence';
   if (/salario|vencimento|ordenado/.test(text)) return 'salary';
-  return kind === 'earning' ? 'salary' : 'other';
+  return 'other';
 }
 
-function classifyKind(description: string, amount: number, rowText: string): PayrollItemKind {
-  const text = normalize(`${description} ${rowText}`);
-  if (BENEFIT_TERMS.some((term) => text.includes(term))) return 'benefit';
-  if (DEDUCTION_TERMS.some((term) => text.includes(term))) return 'deduction';
-  if (EARNING_TERMS.some((term) => text.includes(term))) return 'earning';
-  return amount < 0 ? 'deduction' : 'earning';
-}
+function classify(textValue: string, amountX: number, earningX: number | null, deductionX: number | null) {
+  const text = normalize(textValue);
+  const hasDeduction = DEDUCTION_TERMS.some((term) => text.includes(term));
+  const hasEarning = EARNING_TERMS.some((term) => text.includes(term));
+  const hasBenefit = BENEFIT_TERMS.some((term) => text.includes(term));
 
-function isSummaryRow(row: Row): boolean {
-  const text = normalize(row.text);
-  return SUMMARY_TERMS.some((term) => text.includes(term));
-}
-
-function descriptionFromRow(row: Row, money: MoneyCell): string {
-  const before = row.tokens
-    .filter((token) => token.x < money.x - 4)
-    .map((token) => token.text.trim())
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const fallback = row.text.replace(money.raw, '').replace(/\s+/g, ' ').trim();
-  return before || fallback || 'Rubrica não identificada';
-}
-
-function itemId(page: number, index: number, description: string): string {
-  const compact = normalize(description).replace(/[^a-z0-9]/g, '').slice(0, 22) || 'item';
-  return `pdf-${page}-${index}-${compact}`;
-}
-
-function likelyItemRow(row: Row): boolean {
-  if (isSummaryRow(row)) return false;
-  const text = normalize(row.text);
-  if (text.length < 4) return false;
-  if (/^(?:nome|cpf|matricula|empresa|cnpj|cargo|funcao|admissao|banco|agencia|conta)\b/.test(text)) return false;
-  return moneyCells(row).length > 0;
-}
-
-function inferTotals(rows: Row[], items: PayrollItem[]) {
-  const totalEarnings = round(items.filter((item) => item.kind === 'earning').reduce((sum, item) => sum + item.amount, 0));
-  const totalDeductions = round(items.filter((item) => item.kind === 'deduction').reduce((sum, item) => sum + item.amount, 0));
-  const benefits = round(items.filter((item) => item.kind === 'benefit').reduce((sum, item) => sum + item.amount, 0));
-
-  const summaryText = rows.map((row) => normalize(row.text)).join('\n');
-  const summaryValue = (patterns: RegExp[]) => {
-    for (const pattern of patterns) {
-      const match = summaryText.match(pattern);
-      if (match?.[1]) return Math.abs(parseAmount(match[1]));
+  if (hasDeduction) return { kind: 'deduction' as const, confidence: 0.96 };
+  if (earningX !== null && deductionX !== null) {
+    const earningDistance = Math.abs(amountX - earningX);
+    const deductionDistance = Math.abs(amountX - deductionX);
+    if (deductionDistance + 8 < earningDistance) return { kind: 'deduction' as const, confidence: 0.84 };
+    if (earningDistance + 8 < deductionDistance) {
+      return { kind: hasBenefit ? 'benefit' as const : 'earning' as const, confidence: hasEarning || hasBenefit ? 0.94 : 0.8 };
     }
-    return 0;
-  };
-
-  const grossSalary = summaryValue([
-    /total\s+(?:de\s+)?(?:vencimentos|proventos|bruto)[^\d]{0,30}([\d.,]+)/,
-    /salario\s+bruto[^\d]{0,30}([\d.,]+)/,
-  ]) || totalEarnings;
-  const explicitDeductions = summaryValue([
-    /total\s+(?:de\s+)?descontos[^\d]{0,30}([\d.,]+)/,
-    /descontos\s+total[^\d]{0,30}([\d.,]+)/,
-  ]);
-  const totalDeductionsValue = explicitDeductions || totalDeductions;
-  const netSalary = summaryValue([
-    /(?:liquido\s+a\s+receber|valor\s+liquido|salario\s+liquido|valor\s+a\s+receber)[^\d]{0,30}([\d.,]+)/,
-  ]) || Math.max(0, round(grossSalary - totalDeductionsValue));
-
-  return {
-    grossSalary: round(grossSalary),
-    totalEarnings,
-    totalDeductions: round(totalDeductionsValue),
-    netSalary: round(netSalary),
-    benefits,
-  };
+  }
+  if (hasBenefit) return { kind: 'benefit' as const, confidence: 0.85 };
+  if (hasEarning) return { kind: 'earning' as const, confidence: 0.93 };
+  return null;
 }
 
-export async function analyzePayrollPdf(file: File): Promise<PayrollPdfAnalysis> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+function isMetadataDescription(description: string): boolean {
+  const text = normalize(description);
+  if (!text) return true;
+  if (SUMMARY_TERMS.some((term) => text.includes(term))) return true;
+  if (/cpf|cnpj|matricula|admissao|banco|agencia|conta|cargo|funcao|empresa|empregador/.test(text)) return true;
+  if (/\b\d{1,3}\/\d{4}-\d{2}\b/.test(text)) return true;
+  if (/\b(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/?20\d{2}\b/.test(text) && /\d/.test(text)) return true;
+  return false;
+}
+
+function itemRows(rows: Row[], grossHint: number): PayrollItem[] {
+  const earningX = findHeaderX(rows, ['vencimento', 'provento', 'credito']);
+  const deductionX = findHeaderX(rows, ['desconto', 'debito']);
+  const seen = new Set<string>();
+  const result: PayrollItem[] = [];
+
+  rows.forEach((row) => {
+    const normalized = normalize(row.text);
+    if (SUMMARY_TERMS.some((term) => normalized.includes(term))) return;
+    if (/codigo.*descricao|descricao.*referencia|demonstrativo de pagamento|recibo de pagamento/.test(normalized)) return;
+
+    const cells = moneyCells(row).filter((cell) => cell.amount > 0);
+    if (!cells.length) return;
+    const amountCell = cells[cells.length - 1];
+    const inferred = classify(row.text, amountCell.x, earningX, deductionX);
+    if (!inferred) return;
+
+    let description = row.text;
+    cells.forEach((cell) => { description = description.replace(cell.raw, ' '); });
+    description = description.replace(/\b\d{1,3}(?:[.,]\d{1,4})?\s*%\b/g, ' ').replace(/\s+/g, ' ').trim();
+    const codeMatch = description.match(/^([A-Z]?\d{1,6})\s+(.+)$/i);
+    const code = codeMatch?.[1];
+    if (codeMatch) description = codeMatch[2];
+    description = description.replace(/^[-–—.:\s]+|[-–—.:\s]+$/g, '').trim();
+    if (/^\*+$/.test(description.replace(/\s/g, ''))) description = 'Rubrica não identificada';
+
+    if (description.length < 2 || isMetadataDescription(description)) return;
+    const amount = round(amountCell.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) return;
+
+    const key = `${row.page}:${normalize(description)}:${amount}:${inferred.kind}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    result.push({
+      id: `pdf-${row.page}-${result.length + 1}`,
+      code,
+      description,
+      kind: inferred.kind,
+      category: category(description),
+      amount,
+      percentage: grossHint > 0 ? round((amount / grossHint) * 100) : 0,
+      reference: row.text.match(/\b\d{1,3}(?:[.,]\d{1,4})?\s*%\b/)?.[0],
+      source: 'pdf',
+      confidence: description === 'Rubrica não identificada' ? 0.35 : inferred.confidence,
+    });
+  });
+
+  return result;
+}
+
+export async function analyzePayrollPdf(file: File, onProgress?: (progress: number) => void): Promise<PayrollPdfAnalysis> {
+  if (!file || (!(file.type === 'application/pdf') && !file.name.toLowerCase().endsWith('.pdf'))) {
+    throw new Error('Selecione um arquivo PDF de holerite.');
+  }
+  if (file.size > 20 * 1024 * 1024) throw new Error('O PDF deve ter no máximo 20 MB.');
+
+  const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
   const tokens: Token[] = [];
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
     const content = await page.getTextContent();
-    content.items.forEach((item: any) => {
-      if (!item?.str?.trim()) return;
-      const transform = item.transform || [];
+    (content.items as any[]).forEach((item) => {
+      const text = String(item.str || '').trim();
+      if (!text) return;
       tokens.push({
-        text: String(item.str),
-        x: Number(transform[4] || 0),
-        y: Number(transform[5] || 0),
+        text,
+        x: Number(item.transform?.[4] || 0),
+        y: Number(item.transform?.[5] || 0),
         page: pageNumber,
       });
     });
+    onProgress?.(Math.round((pageNumber / document.numPages) * 100));
+  }
+
+  if (!tokens.length) {
+    throw new Error('O PDF não possui texto pesquisável. Holerites escaneados ainda precisam ser preenchidos manualmente.');
   }
 
   const rows = groupRows(tokens);
-  const items: PayrollItem[] = [];
-  rows.filter(likelyItemRow).forEach((row, rowIndex) => {
-    const cells = moneyCells(row);
-    if (!cells.length) return;
-    const money = cells[cells.length - 1];
-    const description = descriptionFromRow(row, money);
-    if (!description) return;
-    const kind = classifyKind(description, money.amount, row.text);
-    const amount = Math.abs(money.amount);
-    if (!amount) return;
-    items.push({
-      id: itemId(row.page, rowIndex, description),
-      description,
-      kind,
-      category: classifyCategory(description, kind),
-      amount,
-      percentage: 0,
-      source: 'pdf',
-      confidence: 0.82,
-    });
-  });
+  const summary = summaries(rows);
+  let grossSalary = summary.earnings || summary.salaryBase;
+  let items = itemRows(rows, grossSalary);
+  const earningsFromItems = round(items.filter((item) => item.kind === 'earning').reduce((sum, item) => sum + item.amount, 0));
+  const deductionsFromItems = round(items.filter((item) => item.kind === 'deduction').reduce((sum, item) => sum + item.amount, 0));
+  const benefits = round(items.filter((item) => item.kind === 'benefit').reduce((sum, item) => sum + item.amount, 0));
 
-  const totals = inferTotals(rows, items);
-  const grossForPercentage = totals.grossSalary || totals.totalEarnings;
-  items.forEach((item) => {
-    item.percentage = grossForPercentage > 0 ? round((item.amount / grossForPercentage) * 100) : 0;
-  });
+  if (grossSalary <= 0) grossSalary = earningsFromItems;
+  items = items.map((item) => ({ ...item, percentage: grossSalary > 0 ? round((item.amount / grossSalary) * 100) : 0 }));
 
+  const totalEarnings = summary.earnings || earningsFromItems || grossSalary;
+  const totalDeductions = summary.deductions || deductionsFromItems;
+  const netSalary = summary.net || Math.max(0, round(grossSalary - totalDeductions));
+  const competence = detectCompetence(rows, file.name);
   const warnings: string[] = [];
-  if (!tokens.length) warnings.push('Não foi possível encontrar texto selecionável neste PDF.');
-  if (!items.length) warnings.push('Não foi possível identificar rubricas financeiras automaticamente.');
-  if (!totals.grossSalary) warnings.push('Salário bruto não identificado; confira os dados manualmente.');
-  if (!totals.netSalary) warnings.push('Salário líquido não identificado; confira os dados manualmente.');
+
+  if (!competence) warnings.push('A competência não foi identificada; confirme o mês antes de salvar.');
+  if (grossSalary <= 0) warnings.push('O salário bruto não foi identificado; informe-o manualmente.');
+  if (!items.length) warnings.push('Nenhuma rubrica foi reconhecida; adicione os descontos e benefícios manualmente.');
+  if (summary.deductions > 0 && deductionsFromItems > 0 && Math.abs(summary.deductions - deductionsFromItems) > 1) {
+    warnings.push('A soma das rubricas reconhecidas difere do total de descontos do PDF. Revise as linhas antes de salvar.');
+  }
+  if (summary.net > 0 && grossSalary > 0 && Math.abs(summary.net - Math.max(0, grossSalary - deductionsFromItems)) > 1) {
+    warnings.push('O líquido informado no PDF difere da soma das rubricas reconhecidas.');
+  }
 
   return {
-    competence: detectCompetence(rows, file.name),
-    grossSalary: totals.grossSalary,
-    totalEarnings: totals.totalEarnings,
-    totalDeductions: totals.totalDeductions,
-    netSalary: totals.netSalary,
-    benefits: totals.benefits,
+    competence,
+    grossSalary: round(grossSalary),
+    totalEarnings: round(totalEarnings),
+    totalDeductions: round(totalDeductions),
+    netSalary: round(netSalary),
+    benefits,
     items,
     warnings,
-    pageCount: pdf.numPages,
+    pageCount: document.numPages,
     fileName: file.name,
   };
 }
