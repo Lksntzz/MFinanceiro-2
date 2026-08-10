@@ -24,7 +24,7 @@ npm run native:open:ios
 npm run native:open:android
 ```
 
-O `npm run mobile:check` também valida os contratos dos shells nativos: deep links, Share Target Android, limites/tipos de arquivo e quick actions do iOS.
+O `npm run mobile:check` também valida os contratos dos shells nativos: deep links, Share Target Android, limites/tipos de arquivo, Android Quick Settings e quick actions do iOS.
 
 ## Contrato de links
 
@@ -46,11 +46,21 @@ O shell Android já contém:
 - custom scheme `mfinanceiro://`;
 - link HTTPS para `mfinanceiro.com.br`;
 - atalhos estáticos do launcher para MF Quick, MF Scan e MF Pulse;
+- bloco de Configurações Rápidas `MF Quick`, que exige desbloqueio quando o aparelho estiver protegido e abre a mesma rota `/quick`;
 - Share Target nativo `ACTION_SEND` para PDF, imagem e texto;
 - cópia temporária privada de PDF/JPEG/PNG/WebP com limite de 20 MB;
 - plugin Capacitor `NativeShareReceiver`;
 - bridge que hidrata a mesma fila IndexedDB usada por `Compartilhar para o MF` na PWA e abre `/share?id=...`;
 - nenhuma gravação financeira acontece pelo Share Target sem a revisão existente do MF Scan.
+
+O CI executa um build Android real com Java 21:
+
+1. build dos assets web;
+2. `npx cap sync android`;
+3. `./gradlew :app:assembleDebug --no-daemon`;
+4. upload do `app-debug.apk` como artefato `mf-financeiro-android-debug` por 7 dias.
+
+Esse APK é somente para QA. Ele não substitui assinatura de release nem publicação na Google Play.
 
 Para transformar o link HTTPS em Android App Link verificado ainda é necessário publicar `/.well-known/assetlinks.json` com o package name e o SHA-256 do certificado usado para assinar a versão final. O fingerprint só deve ser preenchido depois que a chave de assinatura definitiva existir.
 
