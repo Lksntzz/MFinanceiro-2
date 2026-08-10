@@ -4,7 +4,8 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
-import type { FinancialAccount, TransactionCategory } from '../../types';
+import type { FinancialAccount, Transaction, TransactionCategory } from '../../types';
+import { inferAdaptiveCategory } from '../lib/adaptive-category';
 import { MOBILE_ROUTES } from '../routes';
 import { parseVoiceEntry, type VoiceEntryType } from '../lib/voice-entry-parser';
 import './mobile-voice.css';
@@ -54,11 +55,16 @@ function normalizeAccount(row: any): FinancialAccount {
   } as FinancialAccount;
 }
 
+function normalizeTransaction(row: any): Transaction {
+  return { ...row, amount: Number(row.amount || 0) } as Transaction;
+}
+
 export default function MobileVoice({ userId }: { userId: string }) {
   const navigate = useNavigate();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [categories, setCategories] = useState<TransactionCategory[]>([]);
+  const [history, setHistory] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -85,16 +91,24 @@ export default function MobileVoice({ userId }: { userId: string }) {
       try {
         const ensured = await supabase.rpc('mf_ensure_financial_structure');
         if (ensured.error) throw ensured.error;
-        const [accountsResult, categoriesResult] = await Promise.all([
+        const [accountsResult, categoriesResult, historyResult] = await Promise.all([
           supabase.from('mf_account_balances').select('*').eq('user_id', userId).eq('is_active', true).order('is_default', { ascending: false }).order('created_at'),
           supabase.from('mf_transaction_categories').select('*').eq('user_id', userId).eq('is_active', true).order('sort_order').order('name'),
+          supabase.from('mf_finance_ledger_entries')
+            .select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance')
+            .eq('user_id', userId)
+            .in('type', ['income', 'expense'])
+            .order('date', { ascending: false })
+            .limit(500),
         ]);
         if (accountsResult.error) throw accountsResult.error;
         if (categoriesResult.error) throw categoriesResult.error;
+        if (historyResult.error) throw historyResult.error;
         if (!active) return;
         const nextAccounts = (accountsResult.data || []).map(normalizeAccount);
         setAccounts(nextAccounts);
         setCategories((categoriesResult.data || []) as TransactionCategory[]);
+        setHistory((historyResult.data || []).map(normalizeTransaction));
         setAccountId(nextAccounts.find((account) => account.is_default)?.id || nextAccounts[0]?.id || '');
       } catch (loadError: any) {
         if (active) setError(loadError?.message || 'Não foi possível preparar o MF Voice.');
@@ -121,14 +135,24 @@ export default function MobileVoice({ userId }: { userId: string }) {
     }
 
     const parsed = parseVoiceEntry(clean, categories, accounts);
+    const adaptive = inferAdaptiveCategory({ merchantText: clean, type: parsed.type, history, categories });
+    const learnedCategoryId = adaptive?.confidence === 'high' ? adaptive.categoryId : parsed.categoryId;
     setType(parsed.type);
     setAmount(parsed.amount ? String(parsed.amount).replace('.', ',') : '');
     setDescription(parsed.description);
-    setCategoryId(parsed.categoryId);
+    setCategoryId(learnedCategoryId);
     setAccountId(parsed.accountId || accountId);
     setInterpretation([
-      parsed.confidence === 'high' ? 'Interpretação com boa confiança.' : parsed.confidence === 'medium' ? 'Revise os campos destacados.' : 'Complete os campos antes de salvar.',
-      ...parsed.warnings,
+      adaptive?.confidence === 'high'
+        ? `MF aprendeu com ${adaptive.matchCount} lançamentos parecidos e sugeriu ${adaptive.categoryName}.`
+        : adaptive?.confidence === 'medium'
+          ? `Seu histórico aponta ${adaptive.categoryName}, mas confirme a categoria.`
+          : parsed.confidence === 'high'
+            ? 'Interpretação com boa confiança.'
+            : parsed.confidence === 'medium'
+              ? 'Revise os campos destacados.'
+              : 'Complete os campos antes de salvar.',
+      ...parsed.warnings.filter((warning) => !(adaptive?.confidence === 'high' && warning.includes('categoria'))),
     ]);
   }
 
