@@ -59,22 +59,76 @@ jobs:
             "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_TEAM_ID" \
             > /dev/null
 
-      - name: Write local Vercel project link
+      - name: Fetch public production build variables
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          mkdir -p .vercel
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?decrypt=true&teamId=$VERCEL_TEAM_ID" \
+            > "$RUNNER_TEMP/vercel-env.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const payload = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'vercel-env.json'), 'utf8'));
+          const envs = Array.isArray(payload.envs)
+            ? payload.envs
+            : Array.isArray(payload.data)
+              ? payload.data
+              : Array.isArray(payload)
+                ? payload
+                : [];
+
+          const selected = new Map();
+          for (const entry of envs) {
+            if (!entry || typeof entry.key !== 'string' || !entry.key.startsWith('VITE_')) continue;
+            const targets = Array.isArray(entry.target)
+              ? entry.target
+              : entry.target
+                ? [entry.target]
+                : [];
+            if (targets.length && !targets.includes('production')) continue;
+            if (typeof entry.value !== 'string' || !entry.value.length) continue;
+            selected.set(entry.key, entry.value);
+          }
+
+          for (const key of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+            if (!selected.has(key)) throw new Error(`Missing required production variable: ${key}`);
+          }
+
+          const lines = [...selected.entries()].map(([key, value]) => `${key}=${JSON.stringify(value)}`);
+          fs.writeFileSync('.env.production.local', `${lines.join('\n')}\n`, { mode: 0o600 });
+          console.log(`Prepared ${selected.size} public VITE_* variables for the production build.`);
+          NODE
+          rm -f "$RUNNER_TEMP/vercel-env.json"
+
+      - name: Install pinned Vercel tooling
+        run: npm install --no-save --package-lock=false vercel@58.9.1
+
+      - name: Build production app locally
+        run: npm run build
+
+      - name: Assemble Vercel Build Output API artifact
+        run: |
+          rm -rf .vercel/output
+          mkdir -p .vercel/output/static
+          cp -R dist/. .vercel/output/static/
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { getTransformedRoutes } from '@vercel/routing-utils';
+
+          const projectConfig = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+          const { routes } = getTransformedRoutes(projectConfig);
+          fs.writeFileSync(
+            '.vercel/output/config.json',
+            JSON.stringify({ version: 3, routes }, null, 2),
+          );
+          NODE
           printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
-
-      - name: Pull Vercel production configuration
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@58.9.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
-
-      - name: Build production artifact locally
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@58.9.1 build --prod --token="$VERCEL_TOKEN"
+          rm -f .env.production.local
 
       - name: Deploy prebuilt artifact to production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@58.9.1 deploy --prebuilt --prod -T "$VERCEL_TEAM_ID" --token="$VERCEL_TOKEN"
+        run: ./node_modules/.bin/vercel deploy --prebuilt --prod -T "$VERCEL_TEAM_ID" --token="$VERCEL_TOKEN"
