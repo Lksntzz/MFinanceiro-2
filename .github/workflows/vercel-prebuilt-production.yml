@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  VERCEL_ORG_ID: team_Q4OjsxC51APH6ge4YFvJhrSu
   VERCEL_TEAM_ID: team_Q4OjsxC51APH6ge4YFvJhrSu
   VERCEL_PROJECT_ID: prj_GAVmGXR2XkGzOUKgmghlwDtvDcuH
 
@@ -61,7 +62,7 @@ jobs:
       - name: Write local Vercel project link
         run: |
           mkdir -p .vercel
-          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_TEAM_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
+          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
 
       - name: Pull Vercel production configuration
         env:
