@@ -5,8 +5,16 @@ import Capacitor
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var pendingShortcutURL: URL?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        if let shortcutItem = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem,
+           let url = urlForShortcut(shortcutItem.type) {
+            pendingShortcutURL = url
+            // Returning false prevents UIKit from delivering the same quick action again through
+            // performActionFor after launch. We forward it once the Capacitor view is active.
+            return false
+        }
         return true
     }
 
@@ -23,7 +31,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // The web core refreshes time-sensitive data when its screens load.
+        guard let url = pendingShortcutURL else { return }
+        pendingShortcutURL = nil
+
+        // A cold launch reaches this point after the main native view has become active. Deferring
+        // one main-loop turn prevents the quick-action URL from racing the Capacitor bridge setup.
+        DispatchQueue.main.async { [weak self] in
+            guard self != nil else { return }
+            _ = ApplicationDelegateProxy.shared.application(application, open: url, options: [:])
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
