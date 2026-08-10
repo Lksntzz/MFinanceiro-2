@@ -9,6 +9,7 @@ export const MOBILE_ROUTES = {
   canSpend: '/app/mobile/posso-gastar',
   quick: '/quick',
   scan: '/scan',
+  voice: '/voice',
 } as const;
 
 export type MobileRouteKey = keyof typeof MOBILE_ROUTES;
