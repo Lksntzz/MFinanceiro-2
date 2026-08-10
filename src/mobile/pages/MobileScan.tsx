@@ -10,13 +10,15 @@ import {
   RotateCcw,
   ScanLine,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
-import type { FinancialAccount, TransactionCategory } from '../../types';
+import type { FinancialAccount, Transaction, TransactionCategory } from '../../types';
 import type { MobileScannedDraft } from '../types';
+import { inferAdaptiveCategory, type AdaptiveCategorySuggestion } from '../lib/adaptive-category';
 import { MOBILE_ROUTES } from '../routes';
 import {
   analyzeDocumentWithOcr,
@@ -31,6 +33,7 @@ type MobileScanProps = {
   userId: string;
   accounts: FinancialAccount[];
   categories: TransactionCategory[];
+  history?: Transaction[];
   onSaved: () => Promise<void> | void;
   initialFile?: File | null;
   initialText?: string;
@@ -107,6 +110,7 @@ export default function MobileScan({
   userId,
   accounts,
   categories,
+  history = [],
   onSaved,
   initialFile = null,
   initialText = '',
@@ -120,6 +124,7 @@ export default function MobileScan({
   const [rawInput, setRawInput] = useState('');
   const [parsed, setParsed] = useState<ParsedFinancialCode | null>(null);
   const [draft, setDraft] = useState<MobileScannedDraft | null>(null);
+  const [adaptiveSuggestion, setAdaptiveSuggestion] = useState<AdaptiveCategorySuggestion | null>(null);
   const [fileName, setFileName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -149,16 +154,27 @@ export default function MobileScan({
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
+  function learnedSuggestion(nextDraft: MobileScannedDraft) {
+    return inferAdaptiveCategory({
+      merchantText: nextDraft.merchant || nextDraft.description || '',
+      type: 'expense',
+      history,
+      categories,
+    });
+  }
+
   function applyDraft(nextDraft: MobileScannedDraft, nextParsed?: ParsedFinancialCode | null) {
     const defaultDescription = nextDraft.description || nextDraft.merchant || 'Documento financeiro';
+    const learned = learnedSuggestion(nextDraft);
     setDraft(nextDraft);
     setParsed(nextParsed || null);
+    setAdaptiveSuggestion(learned);
     setReview((current) => ({
       ...current,
       amount: nextDraft.amount ? String(nextDraft.amount).replace('.', ',') : '',
       description: defaultDescription,
       dueDate: nextDraft.dueDate || '',
-      categoryId: current.categoryId || expenseCategories[0]?.id || '',
+      categoryId: learned?.confidence === 'high' ? learned.categoryId : current.categoryId || expenseCategories[0]?.id || '',
       accountId: current.accountId || accounts.find((item) => item.is_default)?.id || accounts[0]?.id || '',
       status: nextDraft.dueDate || nextDraft.documentKind?.includes('boleto') || nextDraft.documentKind?.includes('pix') ? 'pending' : current.status,
     }));
@@ -171,6 +187,7 @@ export default function MobileScan({
     setSelectedFile(null);
     setParsed(null);
     setDraft(null);
+    setAdaptiveSuggestion(null);
     setOcrExtractionId('');
     setRawInput('');
     setNotice(null);
@@ -281,6 +298,7 @@ export default function MobileScan({
         pixPayload: fallbackDraft.pixPayload,
         confidence: reviewConfidence(ocrResult.documentConfidence),
       };
+      const learned = learnedSuggestion(mergedDraft);
       applyDraft(mergedDraft, parsed);
 
       const suggestedCategory = metadata.category_hint
@@ -288,7 +306,7 @@ export default function MobileScan({
         : null;
       setReview((current) => ({
         ...current,
-        categoryId: suggestedCategory?.id || current.categoryId,
+        categoryId: learned?.confidence === 'high' ? learned.categoryId : suggestedCategory?.id || current.categoryId,
         status: metadata.payment_status === 'paid' ? 'paid' : metadata.payment_status === 'pending' ? 'pending' : current.status,
         dueDate: metadata.payment_status === 'paid' ? '' : metadata.due_date || current.dueDate,
       }));
@@ -343,6 +361,9 @@ export default function MobileScan({
     try {
       const paymentMethod = parsed?.kind === 'pix' ? 'pix' : parsed?.kind === 'boleto' ? 'boleto' : 'other';
       const sourceLabel = captureSource === 'MF Share Mobile' ? 'MF Share' : 'MF Scan';
+      const learnedNote = adaptiveSuggestion?.confidence === 'high' && adaptiveSuggestion.categoryId === effectiveCategoryId
+        ? ` Categoria sugerida pelo histórico do usuário (${adaptiveSuggestion.matchCount} correspondências).`
+        : '';
       const { error: rpcError } = await supabase.rpc('mf_create_finance_entry_v3', {
         p_type: 'expense',
         p_amount: amount,
@@ -356,7 +377,7 @@ export default function MobileScan({
         p_card_id: null,
         p_installment_count: 1,
         p_due_date: review.status === 'pending' && review.dueDate ? review.dueDate : null,
-        p_notes: parsed?.label ? `Capturado pelo ${sourceLabel}: ${parsed.label}` : `Capturado pelo ${sourceLabel}`,
+        p_notes: `${parsed?.label ? `Capturado pelo ${sourceLabel}: ${parsed.label}` : `Capturado pelo ${sourceLabel}`}.${learnedNote}`.trim(),
         p_source: captureSource,
       });
       if (rpcError) throw rpcError;
@@ -439,6 +460,20 @@ export default function MobileScan({
               {processing ? <Loader2 className="animate-spin" size={18} /> : <ScanLine size={18} />}
               {processing ? 'Analisando documento...' : 'Analisar com IA'}
             </button>
+          ) : null}
+
+          {adaptiveSuggestion ? (
+            <div className={`mf-mobile-feedback ${adaptiveSuggestion.confidence === 'high' ? 'success' : 'warning'}`}>
+              <Sparkles size={16} />
+              <span>
+                {adaptiveSuggestion.confidence === 'high'
+                  ? `Pelo seu histórico, ${adaptiveSuggestion.categoryName} foi pré-selecionada (${adaptiveSuggestion.matchCount} casos parecidos).`
+                  : `Seu histórico sugere ${adaptiveSuggestion.categoryName}. Confirme se faz sentido.`}
+              </span>
+              {adaptiveSuggestion.confidence === 'medium' ? (
+                <button type="button" onClick={() => setReview((current) => ({ ...current, categoryId: adaptiveSuggestion.categoryId }))}>Usar</button>
+              ) : null}
+            </div>
           ) : null}
 
           {parsed?.dynamicPix ? <div className="mf-mobile-feedback warning">QR Pix dinâmico identificado. O valor completo pode depender do payload do PSP; confirme os campos abaixo.</div> : null}
