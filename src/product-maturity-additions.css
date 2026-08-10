@@ -22,10 +22,10 @@
 /*
  * Desktop/web spacing contract.
  *
- * `.mf-card` is intentionally only the visual surface (border, radius and
- * background). Feature cards that hold direct copy need their own interior
- * breathing room. Keeping this rule explicit avoids double-padding older KPI,
- * chart and glass-card components that already own their spacing.
+ * `.mf-card` and `glass-card` are intentionally visual surfaces (border,
+ * radius and background). Feature cards that hold direct copy need their own
+ * interior breathing room. Keeping this rule explicit avoids double-padding
+ * older KPI, chart and glass-card components that already own their spacing.
  */
 @media (min-width: 821px) {
   .mf-onboarding-checklist,
@@ -34,6 +34,7 @@
     padding: clamp(11px, .85vh, 14px) clamp(12px, .85vw, 16px);
   }
 
+  .mf-tool-surface,
   .mf-card[aria-label="Progresso do planejamento"],
   .mf-routed-app .mf-tab-shell > .space-y-4 > form.mf-card,
   .mf-routed-app .mf-tab-shell > .space-y-4 > .grid[class~="xl:grid-cols-3"] > .mf-card,
