@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext';
 import { useUserPreferences } from '../hooks/useUserPreferences';
 import { exportFinancialData } from '../lib/export-financial-data';
 import { loadUserActivity, type ActivityEvent } from '../lib/activity-log';
-import { HOME_WIDGET_OPTIONS, type HomeWidgetId, type NotificationPreferenceKey } from '../lib/user-preferences';
+import { HOME_WIDGET_OPTIONS, MAX_HOME_WIDGETS, MIN_HOME_WIDGETS, type HomeWidgetId, type NotificationPreferenceKey } from '../lib/user-preferences';
 
 function formatActivityDate(value: string) {
   try { return new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); } catch { return ''; }
@@ -50,8 +50,12 @@ export default function PreferencesCenter({ userId }: { userId: string }) {
 
   function toggleHomeWidget(id: HomeWidgetId) {
     const active = preferences.homeWidgets.includes(id);
-    if (active && selectedCount <= 3) {
-      setMessage('Mantenha pelo menos três blocos na Início para preservar uma visão financeira útil.');
+    if (active && selectedCount <= MIN_HOME_WIDGETS) {
+      setMessage(`Mantenha pelo menos ${MIN_HOME_WIDGETS} blocos na Início para preservar uma visão financeira útil.`);
+      return;
+    }
+    if (!active && selectedCount >= MAX_HOME_WIDGETS) {
+      setMessage(`Escolha até ${MAX_HOME_WIDGETS} blocos principais. Troque um bloco antes de adicionar outro.`);
       return;
     }
     setMessage(null);
@@ -100,7 +104,7 @@ export default function PreferencesCenter({ userId }: { userId: string }) {
           {message && <div className="mf-preferences-message" role="status">{message}</div>}
 
           <section className="mf-preference-section">
-            <div className="mf-preference-title"><LayoutDashboard size={17} /><div><strong>Início</strong><small>Escolha os blocos que merecem prioridade.</small></div></div>
+            <div className="mf-preference-title"><LayoutDashboard size={17} /><div><strong>Início</strong><small>Escolha de {MIN_HOME_WIDGETS} a {MAX_HOME_WIDGETS} blocos que merecem prioridade.</small></div></div>
             <div className="mf-home-widget-options">
               {HOME_WIDGET_OPTIONS.map((item) => <label key={item.id}><input type="checkbox" checked={preferences.homeWidgets.includes(item.id)} onChange={() => toggleHomeWidget(item.id)} /><span><strong>{item.label}</strong><small>{item.description}</small></span></label>)}
             </div>
