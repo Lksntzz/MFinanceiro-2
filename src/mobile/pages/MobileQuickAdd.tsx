@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Loader2, Mic, ScanLine } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Mic, Repeat2, ScanLine } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router';
 
@@ -113,6 +113,11 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
         <button type="button" className="mf-mobile-voice-quick-entry" onClick={() => navigate(MOBILE_ROUTES.voice)}>
           <span><Mic size={21} /></span>
           <div><strong>Falar lançamento</strong><small>Ex.: “Gastei 48 reais de gasolina”</small></div>
+        </button>
+
+        <button type="button" className="mf-mobile-voice-quick-entry" onClick={() => navigate(MOBILE_ROUTES.recurrences)}>
+          <span><Repeat2 size={21} /></span>
+          <div><strong>Detectar recorrências</strong><small>Encontrar padrões mensais no seu histórico</small></div>
         </button>
 
         <div className="mf-mobile-segmented" role="group" aria-label="Tipo do lançamento">
