@@ -1,4 +1,4 @@
-/* Stage 6: accessibility, motion preferences and subtle visual refinement. */
+/* Stage 6: web product system, accessibility and visual refinement. */
 
 .mf-visually-hidden,
 .sr-only {
@@ -73,11 +73,7 @@ body {
   backdrop-filter: blur(16px);
 }
 
-.mf-content:focus {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
+.mf-content:focus,
 .mf-content:focus-visible {
   outline: none !important;
   box-shadow: none !important;
@@ -127,20 +123,124 @@ body.mf-investments-workspace .mf-content > .mf-tab-shell {
   background: rgba(255, 255, 255, .025);
 }
 
-/* Desktop/web planning tools keep a deliberate vertical rhythm. The native
-   mobile experience lives under src/mobile and is intentionally untouched. */
+/*
+ * WEB PRODUCT SYSTEM
+ * ------------------
+ * Desktop keeps a single visual language across Dashboard, Movements,
+ * Investments, Planning, Insights, Agenda and Connections. The native mobile
+ * experience under src/mobile is intentionally outside this block.
+ */
 @media (min-width: 821px) {
+  .mf-routed-app {
+    --mf-web-section-gap: clamp(18px, 1.25vw, 26px);
+    --mf-web-card-gap: clamp(13px, .9vw, 18px);
+    --mf-web-card-pad: clamp(16px, 1.15vw, 22px);
+    --mf-web-radius: clamp(14px, .85vw, 18px);
+    --mf-web-muted: rgba(255, 255, 255, .46);
+    --mf-web-soft: rgba(255, 255, 255, .035);
+    --mf-web-border: rgba(255, 255, 255, .105);
+  }
+
+  /* Header: stable, quiet and identical between tools. */
+  .mf-routed-app .mf-topbar {
+    min-height: 46px;
+    align-items: center;
+    padding: 2px 2px clamp(9px, .75vh, 12px);
+    border-bottom-color: rgba(255, 255, 255, .075);
+  }
+
+  .mf-routed-app .mf-brand {
+    gap: 11px;
+  }
+
+  .mf-routed-app .mf-brand-icon {
+    border-color: rgba(0, 242, 255, .22);
+    border-radius: 11px;
+    background: linear-gradient(145deg, rgba(0, 242, 255, .11), rgba(112, 0, 255, .05));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+  }
+
+  .mf-routed-app .mf-brand h1 {
+    font-weight: 850;
+    letter-spacing: -.02em;
+  }
+
+  .mf-routed-app .mf-brand span {
+    color: rgba(255, 255, 255, .36);
+    letter-spacing: .16em;
+  }
+
+  .mf-routed-app .mf-top-actions {
+    gap: 7px;
+  }
+
+  .mf-routed-app .mf-top-actions > button {
+    border-color: rgba(255, 255, 255, .075);
+    background: rgba(255, 255, 255, .025);
+  }
+
+  .mf-routed-app .mf-top-actions > button:hover {
+    color: #fff;
+    border-color: rgba(0, 242, 255, .18);
+    background: rgba(0, 242, 255, .055);
+  }
+
+  /* Sidebar: primary architecture first, shortcuts second. */
+  .mf-side-panel {
+    border-color: rgba(255, 255, 255, .085);
+    background: linear-gradient(180deg, rgba(13, 17, 21, .985), rgba(7, 10, 13, .992));
+    box-shadow: 0 22px 64px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .025);
+  }
+
+  .mf-side-item {
+    min-height: 37px;
+    border-radius: 11px;
+    color: rgba(255, 255, 255, .57);
+  }
+
+  .mf-side-item.active {
+    border-color: rgba(0, 242, 255, .2);
+    background: linear-gradient(90deg, rgba(0, 242, 255, .1), rgba(0, 242, 255, .035));
+    box-shadow: inset 2px 0 0 var(--brand-primary, #00f2ff);
+  }
+
+  .mf-side-primary-children {
+    margin-top: 4px;
+    margin-bottom: 7px;
+  }
+
+  .mf-side-primary-children .mf-side-item {
+    min-height: 31px;
+  }
+
+  .mf-side-launch {
+    min-height: 41px;
+    border-radius: 12px;
+    box-shadow: 0 8px 22px rgba(0, 242, 255, .08);
+  }
+
+  .mf-side-shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  /* Main document flow: every tool gets the same breathing room. */
+  .mf-routed-app > .mf-content {
+    padding-top: clamp(7px, .7vh, 11px);
+  }
+
   .mf-routed-app > .mf-content > .space-y-4,
   .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 {
-    width: 100%;
+    width: min(100%, 1560px);
     height: 100%;
     min-height: 0;
+    margin-inline: auto;
     overflow-x: hidden;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: clamp(18px, 1.35vw, 26px);
-    padding: 2px clamp(2px, .35vw, 6px) clamp(20px, 2vh, 30px) 2px;
+    gap: var(--mf-web-section-gap);
+    padding: 2px clamp(3px, .4vw, 7px) clamp(22px, 2.2vh, 34px) 2px;
     scrollbar-width: thin;
     scrollbar-color: rgba(23, 217, 228, .24) transparent;
   }
@@ -151,26 +251,57 @@ body.mf-investments-workspace .mf-content > .mf-tab-shell {
     flex-shrink: 0;
   }
 
+  /* Page titles should explain the job of the screen, not compete with cards. */
+  .mf-routed-app > .mf-content > .space-y-4 > :first-child,
+  .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 > :first-child {
+    padding: 2px 2px 0;
+  }
+
+  .mf-routed-app > .mf-content > .space-y-4 > :first-child h2,
+  .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 > :first-child h2 {
+    margin: 0;
+    font-size: clamp(21px, 1.35vw, 27px);
+    line-height: 1.12;
+    font-weight: 900;
+    letter-spacing: -.025em;
+  }
+
   .mf-routed-app > .mf-content > .space-y-4 > :first-child p,
   .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 > :first-child p {
-    margin-top: 6px;
+    max-width: 820px;
+    margin-top: 7px;
+    color: var(--mf-web-muted);
+    line-height: 1.55;
+  }
+
+  /* Surfaces: one family of cards instead of three visual systems. */
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) {
+    border-radius: var(--mf-web-radius);
+    border-color: var(--mf-web-border);
+    background: linear-gradient(180deg, rgba(21, 23, 26, .84), rgba(14, 16, 19, .82));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .024), 0 10px 30px rgba(0, 0, 0, .14);
+  }
+
+  .mf-routed-app .mf-content .glass-card:hover {
+    border-color: var(--mf-web-border);
+    background: linear-gradient(180deg, rgba(21, 23, 26, .84), rgba(14, 16, 19, .82));
   }
 
   .mf-routed-app > .mf-content > .space-y-4 .glass-card:not([class*="p-"]):not([class*="px-"]):not([class*="py-"]),
   .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 .glass-card:not([class*="p-"]):not([class*="px-"]):not([class*="py-"]) {
-    padding: clamp(16px, 1.2vw, 22px);
+    padding: var(--mf-web-card-pad);
   }
 
   .mf-routed-app > .mf-content > .space-y-4 .mf-card:not(.mf-kpi):not(.mf-chart-card):not(.mf-mini-card):not([class*="p-"]):not([class*="px-"]):not([class*="py-"]),
   .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 .mf-card:not(.mf-kpi):not(.mf-chart-card):not(.mf-mini-card):not([class*="p-"]):not([class*="px-"]):not([class*="py-"]) {
-    padding: clamp(16px, 1.2vw, 22px);
+    padding: var(--mf-web-card-pad);
   }
 
   .mf-routed-app .mf-content :is(.glass-card, .mf-card).space-y-3,
   .mf-routed-app .mf-content :is(.glass-card, .mf-card).space-y-4 {
     display: flex;
     flex-direction: column;
-    gap: clamp(13px, .95vw, 18px);
+    gap: var(--mf-web-card-gap);
   }
 
   .mf-routed-app .mf-content :is(.glass-card, .mf-card).space-y-3 > *,
@@ -182,7 +313,141 @@ body.mf-investments-workspace .mf-content > .mf-tab-shell {
   .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 > .grid,
   .mf-routed-app > .mf-content > .space-y-4 > section.grid,
   .mf-routed-app > .mf-content > .mf-tab-shell > .space-y-4 > section.grid {
-    gap: clamp(16px, 1.25vw, 24px);
+    gap: clamp(16px, 1.2vw, 24px);
+  }
+
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) h3 {
+    letter-spacing: -.012em;
+  }
+
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) > p,
+  .mf-routed-app .mf-content :is(.mf-card, .glass-card) small {
+    line-height: 1.5;
+  }
+
+  /* KPIs: scan first, decorate second. */
+  .mf-routed-app .mf-kpi {
+    padding: clamp(13px, 1vw, 18px);
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  .mf-routed-app .mf-kpi span {
+    color: rgba(255, 255, 255, .43);
+    letter-spacing: .11em;
+  }
+
+  .mf-routed-app .mf-kpi strong {
+    margin-top: auto;
+    letter-spacing: -.025em;
+  }
+
+  .mf-routed-app .mf-kpi.accent {
+    border-color: rgba(0, 242, 255, .22);
+    background: linear-gradient(180deg, rgba(0, 242, 255, .07), rgba(14, 21, 24, .88));
+  }
+
+  /* Forms: predictable control sizes and a single action hierarchy. */
+  .mf-routed-app .mf-content :is(input, select, textarea) {
+    border-color: rgba(255, 255, 255, .105) !important;
+    border-radius: 11px !important;
+    background-color: rgba(5, 7, 9, .58) !important;
+    color: rgba(255, 255, 255, .9);
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+  }
+
+  .mf-routed-app .mf-content :is(input, select):not([type="checkbox"]):not([type="radio"]) {
+    min-height: 40px;
+  }
+
+  .mf-routed-app .mf-content :is(input, select, textarea):hover {
+    border-color: rgba(255, 255, 255, .16) !important;
+  }
+
+  .mf-routed-app .mf-content :is(input, select, textarea):focus {
+    border-color: rgba(0, 242, 255, .52) !important;
+    box-shadow: 0 0 0 3px rgba(0, 242, 255, .07);
+  }
+
+  .mf-routed-app .mf-content label {
+    line-height: 1.45;
+  }
+
+  .mf-routed-app .mf-content button.primary,
+  .mf-routed-app .mf-modal-actions .primary {
+    border-color: rgba(0, 242, 255, .86);
+    border-radius: 11px;
+    background: #00e8f4;
+    color: #031012;
+    box-shadow: 0 8px 24px rgba(0, 232, 244, .08);
+  }
+
+  .mf-routed-app .mf-content button.primary:hover,
+  .mf-routed-app .mf-modal-actions .primary:hover {
+    background: #26f1fa;
+    border-color: #26f1fa;
+  }
+
+  /* Feedback must be visible without feeling like an error console. */
+  .mf-routed-app .mf-error {
+    min-height: 40px;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border-color: rgba(239, 68, 68, .24);
+    background: rgba(239, 68, 68, .075);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .mf-routed-app .mf-loading {
+    right: max(18px, env(safe-area-inset-right));
+    bottom: max(18px, env(safe-area-inset-bottom));
+    z-index: 80;
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 999px;
+    color: rgba(255, 255, 255, .52);
+    background: rgba(7, 10, 13, .82);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .24);
+    backdrop-filter: blur(14px);
+  }
+
+  /* The home page should answer status before asking the user to read charts. */
+  .mf-dashboard-grid .mf-alert {
+    border-color: rgba(255, 255, 255, .11);
+    background: linear-gradient(90deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .022));
+  }
+
+  .mf-dashboard-grid .mf-alert.insight {
+    border-color: rgba(112, 0, 255, .24);
+    background: linear-gradient(90deg, rgba(112, 0, 255, .09), rgba(30, 4, 48, .32));
+  }
+
+  .mf-dashboard-grid .mf-alert strong {
+    font-weight: 850;
+  }
+
+  .mf-dashboard-grid .mf-chart-card,
+  .mf-dashboard-grid .mf-mini-card {
+    background: linear-gradient(180deg, rgba(18, 20, 23, .78), rgba(12, 14, 16, .74));
+  }
+
+  /* Calendar and dated commitments need enough contrast to read as one system. */
+  .mf-routed-app .mf-content [class*="grid-cols-7"] article {
+    border-color: rgba(255, 255, 255, .075);
+  }
+
+  /* Modals use the same radius and action language as the main product. */
+  .mf-routed-app .mf-modal {
+    gap: 15px;
+    padding: clamp(19px, 1.4vw, 24px);
+    border-radius: 18px;
+    border-color: rgba(255, 255, 255, .12);
+    background: linear-gradient(180deg, rgba(17, 19, 22, .99), rgba(11, 13, 15, .99));
+  }
+
+  .mf-routed-app .mf-modal-title {
+    padding-bottom: 2px;
   }
 }
 
