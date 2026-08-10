@@ -10,18 +10,16 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,50 +27,8 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Refresh package lock
-        run: npm install --package-lock-only --ignore-scripts
-
-      - name: Commit refreshed lock if needed
-        shell: bash
-        run: |
-          if git diff --quiet -- package-lock.json; then
-            echo "Lockfile already current"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "chore: lock Capacitor native dependencies"
-            git push origin HEAD:${{ github.head_ref || github.ref_name }}
-          fi
-
       - name: Install dependencies
         run: npm ci
-
-      - name: Build web assets for native shells
-        run: npm run build
-
-      - name: Generate Capacitor platform shells
-        shell: bash
-        run: |
-          set -e
-          generated=false
-          if [ ! -d android ]; then
-            npx cap add android
-            generated=true
-          fi
-          if [ ! -d ios ]; then
-            npx cap add ios
-            generated=true
-          fi
-          if [ "$generated" = "true" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add android ios
-            if ! git diff --cached --quiet; then
-              git commit -m "chore: add Capacitor iOS and Android shells"
-              git push origin HEAD:${{ github.head_ref || github.ref_name }}
-            fi
-          fi
 
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
