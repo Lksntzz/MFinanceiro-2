@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useDashboardWorkspace } from '../hooks/useDashboardWorkspace';
 import AdminAccessRequests from './AdminAccessRequests';
 import AdminMaintenanceControl from './AdminMaintenanceControl';
+import AdminMfaSecurity from './AdminMfaSecurity';
 import AppNavigation from './AppNavigation';
 import DashboardHome from './DashboardHome';
 import History from './History';
@@ -148,7 +149,7 @@ export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: 
               <Insights summary={workspace.summary} transactions={workspace.financeTransactions} fixedBills={workspace.fixedBills} />
             </div>} />
 
-            <Route path="/app/admin" element={isAdmin ? <div className="space-y-4"><AdminMaintenanceControl /><AdminAccessRequests user={user} /></div> : <Navigate to="/app" replace />} />
+            <Route path="/app/admin" element={isAdmin ? <div className="space-y-4"><AdminMfaSecurity /><AdminMaintenanceControl /><AdminAccessRequests user={user} /></div> : <Navigate to="/app" replace />} />
             <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
         </Suspense>
