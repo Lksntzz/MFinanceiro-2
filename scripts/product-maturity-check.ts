@@ -26,6 +26,8 @@ expectContains('src/components/PreferencesCenter.tsx', ['Abrir tutorial automati
 expectContains('src/lib/user-preferences.ts', ['homeWidgets', 'notifications', 'toursAutoStart', 'privacyDefault', 'reducedMotion', 'highContrast']);
 expectContains('src/components/DashboardBootstrap.tsx', ["lazy(() => import('./Dashboard'))", '<CommandPalette userId={user.id}', '<PreferencesCenter userId={user.id}', '<UndoToast />']);
 expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}']);
+expectContains('src/hooks/useDashboardWorkspace.ts', ["window.addEventListener('mf:finance-data-changed', scheduleRefresh)", "window.removeEventListener('mf:finance-data-changed', scheduleRefresh)"]);
+expectContains('src/lib/unified-transaction-launcher-mount.tsx', ["window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);
 expectContains('src/components/FinancialAgendaTool.tsx', ['<FinancialTimeline']);
 expectContains('src/components/IntegrationTool.tsx', ['Regras e automações', '<details']);
 expectContains('src/components/AppNavigation.tsx', ['mf:open-command-palette']);
