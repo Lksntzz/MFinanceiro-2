@@ -110,7 +110,7 @@ const accounts = [
 
 // Bank barcode: amount comes from positions 10-19 and factor from positions 6-9.
 {
-  const barcode = `0019${'1000'}${'0000012345'}${'0'.repeat(25)}`;
+  const barcode = `00191${'1000'}${'0000012345'}${'0'.repeat(25)}`;
   assert.equal(barcode.length, 44);
   const parsed = parseFinancialCode(barcode);
   assert.equal(parsed.kind, 'boleto');
