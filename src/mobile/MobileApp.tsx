@@ -60,6 +60,7 @@ type MobileData = {
   recent: Transaction[];
   monthTransactions: Transaction[];
   cycleTransactions: Transaction[];
+  categorizationHistory: Transaction[];
   pending: PendingItem[];
   summary: FinanceSummary | null;
 };
@@ -74,6 +75,7 @@ const EMPTY_DATA: MobileData = {
   recent: [],
   monthTransactions: [],
   cycleTransactions: [],
+  categorizationHistory: [],
   pending: [],
   summary: null,
 };
@@ -324,6 +326,7 @@ export default function MobileApp({ user }: { user: User }) {
         recentResult,
         monthResult,
         cycleResult,
+        learningResult,
         pendingResult,
       ] = await Promise.all([
         supabase.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
@@ -335,6 +338,7 @@ export default function MobileApp({ user }: { user: User }) {
         supabase.from('mf_finance_ledger_entries').select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance').eq('user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(24),
         supabase.from('mf_finance_ledger_entries').select('id,user_id,amount,category,description,date,type,status,affects_balance').eq('user_id', user.id).gte('date', monthStart).lte('date', monthEnd),
         supabase.from('mf_finance_ledger_entries').select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance').eq('user_id', user.id).gte('date', cycleHistoryStart).lte('date', today).order('date', { ascending: false }),
+        supabase.from('mf_finance_ledger_entries').select('id,user_id,account_id,category_id,amount,category,description,date,type,status,source,affects_balance').eq('user_id', user.id).in('type', ['income', 'expense']).order('date', { ascending: false }).limit(500),
         supabase.from('mf_finance_ledger_entries').select('id,description,amount,due_date,category').eq('user_id', user.id).eq('status', 'pending').order('due_date', { ascending: true, nullsFirst: false }).limit(6),
       ]);
 
@@ -347,6 +351,7 @@ export default function MobileApp({ user }: { user: User }) {
         || recentResult.error
         || monthResult.error
         || cycleResult.error
+        || learningResult.error
         || pendingResult.error;
       if (firstError) throw firstError;
 
@@ -357,6 +362,7 @@ export default function MobileApp({ user }: { user: User }) {
       const recent = (recentResult.data || []).map(normalizeTransaction);
       const monthTransactions = (monthResult.data || []).map(normalizeTransaction);
       const cycleTransactions = (cycleResult.data || []).map(normalizeTransaction);
+      const categorizationHistory = (learningResult.data || []).map(normalizeTransaction);
       const derivedBalance = accounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
       const settings = settingsResult.data ? ({ ...settingsResult.data, current_balance: derivedBalance } as UserSettings) : null;
 
@@ -379,6 +385,7 @@ export default function MobileApp({ user }: { user: User }) {
         recent,
         monthTransactions,
         cycleTransactions,
+        categorizationHistory,
         pending: (pendingResult.data || []).map((row: any) => ({ ...row, amount: Number(row.amount || 0) })) as PendingItem[],
         summary,
       });
@@ -407,8 +414,8 @@ export default function MobileApp({ user }: { user: User }) {
   if (loading) return <div className="mf-mobile-loading"><Loader2 className="animate-spin" size={30} /><span>Carregando seu MF</span></div>;
   if (error) return <div className="mf-mobile-loading"><strong>Não foi possível carregar</strong><span>{error}</span><button type="button" className="mf-mobile-primary-button" onClick={() => void refresh()}>Tentar novamente</button></div>;
 
-  if (page === 'quick') return <MobileQuickAdd userId={user.id} accounts={data.accounts} categories={data.categories} onSaved={refresh} />;
-  if (page === 'scan') return <MobileScan userId={user.id} accounts={data.accounts} categories={data.categories} onSaved={refresh} />;
+  if (page === 'quick') return <MobileQuickAdd userId={user.id} accounts={data.accounts} categories={data.categories} history={data.categorizationHistory} onSaved={refresh} />;
+  if (page === 'scan') return <MobileScan userId={user.id} accounts={data.accounts} categories={data.categories} history={data.categorizationHistory} onSaved={refresh} />;
   if (page === 'inbox') return <MobileInbox userId={user.id} accounts={data.accounts} categories={data.categories} onImported={refresh} />;
   if (page === 'canSpend') {
     if (data.summary) return <MobileCanISpend summary={data.summary} />;
