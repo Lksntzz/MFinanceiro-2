@@ -150,6 +150,25 @@ Implementada como detector local de padrões no histórico, usando a infraestrut
 - CI do HEAD: TypeScript e production build success;
 - Preview Vercel do HEAD: READY.
 
+### Hardening mobile / QA preventivo
+
+Foi adicionada uma camada compartilhada de robustez em `src/mobile/mobile-hardening.css` e corrigidos problemas que poderiam aparecer apenas em aparelho real:
+
+- `box-sizing` consistente também em todos os descendentes das telas standalone/focus;
+- `textarea` incluído no tratamento de tipografia e interação do mobile;
+- alvos de toque revisados para pelo menos 44 px nos controles identificados como pequenos;
+- `touch-action: manipulation` e `-webkit-tap-highlight-color` aplicados aos controles principais;
+- `focus-visible` explícito para teclado/acessibilidade;
+- safe areas horizontais e verticais consideradas com `env(safe-area-inset-*)`;
+- scroll padding ajustado para cabeçalhos, teclado e área inferior;
+- controles de formulário passam a 16 px em WebKit/iOS para reduzir zoom automático ao focar campos;
+- rotas standalone `/voice`, `/recurrences` e `/share` agora carregam explicitamente o CSS-base e a camada de hardening, evitando telas sem estilos quando abertas por deep link;
+- o gate mobile foi reforçado para reconhecer telefone em landscape: além da largura de 820 px, usa ponteiro coarse + menor dimensão física compacta;
+- `data-mf-mobile` no elemento `html` permite manter a UI mobile visível em landscape mesmo quando a largura ultrapassa 820 px, sem transformar desktop com mouse em mobile;
+- listeners de resize, pointer/media e popstate mantêm o modo correto após rotação e navegação;
+- CI do HEAD `a22bca9eec804df40ae23b0887e77dbe2a469a45`: TypeScript e production build success;
+- Preview Vercel do mesmo HEAD: READY.
+
 ## Pendências antes do envio final
 
 - smoke test autenticado em 320 / 360 / 390 / 412 / 430 px;
@@ -161,7 +180,7 @@ Implementada como detector local de padrões no histórico, usando a infraestrut
 - teste do OCR documental em conta, boleto/conta de consumo, recibo e comprovante real;
 - teste do MF Voice em navegadores/aparelhos reais, incluindo permissão de microfone e fallback de ditado;
 - validar recorrências inteligentes com histórico real, incluindo contas variáveis e comerciantes de alta frequência;
-- câmera, galeria, teclado, safe areas e PWA;
+- validar rotação portrait/landscape, teclado virtual, safe areas e PWA em aparelho real;
 - revisar novas correções e funcionalidades que forem adicionadas após este checkpoint;
 - rodar novamente CI + preview antes do merge único.
 
