@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="mf_quick"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_quick_short"
+        android:shortcutLongLabel="@string/shortcut_quick_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="br.com.mfinanceiro.app"
+            android:targetClass="br.com.mfinanceiro.app.MainActivity"
+            android:data="mfinanceiro://quick" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="mf_scan"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_scan_short"
+        android:shortcutLongLabel="@string/shortcut_scan_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="br.com.mfinanceiro.app"
+            android:targetClass="br.com.mfinanceiro.app.MainActivity"
+            android:data="mfinanceiro://scan" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="mf_pulse"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_pulse_short"
+        android:shortcutLongLabel="@string/shortcut_pulse_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="br.com.mfinanceiro.app"
+            android:targetClass="br.com.mfinanceiro.app.MainActivity"
+            android:data="mfinanceiro://pulse" />
+    </shortcut>
+</shortcuts>

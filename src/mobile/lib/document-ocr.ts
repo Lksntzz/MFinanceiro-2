@@ -25,7 +25,9 @@ export type DocumentOcrResult = {
 const ALLOWED_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 const MAX_OCR_FILE_SIZE = 8 * 1024 * 1024;
 
-export const DOCUMENT_OCR_ENABLED = import.meta.env.VITE_DOCUMENT_OCR_ENABLED === 'true';
+// OCR is available by default because the backend function is deployed and protected by JWT/RLS.
+// Set VITE_DOCUMENT_OCR_ENABLED=false to disable the feature in a specific build/environment.
+export const DOCUMENT_OCR_ENABLED = import.meta.env.VITE_DOCUMENT_OCR_ENABLED !== 'false';
 
 function safeFileName(name: string) {
   const cleaned = name

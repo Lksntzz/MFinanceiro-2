@@ -9,6 +9,8 @@ import AccessibilityLayer from './components/AccessibilityLayer';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { AppProvider } from './context/AppContext';
 import { installGlobalOperationalObservers } from './lib/operational-observability';
+import { installNativeDeepLinkBridge } from './mobile/native/native-deep-links';
+import { installNativeShareBridge } from './mobile/native/native-share';
 import './index.css';
 import './layout-tuning.css';
 import './navigation.css';
@@ -80,6 +82,8 @@ window.addEventListener('load', () => {
 });
 
 installGlobalOperationalObservers();
+void installNativeDeepLinkBridge();
+void installNativeShareBridge();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

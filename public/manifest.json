@@ -23,6 +23,12 @@
   ],
   "shortcuts": [
     {
+      "name": "MF Pulse",
+      "short_name": "Pulse",
+      "description": "Ver rapidamente quanto está livre hoje e o próximo compromisso.",
+      "url": "/app/mobile/pulse"
+    },
+    {
       "name": "Novo lançamento",
       "short_name": "Lançar",
       "description": "Abrir o MF Quick para registrar uma despesa ou receita.",

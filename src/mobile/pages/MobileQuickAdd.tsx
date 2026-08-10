@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Loader2, Mic, Repeat2, ScanLine } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Mic, Repeat2, ScanLine, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
-import type { FinancialAccount, TransactionCategory } from '../../types';
+import type { FinancialAccount, Transaction, TransactionCategory } from '../../types';
+import { inferAdaptiveCategory } from '../lib/adaptive-category';
 import { MOBILE_ROUTES } from '../routes';
 import './mobile-voice.css';
 
@@ -14,6 +15,7 @@ type MobileQuickAddProps = {
   userId: string;
   accounts: FinancialAccount[];
   categories: TransactionCategory[];
+  history?: Transaction[];
   onSaved: () => Promise<void> | void;
 };
 
@@ -24,13 +26,14 @@ function parseMoneyInput(value: string) {
   return Number(clean);
 }
 
-export default function MobileQuickAdd({ userId, accounts, categories, onSaved }: MobileQuickAddProps) {
+export default function MobileQuickAdd({ userId, accounts, categories, history = [], onSaved }: MobileQuickAddProps) {
   const navigate = useNavigate();
   const [type, setType] = useState<EntryType>('expense');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [accountId, setAccountId] = useState(() => accounts.find((item) => item.is_default)?.id || accounts[0]?.id || '');
   const [categoryId, setCategoryId] = useState('');
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +43,17 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
     [categories, type],
   );
 
-  const selectedCategory = compatibleCategories.find((item) => item.id === categoryId) || compatibleCategories[0];
+  const adaptiveSuggestion = useMemo(() => {
+    if (!description.trim()) return null;
+    return inferAdaptiveCategory({ merchantText: description, type, history, categories });
+  }, [description, type, history, categories]);
+
+  const adaptiveCategory = adaptiveSuggestion?.confidence === 'high'
+    ? compatibleCategories.find((item) => item.id === adaptiveSuggestion.categoryId)
+    : null;
+  const selectedCategory = compatibleCategories.find((item) => item.id === categoryId)
+    || (!categoryTouched ? adaptiveCategory : null)
+    || compatibleCategories[0];
   const effectiveCategoryId = selectedCategory?.id || '';
   const parsedAmount = parseMoneyInput(amount);
 
@@ -78,13 +91,17 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
         p_card_id: null,
         p_installment_count: 1,
         p_due_date: null,
-        p_notes: null,
+        p_notes: adaptiveSuggestion?.confidence === 'high' && !categoryTouched
+          ? `Categoria sugerida pelo histórico do usuário (${adaptiveSuggestion.matchCount} correspondências).`
+          : null,
         p_source: 'MF Quick Mobile',
       });
       if (rpcError) throw rpcError;
 
       setAmount('');
       setDescription('');
+      setCategoryId('');
+      setCategoryTouched(false);
       setMessage(`${type === 'expense' ? 'Despesa' : 'Receita'} salva no MF.`);
       await onSaved();
     } catch (saveError: any) {
@@ -121,8 +138,8 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
         </button>
 
         <div className="mf-mobile-segmented" role="group" aria-label="Tipo do lançamento">
-          <button type="button" data-active={type === 'expense'} onClick={() => { setType('expense'); setCategoryId(''); }}>Despesa</button>
-          <button type="button" data-active={type === 'income'} onClick={() => { setType('income'); setCategoryId(''); }}>Receita</button>
+          <button type="button" data-active={type === 'expense'} onClick={() => { setType('expense'); setCategoryId(''); setCategoryTouched(false); }}>Despesa</button>
+          <button type="button" data-active={type === 'income'} onClick={() => { setType('income'); setCategoryId(''); setCategoryTouched(false); }}>Receita</button>
         </div>
 
         <label className="mf-mobile-amount-field">
@@ -132,10 +149,24 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
 
         <label className="mf-mobile-field">
           <span>Categoria</span>
-          <select value={effectiveCategoryId} onChange={(event) => setCategoryId(event.target.value)}>
+          <select value={effectiveCategoryId} onChange={(event) => { setCategoryTouched(true); setCategoryId(event.target.value); }}>
             {compatibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
           </select>
         </label>
+
+        {adaptiveSuggestion ? (
+          <div className={`mf-mobile-feedback ${adaptiveSuggestion.confidence === 'high' ? 'success' : 'warning'}`}>
+            <Sparkles size={16} />
+            <span>
+              {adaptiveSuggestion.confidence === 'high'
+                ? `MF aprendeu com ${adaptiveSuggestion.matchCount} lançamentos parecidos e sugeriu ${adaptiveSuggestion.categoryName}.`
+                : `Padrão provável: ${adaptiveSuggestion.categoryName}. Confirme antes de salvar.`}
+            </span>
+            {adaptiveSuggestion.confidence === 'medium' ? (
+              <button type="button" onClick={() => { setCategoryId(adaptiveSuggestion.categoryId); setCategoryTouched(true); }}>Usar</button>
+            ) : null}
+          </div>
+        ) : null}
 
         {accounts.length > 1 ? (
           <label className="mf-mobile-field">
@@ -148,7 +179,7 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
 
         <label className="mf-mobile-field">
           <span>Descrição <em>opcional</em></span>
-          <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={selectedCategory?.name || 'Ex.: almoço'} />
+          <input value={description} onChange={(event) => { setDescription(event.target.value); if (!categoryTouched) setCategoryId(''); }} placeholder={selectedCategory?.name || 'Ex.: almoço'} />
         </label>
 
         {error ? <div className="mf-mobile-feedback error">{error}</div> : null}

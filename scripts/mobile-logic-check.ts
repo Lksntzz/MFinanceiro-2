@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 
+import { inferAdaptiveCategory } from '../src/mobile/lib/adaptive-category';
 import { parseFinancialCode } from '../src/mobile/lib/financial-code-parser';
+import { projectInvoiceForPurchase } from '../src/mobile/lib/purchase-impact';
 import { detectRecurringExpenses, type RecurrenceHistoryItem } from '../src/mobile/lib/recurrence-detector';
 import { unreviewedSharedFiles, type MobileSharedFile } from '../src/mobile/lib/mobile-share-store';
 import { parseVoiceEntry } from '../src/mobile/lib/voice-entry-parser';
-import type { FinancialAccount, TransactionCategory } from '../src/types';
+import { nativeUrlToPath } from '../src/mobile/native/native-deep-links';
+import type { FinancialAccount, Transaction, TransactionCategory } from '../src/types';
 
 function tlv(id: string, value: string) {
   return `${id}${String(value.length).padStart(2, '0')}${value}`;
@@ -39,6 +42,20 @@ function account(id: string, name: string, institutionName: string, isDefault = 
   } as FinancialAccount;
 }
 
+function ledger(id: string, description: string, categoryId: string, categoryName: string, type: 'expense' | 'income' = 'expense'): Transaction {
+  return {
+    id,
+    user_id: 'user-test',
+    amount: 100,
+    category_id: categoryId,
+    category: categoryName,
+    description,
+    date: '2026-07-01',
+    type,
+    status: 'paid',
+  };
+}
+
 function history(
   id: string,
   date: string,
@@ -66,6 +83,10 @@ function sharedFile(name: string, size: number, lastModified: number): MobileSha
     lastModified,
     blob: new Blob(['x'], { type: 'application/pdf' }),
   };
+}
+
+function localDate(year: number, monthIndex: number, day: number) {
+  return new Date(year, monthIndex, day, 12, 0, 0, 0);
 }
 
 const categories = [
@@ -135,6 +156,82 @@ const accounts = [
   assert.equal(parsed.kind, 'collection');
 }
 
+// Purchase impact: buying before closing stays on the current closing cycle.
+{
+  const projection = projectInvoiceForPurchase(localDate(2026, 7, 4), 5, 12);
+  assert.equal(projection.closeDate.getMonth(), 7);
+  assert.equal(projection.closeDate.getDate(), 5);
+  assert.equal(projection.dueDate.getMonth(), 7);
+  assert.equal(projection.dueDate.getDate(), 12);
+}
+
+// Purchase impact: buying after closing moves to the next invoice.
+{
+  const projection = projectInvoiceForPurchase(localDate(2026, 7, 6), 5, 12);
+  assert.equal(projection.closeDate.getMonth(), 8);
+  assert.equal(projection.dueDate.getMonth(), 8);
+  assert.equal(projection.dueDate.getDate(), 12);
+}
+
+// Purchase impact: due day before closing day belongs to the following month.
+{
+  const projection = projectInvoiceForPurchase(localDate(2026, 7, 10), 25, 5);
+  assert.equal(projection.closeDate.getMonth(), 7);
+  assert.equal(projection.dueDate.getMonth(), 8);
+  assert.equal(projection.dueDate.getDate(), 5);
+}
+
+// Native bridge: custom scheme actions map to the same mobile routes used by the PWA.
+{
+  assert.equal(nativeUrlToPath('mfinanceiro://quick'), '/quick');
+  assert.equal(nativeUrlToPath('mfinanceiro://scan'), '/scan');
+  assert.equal(nativeUrlToPath('mfinanceiro://pulse'), '/app/mobile/pulse');
+  assert.equal(nativeUrlToPath('mfinanceiro://inbox'), '/app/mobile/inbox/documentos');
+  assert.equal(nativeUrlToPath('mfinanceiro://unknown'), null);
+}
+
+// Native bridge: universal links are accepted only for the production MF domain.
+{
+  assert.equal(nativeUrlToPath('https://mfinanceiro.com.br/quick?source=siri'), '/quick?source=siri');
+  assert.equal(nativeUrlToPath('https://mfinanceiro.com.br/app/mobile/pulse'), '/app/mobile/pulse');
+  assert.equal(nativeUrlToPath('https://example.com/quick'), null);
+}
+
+// Adaptive categorization: three consistent confirmations are enough for a high-confidence suggestion.
+{
+  const rows = [
+    ledger('s1', 'SHELL POSTO 1045', 'fuel', 'Combustível'),
+    ledger('s2', 'SHELL POSTO AV PAULISTA', 'fuel', 'Combustível'),
+    ledger('s3', 'SHELL POSTO', 'fuel', 'Combustível'),
+  ];
+  const suggestion = inferAdaptiveCategory({ merchantText: 'Shell', type: 'expense', history: rows, categories });
+  assert.equal(suggestion?.categoryId, 'fuel');
+  assert.equal(suggestion?.confidence, 'high');
+  assert.equal(suggestion?.matchCount, 3);
+}
+
+// Adaptive categorization: two confirmations suggest, but do not auto-apply with high confidence.
+{
+  const rows = [
+    ledger('a1', 'AMAZON BR', 'food', 'Alimentação'),
+    ledger('a2', 'AMAZON COMPRA ONLINE', 'food', 'Alimentação'),
+  ];
+  const suggestion = inferAdaptiveCategory({ merchantText: 'Amazon', type: 'expense', history: rows, categories });
+  assert.equal(suggestion?.categoryId, 'food');
+  assert.equal(suggestion?.confidence, 'medium');
+}
+
+// Adaptive categorization: broad merchant prefixes must not conflate unrelated merchants.
+{
+  const rows = [
+    ledger('m1', 'MERCADO CENTRAL', 'market', 'Supermercado'),
+    ledger('m2', 'MERCADO CENTRAL LOJA 2', 'market', 'Supermercado'),
+    ledger('m3', 'MERCADO CENTRAL', 'market', 'Supermercado'),
+  ];
+  const suggestion = inferAdaptiveCategory({ merchantText: 'Mercado Pago', type: 'expense', history: rows, categories });
+  assert.equal(suggestion, null);
+}
+
 // Variable utility bill: monthly rhythm matters more than identical amount.
 {
   const rows: RecurrenceHistoryItem[] = [
@@ -186,4 +283,4 @@ const accounts = [
   assert.equal(unreviewedSharedFiles([files[0]], 0).length, 0);
 }
 
-console.log('Mobile logic checks passed: voice, financial codes, recurrence detection and shared-document queue.');
+console.log('Mobile logic checks passed: voice, financial codes, purchase impact, native deep links, adaptive categorization, recurrence detection and shared-document queue.');

@@ -41,3 +41,47 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Validate iOS property list
+        run: python -c "import plistlib; plistlib.load(open('ios/App/App/Info.plist', 'rb')); print('iOS Info.plist OK')"
+
+  android-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Compile Android debug shell
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mf-financeiro-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

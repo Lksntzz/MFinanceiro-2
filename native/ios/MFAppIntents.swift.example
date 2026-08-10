@@ -1,0 +1,72 @@
+// TEMPLATE — adicionar ao target iOS no Xcode quando Associated Domains estiver configurado.
+// Não compila automaticamente hoje porque App Intents/entitlements dependem da assinatura Apple final.
+
+import AppIntents
+
+@available(iOS 16.0, *)
+struct MFQuickIntent: AppIntent {
+    static var title: LocalizedStringResource = "Novo lançamento"
+    static var description = IntentDescription("Abre o MF Quick para registrar uma despesa ou receita.")
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenURLIntent(URL(string: "https://mfinanceiro.com.br/quick?source=app-intent")!))
+    }
+}
+
+@available(iOS 16.0, *)
+struct MFScanIntent: AppIntent {
+    static var title: LocalizedStringResource = "Escanear conta"
+    static var description = IntentDescription("Abre o MF Scan para capturar um boleto, conta ou documento.")
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenURLIntent(URL(string: "https://mfinanceiro.com.br/scan?source=app-intent")!))
+    }
+}
+
+@available(iOS 16.0, *)
+struct MFPulseIntent: AppIntent {
+    static var title: LocalizedStringResource = "Ver MF Pulse"
+    static var description = IntentDescription("Mostra quanto está livre hoje e o próximo compromisso.")
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenURLIntent(URL(string: "https://mfinanceiro.com.br/app/mobile/pulse?source=app-intent")!))
+    }
+}
+
+@available(iOS 16.0, *)
+struct MFAppShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: MFQuickIntent(),
+            phrases: [
+                "Lançar no \(.applicationName)",
+                "Registrar gasto no \(.applicationName)"
+            ],
+            shortTitle: "Lançar",
+            systemImageName: "plus.circle.fill"
+        )
+
+        AppShortcut(
+            intent: MFScanIntent(),
+            phrases: [
+                "Escanear conta no \(.applicationName)",
+                "Abrir scanner do \(.applicationName)"
+            ],
+            shortTitle: "Escanear",
+            systemImageName: "doc.viewfinder"
+        )
+
+        AppShortcut(
+            intent: MFPulseIntent(),
+            phrases: [
+                "Abrir Pulse no \(.applicationName)",
+                "Quanto posso gastar hoje no \(.applicationName)"
+            ],
+            shortTitle: "MF Pulse",
+            systemImageName: "gauge.with.dots.needle.67percent"
+        )
+    }
+}
