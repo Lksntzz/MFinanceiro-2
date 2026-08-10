@@ -51,6 +51,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/voice",
+      "destination": "/index.html"
+    },
+    {
       "source": "/share",
       "destination": "/index.html"
     },
