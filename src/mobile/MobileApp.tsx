@@ -37,6 +37,7 @@ import { openDesktopExperience } from './useMobileExperience';
 import MobileCanISpend from './pages/MobileCanISpend';
 import MobileDocumentInbox from './pages/MobileDocumentInbox';
 import MobileInbox from './pages/MobileInbox';
+import MobilePulse from './pages/MobilePulse';
 import MobilePurchaseImpact from './pages/MobilePurchaseImpact';
 import MobileQuickAdd from './pages/MobileQuickAdd';
 import MobileScan from './pages/MobileScan';
@@ -244,6 +245,7 @@ function MorePage() {
     <div className="mf-mobile-page">
       <MobileHeader title="Mais" subtitle="Poucas ferramentas, só as que ajudam no celular" />
       <div className="mf-mobile-menu-list">
+        <button type="button" onClick={() => navigate(MOBILE_ROUTES.pulse)}><span className="mf-mobile-menu-icon"><Gauge size={19} /></span><div><strong>MF Pulse</strong><small>Livre hoje, próximo compromisso e ações rápidas</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.inbox)}><span className="mf-mobile-menu-icon"><Inbox size={19} /></span><div><strong>MF Inbox · Extratos</strong><small>Revisar extratos e lançamentos extraídos</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.documentInbox)}><span className="mf-mobile-menu-icon"><ReceiptText size={19} /></span><div><strong>MF Inbox · Contas e recibos</strong><small>Revisar documentos analisados pelo MF Scan</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.scan)}><span className="mf-mobile-menu-icon"><Camera size={19} /></span><div><strong>MF Scan</strong><small>Capturar boleto, conta, QR ou documento</small></div><ChevronRight size={18} /></button>
@@ -300,6 +302,7 @@ export default function MobileApp({ user }: { user: User }) {
     if (path === MOBILE_ROUTES.inbox) return 'inbox';
     if (path === MOBILE_ROUTES.canSpend) return 'canSpend';
     if (path === MOBILE_ROUTES.purchaseImpact) return 'purchaseImpact';
+    if (path === MOBILE_ROUTES.pulse) return 'pulse';
     if (path.startsWith(MOBILE_ROUTES.cards)) return 'cards';
     if (path.startsWith(MOBILE_ROUTES.transactions)) return 'transactions';
     if (path.startsWith(MOBILE_ROUTES.more)) return 'more';
@@ -317,6 +320,7 @@ export default function MobileApp({ user }: { user: User }) {
     return <div className="mf-mobile-loading"><strong>Simulação indisponível</strong><span>Complete suas configurações financeiras para calcular o impacto de uma compra.</span><button type="button" className="mf-mobile-primary-button" onClick={() => navigate(MOBILE_ROUTES.home)}>Voltar para o início</button></div>;
   }
   if (page === 'purchaseImpact') return <MobilePurchaseImpact cards={data.cards} summary={data.summary} />;
+  if (page === 'pulse') return <MobilePulse summary={data.summary} commitments={data.pending} />;
 
   let content: React.ReactNode;
   if (page === 'transactions') content = <TransactionsPage data={data} />; else if (page === 'cards') content = <CardsPage cards={data.cards} />; else if (page === 'more') content = <MorePage />; else content = <HomePage data={data} />;
