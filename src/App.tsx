@@ -21,15 +21,6 @@ const AWAITING_CONFIRMATION_EMAIL = 'mf-awaiting-email-confirmation';
 const CONFIRMED_EMAIL_STORAGE = 'mf-confirmed-email';
 const MAINTENANCE_FALLBACK_POLL_MS = 30_000;
 
-function normalizeMaintenanceRow(row: any): MaintenanceConfig {
-  return {
-    maintenance_mode: row?.maintenance_mode === true,
-    maintenance_message:
-      String(row?.maintenance_message || '').trim() ||
-      'Estamos realizando melhorias importantes. O MFinanceiro estará disponível novamente em breve.',
-  };
-}
-
 function hasAdminOAuthIntent() {
   try {
     return window.sessionStorage.getItem(ADMIN_OAUTH_INTENT) === '1';
@@ -281,16 +272,11 @@ export default function App() {
           event: '*',
           schema: 'public',
           table: 'mf_global_settings',
-          filter: 'key=eq.global',
         },
-        (payload) => {
-          const row = payload.new as any;
-          if (row && Object.keys(row).length) applyMaintenance(normalizeMaintenanceRow(row));
-          else void refreshMaintenance();
-        },
+        () => { void refreshMaintenance(); },
       )
-      .on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, ({ payload }) => {
-        if (payload) applyMaintenance(normalizeMaintenanceRow(payload));
+      .on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, () => {
+        void refreshMaintenance();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') void refreshMaintenance();
