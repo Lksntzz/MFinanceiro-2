@@ -7,6 +7,7 @@ export const MOBILE_ROUTES = {
   more: '/app/mobile/mais',
   inbox: '/app/mobile/inbox',
   canSpend: '/app/mobile/posso-gastar',
+  purchaseImpact: '/app/mobile/impacto-compra',
   quick: '/quick',
   scan: '/scan',
   voice: '/voice',
