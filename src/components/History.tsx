@@ -1,11 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, FileDown, Loader2, Search, Trash2, WandSparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileDown, Loader2, Search, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useNavigate, useSearchParams } from 'react-router';
 import * as XLSX from 'xlsx';
 
-import { supabase } from '../lib/supabase';
 import { Transaction } from '../types';
 
 interface HistoryProps {
@@ -41,13 +39,6 @@ type DayGroup = {
   closingBalance?: number;
 };
 
-type CategorizationPreview = {
-  entry_id?: string | null;
-  rule_id?: string | null;
-  category_id?: string | null;
-  category_name?: string | null;
-};
-
 function safeDateKey(raw: string | undefined): string {
   if (!raw) return 'sem-data';
   const key = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);
@@ -61,10 +52,6 @@ function normalize(value: string | null | undefined): string {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
-}
-
-function isGenericCategory(value: string | null | undefined): boolean {
-  return ['', 'geral', 'outros', 'sem categoria'].includes(normalize(value));
 }
 
 function roundMoney(value: number): number {
@@ -86,19 +73,11 @@ function affectsCurrentBalance(transaction: LedgerTransaction): boolean {
   return !['pending', 'duplicate', 'error'].includes(status) && transaction.affects_balance !== false;
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const groups: T[][] = [];
-  for (let index = 0; index < items.length; index += size) groups.push(items.slice(index, index + size));
-  return groups;
-}
-
 export default function History({
-  userId,
   transactions,
   onEdit,
   onDelete,
   onToggleStatus,
-  onDataChanged,
   currentBalance,
   balanceConfirmed = false,
   totalCount,
@@ -106,15 +85,10 @@ export default function History({
   isLoadingMore = false,
   onLoadMore,
 }: HistoryProps) {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
-  const [organizing, setOrganizing] = useState(false);
-  const [organizerMessage, setOrganizerMessage] = useState<string | null>(null);
   const ledgerTransactions = transactions as LedgerTransaction[];
-  const assistantOpen = searchParams.get('assist') === 'categorias';
 
   const filteredTransactions = useMemo(() => {
     const search = normalize(searchTerm);
@@ -189,77 +163,6 @@ export default function History({
     });
   }
 
-  async function organizeGenericCategories() {
-    if (organizing) return;
-    setOrganizing(true);
-    setOrganizerMessage(null);
-    try {
-      const { data, error: loadError } = await supabase
-        .from('mf_finance_ledger_entries')
-        .select('id,description,source,type,amount,account_id,category')
-        .eq('user_id', userId)
-        .order('date', { ascending: false })
-        .limit(2000);
-      if (loadError) throw loadError;
-
-      const candidates = (data || []).filter((entry: any) => isGenericCategory(entry.category));
-      if (!candidates.length) {
-        setOrganizerMessage('Não há lançamentos genéricos para organizar agora.');
-        return;
-      }
-
-      const { data: previewData, error: previewError } = await supabase.rpc('mf_preview_categorization_rules', {
-        p_entries: candidates.map((entry: any) => ({
-          id: entry.id,
-          description: entry.description || '',
-          source: entry.source || '',
-          type: entry.type,
-          amount: Number(entry.amount || 0),
-          account_id: entry.account_id || null,
-        })),
-      });
-      if (previewError) throw previewError;
-
-      const matches = ((previewData || []) as CategorizationPreview[]).filter((item) => item.entry_id && item.rule_id && item.category_id && item.category_name);
-      if (!matches.length) {
-        setOrganizerMessage(`Encontrei ${candidates.length} lançamento${candidates.length === 1 ? '' : 's'} genérico${candidates.length === 1 ? '' : 's'}, mas nenhuma regra automática segura se aplica ainda. Crie uma regra para o MF poder organizar em lote.`);
-        return;
-      }
-
-      const byCategory = new Map<string, { categoryId: string; categoryName: string; ids: string[] }>();
-      matches.forEach((match) => {
-        const categoryId = String(match.category_id);
-        const categoryName = String(match.category_name);
-        const key = `${categoryId}:${categoryName}`;
-        const current = byCategory.get(key) || { categoryId, categoryName, ids: [] };
-        current.ids.push(String(match.entry_id));
-        byCategory.set(key, current);
-      });
-
-      let updated = 0;
-      for (const group of byCategory.values()) {
-        for (const ids of chunk(group.ids, 100)) {
-          const { error: updateError } = await supabase
-            .from('mf_finance_ledger_entries')
-            .update({ category_id: group.categoryId, category: group.categoryName, categoria: group.categoryName })
-            .eq('user_id', userId)
-            .in('id', ids);
-          if (updateError) throw updateError;
-          updated += ids.length;
-        }
-      }
-
-      window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
-      await onDataChanged?.();
-      const pending = candidates.length - updated;
-      setOrganizerMessage(`${updated} lançamento${updated === 1 ? '' : 's'} organizado${updated === 1 ? '' : 's'} pelas suas regras automáticas.${pending > 0 ? ` ${pending} continuam genéricos porque ainda não há regra segura para eles.` : ''}`);
-    } catch (error) {
-      setOrganizerMessage(error instanceof Error ? error.message : 'Não foi possível organizar os lançamentos genéricos.');
-    } finally {
-      setOrganizing(false);
-    }
-  }
-
   function exportHistory() {
     if (!filteredTransactions.length) return;
     const rows = filteredTransactions.map((row) => ({
@@ -290,13 +193,6 @@ export default function History({
           <button type="button" onClick={exportHistory} disabled={!filteredTransactions.length} className="flex items-center gap-2 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary disabled:opacity-40"><FileDown size={14} /> Excel</button>
         </div>
       </div>
-
-      {assistantOpen && <div className="shrink-0 rounded-xl border border-amber-400/20 bg-amber-400/[0.055] px-4 py-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-start gap-3"><WandSparkles size={17} className="mt-0.5 shrink-0 text-amber-300" /><div><strong className="text-xs text-white/85">Organizar lançamentos genéricos</strong><p className="mt-1 text-[10px] leading-relaxed text-white/45">O MF testa suas regras de categorização e aplica em lote somente correspondências determinísticas. Nenhum lançamento é classificado por palpite.</p>{organizerMessage && <p className="mt-2 text-[10px] font-semibold text-amber-100/80" role="status">{organizerMessage}</p>}</div></div>
-          <div className="flex shrink-0 gap-2"><button type="button" onClick={() => navigate('/app/integracoes')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-white/60">Criar regras</button><button type="button" onClick={() => void organizeGenericCategories()} disabled={organizing} className="flex items-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-black disabled:opacity-50">{organizing && <Loader2 size={12} className="animate-spin" />}{organizing ? 'Organizando…' : 'Aplicar regras'}</button></div>
-        </div>
-      </div>}
 
       <div className="grid shrink-0 grid-cols-2 gap-2 lg:grid-cols-4">
         <div className="glass-card !p-3"><div className="text-[9px] font-bold uppercase text-white/40">Entradas realizadas</div><div className="truncate text-sm font-bold text-green-400">{formatMoney(summary.income)}</div></div>
