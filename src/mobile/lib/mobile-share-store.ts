@@ -46,6 +46,10 @@ async function writeMobileSharedPayload(payload: MobileSharedPayload) {
   }
 }
 
+export async function saveMobileSharedPayload(payload: MobileSharedPayload) {
+  await writeMobileSharedPayload(payload);
+}
+
 export async function getMobileSharedPayload(id: string) {
   const db = await openShareDb();
   try {
