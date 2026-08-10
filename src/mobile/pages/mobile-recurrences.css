@@ -1,0 +1,189 @@
+@import '../mobile.css';
+@import '../mobile-hardening.css';
+
+.mf-mobile-recurrences-page {
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+
+.mf-mobile-recurrence-intro {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 16px 0 18px;
+  padding: 14px;
+  border: 1px solid rgba(0, 229, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(0, 229, 255, 0.045);
+}
+
+.mf-mobile-recurrence-intro__icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(0, 229, 255, 0.1);
+  color: #00e5ff;
+}
+
+.mf-mobile-recurrence-intro strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.mf-mobile-recurrence-intro p,
+.mf-mobile-recurrence-card p,
+.mf-mobile-recurrence-state span {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.mf-mobile-recurrence-state {
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  padding: 34px 18px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.mf-mobile-recurrence-state strong {
+  max-width: 20rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.mf-mobile-recurrence-list {
+  display: grid;
+  gap: 14px;
+}
+
+.mf-mobile-recurrence-card {
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mf-mobile-recurrence-card__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 12px;
+  align-items: start;
+}
+
+.mf-mobile-recurrence-card__top > svg {
+  color: rgba(0, 229, 255, 0.75);
+}
+
+.mf-mobile-recurrence-card h2 {
+  margin: 5px 0 4px;
+  overflow: hidden;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.95);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-mobile-recurrence-confidence {
+  display: inline-flex;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.mf-mobile-recurrence-confidence.high {
+  background: rgba(38, 208, 124, 0.1);
+  color: #67e6a7;
+}
+
+.mf-mobile-recurrence-confidence.medium {
+  background: rgba(0, 229, 255, 0.08);
+  color: #77edf7;
+}
+
+.mf-mobile-recurrence-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.mf-mobile-recurrence-metrics > div {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.mf-mobile-recurrence-metrics small {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.mf-mobile-recurrence-metrics strong {
+  overflow: hidden;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.88);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-mobile-recurrence-variable {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 183, 77, 0.07);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: rgba(255, 206, 132, 0.78);
+}
+
+.mf-mobile-recurrence-review-toggle {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #5be9f5;
+}
+
+.mf-mobile-recurrence-review {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.mf-mobile-recurrence-restore {
+  display: block;
+  min-height: 44px;
+  margin: 14px auto 0;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+@media (max-width: 350px) {
+  .mf-mobile-recurrence-metrics {
+    grid-template-columns: 1fr;
+  }
+}

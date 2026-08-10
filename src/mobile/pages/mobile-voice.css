@@ -1,0 +1,177 @@
+@import '../mobile.css';
+@import '../mobile-hardening.css';
+
+.mf-mobile-voice-page {
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+
+.mf-mobile-voice-header-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(0, 229, 255, 0.08);
+  color: #00e5ff;
+}
+
+.mf-mobile-voice-quick-entry {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 229, 255, 0.15);
+  border-radius: 16px;
+  background: rgba(0, 229, 255, 0.055);
+  text-align: left;
+}
+
+.mf-mobile-voice-quick-entry > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(0, 229, 255, 0.12);
+  color: #00e5ff;
+}
+
+.mf-mobile-voice-quick-entry > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mf-mobile-voice-quick-entry strong {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.mf-mobile-voice-quick-entry small {
+  overflow: hidden;
+  font-size: 0.73rem;
+  color: rgba(255, 255, 255, 0.45);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-mobile-voice-capture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 28px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: radial-gradient(circle at 50% 25%, rgba(0, 229, 255, 0.12), transparent 55%), rgba(255, 255, 255, 0.035);
+  text-align: center;
+}
+
+.mf-mobile-voice-capture > strong {
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.mf-mobile-voice-capture > p {
+  max-width: 34rem;
+  margin: 0;
+  font-size: 0.83rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.mf-mobile-voice-mic {
+  position: relative;
+  display: grid;
+  width: 86px;
+  height: 86px;
+  place-items: center;
+  border: 1px solid rgba(0, 229, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(0, 229, 255, 0.12);
+  color: #00e5ff;
+  box-shadow: 0 0 0 10px rgba(0, 229, 255, 0.035), 0 18px 50px rgba(0, 0, 0, 0.28);
+  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.mf-mobile-voice-mic:active {
+  transform: scale(0.96);
+}
+
+.mf-mobile-voice-mic[data-listening='true'] {
+  background: rgba(0, 229, 255, 0.22);
+  box-shadow: 0 0 0 12px rgba(0, 229, 255, 0.05), 0 0 36px rgba(0, 229, 255, 0.18);
+}
+
+.mf-mobile-voice-mic[data-listening='true']::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border: 1px solid rgba(0, 229, 255, 0.22);
+  border-radius: inherit;
+  animation: mf-voice-pulse 1.4s ease-out infinite;
+}
+
+@keyframes mf-voice-pulse {
+  0% { transform: scale(0.88); opacity: 0.9; }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+
+.mf-mobile-voice-form {
+  display: grid;
+  gap: 14px;
+}
+
+.mf-mobile-voice-form textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 12px 14px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
+  outline: 0;
+  background: #0c1012;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mf-mobile-voice-interpretation {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 229, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(0, 229, 255, 0.05);
+}
+
+.mf-mobile-voice-interpretation span {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.mf-mobile-voice-page .mf-mobile-scan-safety {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 2px;
+  padding: 12px 13px;
+  border: 1px solid rgba(73, 218, 168, 0.12);
+  border-radius: 15px;
+  background: rgba(73, 218, 168, 0.045);
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.mf-mobile-voice-page .mf-mobile-scan-safety svg {
+  flex: 0 0 auto;
+  color: #49daa8;
+}

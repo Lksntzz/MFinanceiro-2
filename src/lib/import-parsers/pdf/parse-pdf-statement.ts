@@ -295,6 +295,8 @@ async function openPdfWithPassword(
   fileName: string,
   requestPassword?: PdfClassificationOptions['requestPassword'],
 ) {
+  // This importer uses the PDF.js display API only for text extraction and does
+  // not instantiate the Viewer scripting manager or execute document actions.
   const loadingTask = getDocument({ data: bytes });
   let passwordCancelled = false;
 

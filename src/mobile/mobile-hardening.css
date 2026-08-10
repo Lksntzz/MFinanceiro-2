@@ -1,0 +1,103 @@
+html[data-mf-mobile='true'] .mf-mobile-shell,
+html[data-mf-mobile='true'] .mf-mobile-focus-page {
+  display: block;
+}
+
+html[data-mf-mobile='true'] .mf-mobile-loading {
+  display: flex;
+}
+
+.mf-mobile-shell *,
+.mf-mobile-focus-page *,
+.mf-mobile-loading * {
+  box-sizing: border-box;
+}
+
+.mf-mobile-shell,
+.mf-mobile-focus-page,
+.mf-mobile-loading {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: contain;
+}
+
+.mf-mobile-page,
+.mf-mobile-focus-page {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+.mf-mobile-shell button,
+.mf-mobile-focus-page button,
+.mf-mobile-shell input,
+.mf-mobile-focus-page input,
+.mf-mobile-shell select,
+.mf-mobile-focus-page select,
+.mf-mobile-shell textarea,
+.mf-mobile-focus-page textarea {
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.mf-mobile-section-title button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mf-mobile-secondary-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 9px;
+  border: 1px solid rgba(0, 242, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(0, 242, 255, 0.065);
+  color: #00f2ff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mf-mobile-primary-button,
+.mf-mobile-secondary-button,
+.mf-mobile-icon-button,
+.mf-mobile-segmented button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mf-mobile-primary-button:focus-visible,
+.mf-mobile-secondary-button:focus-visible,
+.mf-mobile-icon-button:focus-visible,
+.mf-mobile-field input:focus-visible,
+.mf-mobile-field select:focus-visible,
+.mf-mobile-field textarea:focus-visible {
+  outline: 2px solid #00f2ff;
+  outline-offset: 2px;
+}
+
+.mf-mobile-focus-page {
+  scroll-padding-top: calc(72px + env(safe-area-inset-top));
+  scroll-padding-bottom: calc(32px + env(safe-area-inset-bottom));
+}
+
+@supports (-webkit-touch-callout: none) {
+  .mf-mobile-field input,
+  .mf-mobile-field select,
+  .mf-mobile-field textarea,
+  .mf-mobile-code-paste textarea,
+  .mf-mobile-voice-form textarea {
+    font-size: 16px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .mf-mobile-focus-page {
+    min-height: 100svh;
+  }
+
+  .mf-mobile-nav {
+    bottom: max(6px, env(safe-area-inset-bottom));
+  }
+}

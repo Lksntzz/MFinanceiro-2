@@ -43,6 +43,26 @@
       "destination": "/"
     },
     {
+      "source": "/quick",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/scan",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/voice",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/recurrences",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share",
+      "destination": "/index.html"
+    },
+    {
       "source": "/app",
       "destination": "/index.html"
     },

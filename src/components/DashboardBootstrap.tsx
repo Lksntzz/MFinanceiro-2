@@ -1,22 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Navigate, useLocation } from 'react-router';
 
 import { supabase } from '../lib/supabase';
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
+import { useMobileExperience } from '../mobile/useMobileExperience';
 import Dashboard from './Dashboard';
+import FinancialAccountsTool from './FinancialAccountsTool';
 import FinancialAgendaTool from './FinancialAgendaTool';
+import FinancialCategoriesTool from './FinancialCategoriesTool';
 import IntegrationTool from './IntegrationTool';
 import InvestmentTool from './InvestmentTool';
 import PlanningStrategyTool from './PlanningStrategyTool';
 import PlanningTool from './PlanningTool';
 import ProductTour from './ProductTour';
+import TransactionLaunchTool from './TransactionLaunchTool';
 
+const MobileApp = lazy(() => import('../mobile/MobileApp'));
+const MobileShareReceiver = lazy(() => import('../mobile/pages/MobileShareReceiver'));
+const MobileVoice = lazy(() => import('../mobile/pages/MobileVoice'));
+const MobileRecurrences = lazy(() => import('../mobile/pages/MobileRecurrences'));
 const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user: User; isMaintenanceBypass?: boolean }) {
   const location = useLocation();
+  const mobileExperience = useMobileExperience();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -30,14 +39,25 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   const legacyIncomeRoute = location.pathname.startsWith('/app/planejamento/receitas') || location.pathname.startsWith('/app/planejamento/renda');
   const legacyCalendarRoute = location.pathname.startsWith('/app/planejamento/calendario');
   const legacyPreferencesRoute = location.pathname.startsWith('/app/preferencias');
+  const legacyAgendaFixedRoute = location.pathname.startsWith('/app/agenda/contas-fixas');
+  const legacyAgendaSubscriptionsRoute = location.pathname.startsWith('/app/agenda/assinaturas');
+  const legacyAnalysisOverviewRoute = location.pathname === '/app/analises' || location.pathname.startsWith('/app/analises/resumo');
+  const legacyFinancialHealthRoute = location.pathname.startsWith('/app/analises/saude');
 
+  const shareRoute = location.pathname === '/share';
+  const voiceRoute = location.pathname === '/voice';
+  const recurrenceRoute = location.pathname === '/recurrences';
+  const launchRoute = location.pathname === '/app/lancar';
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
   const agendaRoute = location.pathname.startsWith('/app/agenda');
+  const accountManagementRoute = location.pathname === '/app/planejamento/contas';
+  const categoryManagementRoute = location.pathname === '/app/planejamento/categorias';
   const planningStrategyRoute = location.pathname.startsWith('/app/planejamento/metas') || location.pathname.startsWith('/app/planejamento/projecoes');
   const planningRoute = location.pathname.startsWith('/app/planejamento')
     && !legacyInvestmentRoute && !legacyAutomationRoute && !legacyFixedRoute && !legacySubscriptionsRoute
-    && !legacyCommitmentsRoute && !legacyIncomeRoute && !legacyCalendarRoute && !planningStrategyRoute;
+    && !legacyCommitmentsRoute && !legacyIncomeRoute && !legacyCalendarRoute && !planningStrategyRoute
+    && !accountManagementRoute && !categoryManagementRoute;
 
   useEffect(() => {
     let active = true;
@@ -70,24 +90,66 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
     return () => { active = false; };
   }, [user.id, retryKey]);
 
+  if (ready && shareRoute) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Recebendo conteúdo no MF...</span></div>}>
+        <MobileShareReceiver userId={user.id} />
+      </Suspense>
+    );
+  }
+
+  if (ready && voiceRoute) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Carregando MF Voice...</span></div>}>
+        <MobileVoice userId={user.id} />
+      </Suspense>
+    );
+  }
+
+  if (ready && recurrenceRoute) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Procurando recorrências...</span></div>}>
+        <MobileRecurrences userId={user.id} />
+      </Suspense>
+    );
+  }
+
+  if (ready && mobileExperience && launchRoute) return <Navigate to="/quick" replace />;
+
+  if (ready && mobileExperience) {
+    return (
+      <Suspense fallback={<div className="mf-mobile-loading"><span>Carregando MF Mobile...</span></div>}>
+        <MobileApp user={user} />
+      </Suspense>
+    );
+  }
+
   if (legacyInvestmentRoute) return <Navigate to={{ pathname: '/app/investimentos', search: location.search }} replace />;
+  if (investmentRoute && new URLSearchParams(location.search).get('section') === 'income') return <Navigate to="/app/investimentos" replace />;
   if (legacyAutomationRoute) return <Navigate to="/app/integracoes" replace />;
   if (legacyGoalsRoute) return <Navigate to="/app/planejamento/metas" replace />;
-  if (legacyFixedRoute) return <Navigate to="/app/agenda/contas-fixas" replace />;
-  if (legacySubscriptionsRoute) return <Navigate to="/app/agenda/assinaturas" replace />;
+  if (legacyFixedRoute) return <Navigate to="/app/agenda/recorrencias?tipo=fixas" replace />;
+  if (legacySubscriptionsRoute) return <Navigate to="/app/agenda/recorrencias?tipo=assinaturas" replace />;
   if (legacyCommitmentsRoute) {
     const requestedKind = new URLSearchParams(location.search).get('tipo');
-    return <Navigate to={requestedKind === 'assinaturas' ? '/app/agenda/assinaturas' : '/app/agenda/contas-fixas'} replace />;
+    return <Navigate to={requestedKind === 'assinaturas' ? '/app/agenda/recorrencias?tipo=assinaturas' : '/app/agenda/recorrencias?tipo=fixas'} replace />;
   }
   if (legacyIncomeRoute) return <Navigate to="/app/agenda/receitas" replace />;
   if (legacyCalendarRoute) return <Navigate to="/app/agenda" replace />;
   if (legacyPreferencesRoute) return <Navigate to="/app/agenda/receitas" replace />;
+  if (legacyAgendaFixedRoute) return <Navigate to="/app/agenda/recorrencias?tipo=fixas" replace />;
+  if (legacyAgendaSubscriptionsRoute) return <Navigate to="/app/agenda/recorrencias?tipo=assinaturas" replace />;
+  if (legacyAnalysisOverviewRoute) return <Navigate to="/app" replace />;
+  if (legacyFinancialHealthRoute) return <Navigate to="/app/analises/insights" replace />;
 
   if (ready) {
     let tool: React.ReactNode;
-    if (investmentRoute) tool = <InvestmentTool user={user} />;
+    if (launchRoute) tool = <TransactionLaunchTool user={user} />;
+    else if (investmentRoute) tool = <InvestmentTool user={user} />;
     else if (integrationRoute) tool = <IntegrationTool user={user} />;
     else if (agendaRoute) tool = <FinancialAgendaTool user={user} />;
+    else if (accountManagementRoute) tool = <FinancialAccountsTool user={user} />;
+    else if (categoryManagementRoute) tool = <FinancialCategoriesTool user={user} />;
     else if (planningStrategyRoute) tool = <PlanningStrategyTool user={user} />;
     else if (planningRoute) tool = <PlanningTool user={user} />;
     else tool = <Dashboard user={user} isMaintenanceBypass={isMaintenanceBypass} />;
