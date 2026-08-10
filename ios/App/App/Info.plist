@@ -33,6 +33,39 @@
 			</array>
 		</dict>
 	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>br.com.mfinanceiro.app.quick</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Novo lançamento</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Abrir o MF Quick</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeAdd</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>br.com.mfinanceiro.app.scan</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Escanear conta</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Abrir o MF Scan</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeCapturePhoto</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>br.com.mfinanceiro.app.pulse</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>MF Pulse</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Ver quanto está livre hoje</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTime</string>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
