@@ -19,7 +19,7 @@ function shouldForceDesktop() {
 
 function computeMobileExperience() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/quick' || path === '/scan' || path === '/voice') return true;
+  if (path === '/quick' || path === '/scan' || path === '/voice' || path === '/recurrences') return true;
   if (shouldForceDesktop()) return false;
   return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
 }
