@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { parseFinancialCode } from '../src/mobile/lib/financial-code-parser';
 import { detectRecurringExpenses, type RecurrenceHistoryItem } from '../src/mobile/lib/recurrence-detector';
+import { unreviewedSharedFiles, type MobileSharedFile } from '../src/mobile/lib/mobile-share-store';
 import { parseVoiceEntry } from '../src/mobile/lib/voice-entry-parser';
 import type { FinancialAccount, TransactionCategory } from '../src/types';
 
@@ -54,6 +55,16 @@ function history(
     type: 'expense',
     status: 'paid',
     affects_balance: true,
+  };
+}
+
+function sharedFile(name: string, size: number, lastModified: number): MobileSharedFile {
+  return {
+    name,
+    type: 'application/pdf',
+    size,
+    lastModified,
+    blob: new Blob(['x'], { type: 'application/pdf' }),
   };
 }
 
@@ -162,4 +173,17 @@ const accounts = [
   assert.equal(detectRecurringExpenses(rows, [{ name: 'Internet Fibra' }]).length, 0);
 }
 
-console.log('Mobile logic checks passed: voice, financial codes and recurrence detection.');
+// Share Target: reviewing one file must preserve every other file, even with duplicate names.
+{
+  const files = [
+    sharedFile('conta.pdf', 100, 1),
+    sharedFile('conta.pdf', 200, 2),
+    sharedFile('recibo.pdf', 300, 3),
+  ];
+  const remaining = unreviewedSharedFiles(files, 1);
+  assert.deepEqual(remaining.map((file) => file.lastModified), [1, 3]);
+  assert.equal(unreviewedSharedFiles(files, 99).length, 3);
+  assert.equal(unreviewedSharedFiles([files[0]], 0).length, 0);
+}
+
+console.log('Mobile logic checks passed: voice, financial codes, recurrence detection and shared-document queue.');
