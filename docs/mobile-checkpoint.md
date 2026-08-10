@@ -147,6 +147,7 @@ Implementada como detector local de padrões no histórico, usando a infraestrut
 - “Ignorar por enquanto” é local ao aparelho via `localStorage`; não cria estado novo no banco;
 - nenhuma recorrência é criada automaticamente;
 - nenhuma migration/schema novo foi necessária;
+- classificação de valor foi refinada após teste automatizado: combina desvio mediano e amplitude relativa entre meses, evitando chamar uma conta de consumo com variação material de “estável”;
 - CI do HEAD: TypeScript e production build success;
 - Preview Vercel do HEAD: READY.
 
@@ -166,8 +167,22 @@ Foi adicionada uma camada compartilhada de robustez em `src/mobile/mobile-harden
 - o gate mobile foi reforçado para reconhecer telefone em landscape: além da largura de 820 px, usa ponteiro coarse + menor dimensão física compacta;
 - `data-mf-mobile` no elemento `html` permite manter a UI mobile visível em landscape mesmo quando a largura ultrapassa 820 px, sem transformar desktop com mouse em mobile;
 - listeners de resize, pointer/media e popstate mantêm o modo correto após rotação e navegação;
-- CI do HEAD `a22bca9eec804df40ae23b0887e77dbe2a469a45`: TypeScript e production build success;
-- Preview Vercel do mesmo HEAD: READY.
+- CI do HEAD funcional de hardening: TypeScript e production build success;
+- Preview Vercel do hardening: READY.
+
+### Validação automatizada da lógica mobile
+
+Foi adicionada uma suíte determinística sem nova biblioteca de testes, usando o `tsx` já presente no projeto:
+
+- script `scripts/mobile-logic-check.ts`;
+- comando `npm run mobile:check`;
+- workflow `Mobile CI` agora executa logic checks antes de TypeScript e build;
+- o workflow também observa pushes da branch oficial `agent/mobile-product-integration`;
+- casos cobertos: despesa por voz com categoria/conta, receita por voz, Pix BR Code com valor/recebedor, boleto bancário com valor/fator, código de arrecadação, conta mensal variável, bloqueio de comerciante frequente e bloqueio de recorrência já cadastrada;
+- a primeira execução detectou um fixture sintético de boleto incompleto, que foi corrigido;
+- a execução seguinte revelou que uma conta de energia com amplitude material estava sendo rotulada como valor estável; o detector foi corrigido em vez de enfraquecer o teste;
+- CI final do commit `0b690d7f616e4d45de1d470577946873b2c0e55b`: `Mobile logic checks`, TypeScript e production build = success;
+- Preview Vercel desse commit: READY.
 
 ## Pendências antes do envio final
 
