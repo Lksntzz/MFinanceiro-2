@@ -18,6 +18,12 @@ import { supabase } from '../../lib/supabase';
 import type { FinancialAccount, TransactionCategory } from '../../types';
 import type { MobileScannedDraft } from '../types';
 import { MOBILE_ROUTES } from '../routes';
+import {
+  analyzeDocumentWithOcr,
+  completeDocumentOcrExtraction,
+  DOCUMENT_OCR_ENABLED,
+  type DocumentOcrMetadata,
+} from '../lib/document-ocr';
 import { parseFinancialCode, type ParsedFinancialCode } from '../lib/financial-code-parser';
 import './mobile-scan.css';
 
@@ -85,6 +91,18 @@ function confidenceLabel(confidence?: MobileScannedDraft['confidence']) {
   return 'Confirmação necessária';
 }
 
+function reviewConfidence(value: number): MobileScannedDraft['confidence'] {
+  if (value >= 0.85) return 'high';
+  if (value >= 0.65) return 'medium';
+  return 'low';
+}
+
+function firstUsefulWarning(metadata: DocumentOcrMetadata) {
+  return Array.isArray(metadata.warnings) && metadata.warnings.length
+    ? metadata.warnings.slice(0, 2).join(' ')
+    : '';
+}
+
 export default function MobileScan({
   userId,
   accounts,
@@ -104,6 +122,7 @@ export default function MobileScan({
   const [draft, setDraft] = useState<MobileScannedDraft | null>(null);
   const [fileName, setFileName] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [ocrExtractionId, setOcrExtractionId] = useState('');
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -150,6 +169,7 @@ export default function MobileScan({
     setFileName('');
     setParsed(null);
     setDraft(null);
+    setOcrExtractionId('');
     setRawInput('');
     setNotice(null);
     setError(null);
@@ -176,6 +196,7 @@ export default function MobileScan({
     setError(null);
     setNotice(null);
     setSaved(false);
+    setOcrExtractionId('');
     setFileName(file.name || 'captura');
 
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -183,17 +204,70 @@ export default function MobileScan({
     setPreviewUrl(nextPreview);
 
     try {
-      if (file.type === 'application/pdf') {
-        applyDraft({ description: file.name.replace(/\.pdf$/i, '') || 'Documento PDF', documentKind: 'pdf', confidence: 'low' });
-        setNotice('PDF recebido. Nesta fase o MF prepara a revisão manual; OCR documental completo entra na próxima etapa.');
+      const detected = await detectCodeFromImage(file);
+      const localParsed = detected ? parseFinancialCode(detected) : null;
+      if (detected) setRawInput(detected);
+
+      if (DOCUMENT_OCR_ENABLED) {
+        try {
+          const ocrResult = await analyzeDocumentWithOcr({
+            file,
+            userId,
+            accountId: review.accountId || accounts.find((item) => item.is_default)?.id || accounts[0]?.id || null,
+            captureSource,
+          });
+
+          if (ocrResult) {
+            setOcrExtractionId(ocrResult.extractionId);
+            const metadata = ocrResult.metadata;
+            const fallbackDraft = localParsed?.draft || {
+              description: file.name.replace(/\.[^.]+$/, '') || 'Documento capturado',
+              documentKind: file.type === 'application/pdf' ? 'pdf' : 'image',
+              confidence: 'low' as const,
+            };
+            const mergedDraft: MobileScannedDraft = {
+              amount: Number(metadata.amount || 0) > 0 ? Number(metadata.amount) : fallbackDraft.amount,
+              description: metadata.description || metadata.merchant_name || fallbackDraft.description,
+              merchant: metadata.merchant_name || fallbackDraft.merchant,
+              category: metadata.category_hint || fallbackDraft.category,
+              dueDate: metadata.due_date || fallbackDraft.dueDate,
+              documentKind: metadata.document_kind || fallbackDraft.documentKind,
+              barcode: fallbackDraft.barcode,
+              pixPayload: fallbackDraft.pixPayload,
+              confidence: reviewConfidence(ocrResult.documentConfidence),
+            };
+            applyDraft(mergedDraft, localParsed);
+
+            const suggestedCategory = metadata.category_hint
+              ? expenseCategories.find((category) => category.name.trim().toLocaleLowerCase('pt-BR') === String(metadata.category_hint).trim().toLocaleLowerCase('pt-BR'))
+              : null;
+            setReview((current) => ({
+              ...current,
+              categoryId: suggestedCategory?.id || current.categoryId,
+              status: metadata.payment_status === 'paid' ? 'paid' : metadata.payment_status === 'pending' ? 'pending' : current.status,
+              dueDate: metadata.payment_status === 'paid' ? '' : metadata.due_date || current.dueDate,
+            }));
+
+            const warning = firstUsefulWarning(metadata);
+            setNotice(warning || 'Documento analisado pelo OCR visual. Confirme todos os campos antes de registrar.');
+            return;
+          }
+        } catch (ocrError: any) {
+          const fallbackMessage = ocrError?.message || 'O OCR visual não conseguiu concluir a leitura.';
+          setNotice(`${fallbackMessage} O MF manteve a captura local para revisão manual.`);
+        }
+      }
+
+      if (localParsed) {
+        applyDraft(localParsed.draft, localParsed);
         return;
       }
 
-      const detected = await detectCodeFromImage(file);
-      if (detected) {
-        const result = parseFinancialCode(detected);
-        applyDraft(result.draft, result);
-        setRawInput(detected);
+      if (file.type === 'application/pdf') {
+        applyDraft({ description: file.name.replace(/\.pdf$/i, '') || 'Documento PDF', documentKind: 'pdf', confidence: 'low' });
+        setNotice(DOCUMENT_OCR_ENABLED
+          ? 'PDF recebido. O OCR visual não retornou dados confiáveis; complete a revisão manualmente.'
+          : 'PDF recebido. O OCR visual está preparado para a publicação final; por enquanto, confirme os dados manualmente.');
         return;
       }
 
@@ -270,6 +344,14 @@ export default function MobileScan({
         p_source: captureSource,
       });
       if (rpcError) throw rpcError;
+
+      if (ocrExtractionId) {
+        try {
+          await completeDocumentOcrExtraction(ocrExtractionId, userId);
+        } catch (finalizeError) {
+          console.warn('MF Scan saved the ledger entry but could not finalize the OCR extraction:', finalizeError);
+        }
+      }
 
       await onSaved();
       setSaved(true);
