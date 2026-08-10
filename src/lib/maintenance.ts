@@ -1,8 +1,15 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 
+export type MaintenanceSurface = 'mobile' | 'desktop';
+export type MaintenanceScope = MaintenanceSurface | 'both';
+
 export interface MaintenanceConfig {
   maintenance_mode: boolean;
   maintenance_message: string;
+  mobile_mode: boolean;
+  mobile_message: string;
+  desktop_mode: boolean;
+  desktop_message: string;
 }
 
 export const MAINTENANCE_CHANNEL = 'mf-global-maintenance';
@@ -13,6 +20,13 @@ const DEFAULT_MESSAGE =
 
 const MISSING_TABLE_CODES = new Set(['PGRST205', '42P01']);
 const MISSING_COLUMN_CODE = 'PGRST204';
+
+type MaintenanceRow = {
+  key?: string | null;
+  maintenance_mode?: unknown;
+  maintenance_message?: unknown;
+  updated_at?: string | null;
+};
 
 function parseBoolean(value: unknown): boolean {
   return value === true || value === 'true' || value === 1 || value === '1';
@@ -32,49 +46,51 @@ function isMissingSchemaError(error: any): boolean {
   return message.includes('does not exist') || message.includes('schema cache');
 }
 
+function scopedConfig(
+  legacy: MaintenanceRow | undefined,
+  mobile: MaintenanceRow | undefined,
+  desktop: MaintenanceRow | undefined,
+): MaintenanceConfig {
+  const mobileMode = parseBoolean((mobile || legacy)?.maintenance_mode);
+  const desktopMode = parseBoolean((desktop || legacy)?.maintenance_mode);
+  const mobileMessage = parseMessage((mobile || legacy)?.maintenance_message);
+  const desktopMessage = parseMessage((desktop || legacy)?.maintenance_message);
+  const legacyMessage = parseMessage(legacy?.maintenance_message);
+
+  return {
+    maintenance_mode: mobileMode || desktopMode,
+    maintenance_message: legacyMessage,
+    mobile_mode: mobileMode,
+    mobile_message: mobileMessage,
+    desktop_mode: desktopMode,
+    desktop_message: desktopMessage,
+  };
+}
+
 async function readFromGlobalSettingsTable(
-  db: SupabaseClient
+  db: SupabaseClient,
 ): Promise<MaintenanceConfig | null> {
   const { data, error } = await db
     .from('mf_global_settings')
-    .select('maintenance_mode, maintenance_message')
-    .eq('key', 'global')
-    .maybeSingle();
+    .select('key, maintenance_mode, maintenance_message, updated_at')
+    .in('key', ['global', 'mobile', 'desktop']);
 
   if (error) {
     if (isMissingSchemaError(error)) return null;
     throw error;
   }
 
-  if (!data) {
-    const { data: fallback, error: fallbackError } = await db
-      .from('mf_global_settings')
-      .select('maintenance_mode, maintenance_message')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  const rows = (data || []) as MaintenanceRow[];
+  if (!rows.length) return null;
 
-    if (fallbackError) {
-      if (isMissingSchemaError(fallbackError)) return null;
-      throw fallbackError;
-    }
-
-    if (!fallback) return null;
-
-    return {
-      maintenance_mode: parseBoolean((fallback as any).maintenance_mode),
-      maintenance_message: parseMessage((fallback as any).maintenance_message),
-    };
-  }
-
-  return {
-    maintenance_mode: parseBoolean((data as any).maintenance_mode),
-    maintenance_message: parseMessage((data as any).maintenance_message),
-  };
+  const legacy = rows.find((row) => row.key === 'global');
+  const mobile = rows.find((row) => row.key === 'mobile');
+  const desktop = rows.find((row) => row.key === 'desktop');
+  return scopedConfig(legacy, mobile, desktop);
 }
 
 async function readFromAppConfigTable(
-  db: SupabaseClient
+  db: SupabaseClient,
 ): Promise<MaintenanceConfig | null> {
   const { data, error } = await db
     .from('mf_app_config')
@@ -89,15 +105,11 @@ async function readFromAppConfigTable(
   }
 
   if (!data) return null;
-
-  return {
-    maintenance_mode: parseBoolean((data as any).maintenance_mode),
-    maintenance_message: parseMessage((data as any).maintenance_message),
-  };
+  return scopedConfig(data as MaintenanceRow, undefined, undefined);
 }
 
 export async function fetchMaintenanceConfig(
-  db: SupabaseClient
+  db: SupabaseClient,
 ): Promise<MaintenanceConfig> {
   const strategies: Array<() => Promise<MaintenanceConfig | null>> = [
     () => readFromGlobalSettingsTable(db),
@@ -113,10 +125,20 @@ export async function fetchMaintenanceConfig(
     }
   }
 
-  return {
-    maintenance_mode: false,
-    maintenance_message: DEFAULT_MESSAGE,
-  };
+  return scopedConfig(undefined, undefined, undefined);
+}
+
+export function getMaintenanceForSurface(
+  config: MaintenanceConfig | null | undefined,
+  surface: MaintenanceSurface,
+): { maintenance_mode: boolean; maintenance_message: string } {
+  if (!config) {
+    return { maintenance_mode: false, maintenance_message: DEFAULT_MESSAGE };
+  }
+
+  return surface === 'mobile'
+    ? { maintenance_mode: config.mobile_mode, maintenance_message: config.mobile_message }
+    : { maintenance_mode: config.desktop_mode, maintenance_message: config.desktop_message };
 }
 
 export async function broadcastMaintenanceConfig(
