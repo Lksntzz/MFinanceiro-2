@@ -1,0 +1,22 @@
+.mf-onboarding-checklist { margin-bottom: 14px; border-color: rgba(0,232,244,.14); background: linear-gradient(135deg, rgba(0,232,244,.055), rgba(139,92,246,.035)); }
+.mf-onboarding-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:12px; }
+.mf-onboarding-heading p { margin:0 0 4px; color:#67e8f9; font-size:8px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; }
+.mf-onboarding-heading h2 { margin:0; color:#fff; font-size:14px; }
+.mf-onboarding-heading span { display:block; margin-top:3px; color:rgba(255,255,255,.35); font-size:9px; }
+.mf-onboarding-heading button { border:0; border-radius:8px; padding:5px; background:transparent; color:rgba(255,255,255,.3); }
+.mf-onboarding-steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+.mf-onboarding-steps button { display:grid; grid-template-columns:18px minmax(0,1fr) 16px; align-items:center; gap:7px; min-height:40px; border:1px solid rgba(255,255,255,.08); border-radius:11px; padding:8px 9px; text-align:left; background:rgba(0,0,0,.13); color:rgba(255,255,255,.66); font-size:10px; }
+.mf-onboarding-steps button:not(:disabled):hover { border-color:rgba(0,232,244,.2); background:rgba(0,232,244,.05); }
+.mf-onboarding-steps button.done { opacity:.52; color:#86efac; }
+
+.mf-automation-disclosure { overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:rgba(255,255,255,.018); }
+.mf-automation-disclosure > summary { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; cursor:pointer; list-style:none; }
+.mf-automation-disclosure > summary::-webkit-details-marker { display:none; }
+.mf-automation-disclosure > summary strong { display:block; color:rgba(255,255,255,.82); font-size:12px; }
+.mf-automation-disclosure > summary small { display:block; margin-top:3px; color:rgba(255,255,255,.35); font-size:9px; }
+.mf-automation-disclosure[open] > summary svg { transform:rotate(180deg); }
+.mf-automation-content { border-top:1px solid rgba(255,255,255,.07); padding:12px; }
+
+@media (max-width: 820px) {
+  .mf-onboarding-steps { grid-template-columns:1fr; }
+}
