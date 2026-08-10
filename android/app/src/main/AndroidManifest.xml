@@ -36,6 +36,19 @@
                 <data android:scheme="https" android:host="mfinanceiro.com.br" />
             </intent-filter>
 
+            <intent-filter android:label="Compartilhar para o MF">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <intent-filter android:label="Compartilhar para o MF">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
