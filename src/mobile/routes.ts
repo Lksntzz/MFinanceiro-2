@@ -9,6 +9,7 @@ export const MOBILE_ROUTES = {
   documentInbox: '/app/mobile/inbox/documentos',
   canSpend: '/app/mobile/posso-gastar',
   purchaseImpact: '/app/mobile/impacto-compra',
+  pulse: '/app/mobile/pulse',
   quick: '/quick',
   scan: '/scan',
   voice: '/voice',
