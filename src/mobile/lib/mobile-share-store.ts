@@ -31,6 +31,21 @@ function openShareDb() {
   });
 }
 
+async function writeMobileSharedPayload(payload: MobileSharedPayload) {
+  const db = await openShareDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      transaction.objectStore(STORE_NAME).put(payload);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Não foi possível atualizar o compartilhamento.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Não foi possível atualizar o compartilhamento.'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export async function getMobileSharedPayload(id: string) {
   const db = await openShareDb();
   try {
@@ -43,6 +58,21 @@ export async function getMobileSharedPayload(id: string) {
   } finally {
     db.close();
   }
+}
+
+export async function keepOnlyUnreviewedSharedFiles(payload: MobileSharedPayload, reviewedIndex: number) {
+  const remainingFiles = payload.files.filter((_, index) => index !== reviewedIndex);
+  if (!remainingFiles.length) {
+    await removeMobileSharedPayload(payload.id);
+    return null;
+  }
+
+  const nextPayload: MobileSharedPayload = {
+    ...payload,
+    files: remainingFiles,
+  };
+  await writeMobileSharedPayload(nextPayload);
+  return nextPayload;
 }
 
 export async function removeMobileSharedPayload(id: string) {
