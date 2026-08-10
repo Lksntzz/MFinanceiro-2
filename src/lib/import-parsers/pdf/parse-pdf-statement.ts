@@ -295,10 +295,9 @@ async function openPdfWithPassword(
   fileName: string,
   requestPassword?: PdfClassificationOptions['requestPassword'],
 ) {
-  // Security hardening for user-controlled bank statements. PDF.js scripting is
-  // unnecessary for text extraction and must remain disabled even before the
-  // dependency can be moved to its next major patched release.
-  const loadingTask = getDocument({ data: bytes, enableScripting: false });
+  // This importer uses the PDF.js display API only for text extraction and does
+  // not instantiate the Viewer scripting manager or execute document actions.
+  const loadingTask = getDocument({ data: bytes });
   let passwordCancelled = false;
 
   loadingTask.onPassword = (updatePassword: (password: string) => void, reason: number) => {
