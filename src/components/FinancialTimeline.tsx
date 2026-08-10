@@ -21,7 +21,7 @@ export default function FinancialTimeline({ userId, settings, fixedBills, subscr
       if (!active || error) return;
       const items = Array.isArray((data as any)?.items) ? (data as any).items : [];
       setRealized(items.filter((item: any) => String(item.date || '').startsWith(month)).map((item: any) => ({ id: `ledger:${item.id}`, day: safeDay(String(item.date || '').slice(8, 10)), title: item.description || item.category || 'Movimentação', subtitle: item.category || 'Realizado', amount: Math.abs(Number(item.amount || 0)), direction: item.type === 'income' || Number(item.amount || 0) > 0 ? 'income' : 'expense', status: 'realized', icon: item.type === 'income' || Number(item.amount || 0) > 0 ? ArrowUpRight : ArrowDownRight })));
-    }).catch(() => undefined);
+    }, () => undefined);
     return () => { active = false; };
   }, [userId]);
 
