@@ -33,6 +33,12 @@
       "short_name": "MF Scan",
       "description": "Abrir a captura de boletos, Pix e documentos financeiros.",
       "url": "/scan"
+    },
+    {
+      "name": "Falar lançamento",
+      "short_name": "MF Voice",
+      "description": "Abrir o MF Voice para ditar e revisar um lançamento.",
+      "url": "/voice"
     }
   ],
   "share_target": {
