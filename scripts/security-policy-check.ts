@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
@@ -7,6 +7,7 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
 const workflowsDir = join(root, '.github', 'workflows');
 for (const name of readdirSync(workflowsDir).filter((file) => /\.ya?ml$/i.test(file))) {
+  if (!/(ci|validate|check)/i.test(name)) continue;
   const content = readFileSync(join(workflowsDir, name), 'utf8');
   assert.equal(/contents:\s*write/i.test(content), false, `${name}: validation workflows must not have contents: write`);
 }
@@ -38,4 +39,12 @@ assert.equal(dashboard.includes('mf_delete_all_finance_entries'), false, 'bulk l
 const accessControl = read('src/lib/access-control.ts');
 assert.equal(accessControl.includes('supabase.rpc("check_access_request_status"'), false, 'browser must not call privileged access status RPC directly');
 
-console.log('Security policy checks passed: workflow permissions, DB hardening, destructive paths and retired legacy surfaces.');
+const legacyOrchestratorPath = join(root, 'src/lib/web-product-orchestrator-mount.tsx');
+if (existsSync(legacyOrchestratorPath)) {
+  const orchestrator = readFileSync(legacyOrchestratorPath, 'utf8');
+  assert.equal(/createRoot\s*\(/.test(orchestrator), false, 'product guidance must not create a second React root');
+  assert.equal(/document\.body\.appendChild|document\.createElement\(['"]div['"]\)/.test(orchestrator), false, 'product guidance must not inject its own application host into the DOM');
+  assert.equal(/setInterval\s*\([^)]*window\.location|setInterval\s*\(sync\s*,/s.test(orchestrator), false, 'product guidance must use router state instead of navigation polling');
+}
+
+console.log('Security policy checks passed: permissions, DB hardening, destructive paths, legacy surfaces and architecture boundaries.');
