@@ -55,6 +55,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/recurrences",
+      "destination": "/index.html"
+    },
+    {
       "source": "/share",
       "destination": "/index.html"
     },
