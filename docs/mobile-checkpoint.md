@@ -82,6 +82,34 @@ Implementado como integração progressiva de PWA, sem duplicar a lógica financ
 - limite local do compartilhamento: 20 MB no total e até 5 arquivos aceitos por vez;
 - o fluxo é progressivo: Web Share Target como destino instalado é suportado principalmente em Android/ChromeOS; iOS continua usando câmera/arquivo/atalhos até existir wrapper/extensão nativa apropriada.
 
+### OCR específico para contas e recibos
+
+Implementação preparada na branch, propositalmente desligada até o envio final:
+
+- nova Edge Function `supabase/functions/document-ocr`, separada de `statement-ocr`;
+- a função foi desenhada para JWT obrigatório e trabalha com o cliente do usuário/RLS, sem service role no navegador;
+- reutiliza `mf-import-documents` e `mf_document_extractions` com `document_type = 'other'`, portanto não exige migration;
+- extrai apenas campos úteis ao mobile: tipo de documento, empresa/estabelecimento, descrição, valor, vencimento, data do documento, período de referência, situação de pagamento, categoria sugerida, confiança por campo e avisos;
+- categorias são limitadas aos nomes ativos do próprio usuário; sugestão fora da lista é descartada;
+- resultado fica em `result_metadata`, com `requires_human_review = true`;
+- o MF Scan combina OCR visual com a leitura local de QR/boleto quando disponível e continua exigindo confirmação antes de qualquer gravação financeira;
+- se o OCR falhar, o fluxo volta automaticamente para QR/código/manual sem bloquear a captura;
+- após confirmação do lançamento, a extração OCR pode ser marcada como `completed` sem transformar falha de finalização em duplicação de lançamento;
+- cliente protegido por `VITE_DOCUMENT_OCR_ENABLED`; `.env.example` mantém a flag como `false`;
+- **a Edge Function não foi deployada no Supabase ativo e a flag não foi habilitada**, respeitando a decisão de publicar o pacote todo de uma vez;
+- CI do frontend após a integração: TypeScript success + production build success;
+- Preview Vercel do frontend: READY com o recurso desabilitado por padrão.
+
+#### Sequência obrigatória no release do OCR documental
+
+1. revisar novamente a função `document-ocr` e os secrets existentes;
+2. deployar `document-ocr` com `verify_jwt = true`;
+3. testar uma invocação autenticada controlada em PDF e imagem;
+4. habilitar `VITE_DOCUMENT_OCR_ENABLED=true` somente no ambiente pretendido;
+5. rebuildar o frontend;
+6. testar câmera, galeria, PDF e Compartilhar para o MF em aparelho real;
+7. manter confirmação humana obrigatória antes de criar o lançamento.
+
 ## Pendências antes do envio final
 
 - smoke test autenticado em 320 / 360 / 390 / 412 / 430 px;
@@ -89,13 +117,14 @@ Implementado como integração progressiva de PWA, sem duplicar a lógica financ
 - teste do MF Inbox com extrato real;
 - teste do MF Scan em aparelho real;
 - teste de `Compartilhar para o MF` em PWA Android instalada;
+- deploy e validação controlada do `document-ocr` apenas na etapa de release;
+- teste do OCR documental em conta, boleto/conta de consumo, recibo e comprovante real;
 - câmera, galeria, teclado, safe areas e PWA;
 - revisar novas correções e funcionalidades que forem adicionadas após este checkpoint;
 - rodar novamente CI + preview antes do merge único.
 
 ## Próximas ideias já aprovadas para evolução mobile
 
-- OCR específico para contas e recibos, separado do OCR de extrato;
 - MF Voice;
 - recorrência inteligente;
 - shortcuts/widgets e integrações nativas quando houver wrapper adequado;
