@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { MOBILE_ROUTES } from './routes';
 import type { MobileNavItem } from './types';
 import './mobile.css';
+import './mobile-hardening.css';
 
 const navItems: readonly MobileNavItem[] = [
   { key: 'home', label: 'Início', path: MOBILE_ROUTES.home },
