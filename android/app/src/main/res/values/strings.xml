@@ -10,4 +10,7 @@
     <string name="shortcut_scan_long">Escanear conta no MF</string>
     <string name="shortcut_pulse_short">Pulse</string>
     <string name="shortcut_pulse_long">Ver quanto está livre hoje</string>
+    <string name="quick_settings_tile_label">MF Quick</string>
+    <string name="quick_settings_tile_subtitle">Novo lançamento</string>
+    <string name="quick_settings_tile_description">Abrir o MF Quick para registrar um lançamento</string>
 </resources>
