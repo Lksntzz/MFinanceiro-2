@@ -17,6 +17,12 @@
 .mf-automation-disclosure[open] > summary svg { transform:rotate(180deg); }
 .mf-automation-content { border-top:1px solid rgba(255,255,255,.07); padding:12px; }
 
+html[data-mf-private="true"] aside[aria-label="Central de notificações"] article strong[class*="text-[11px]"] { filter:blur(6px); user-select:none; }
+
+@media (min-width: 821px) {
+  .mf-side-shortcuts { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+}
+
 @media (max-width: 820px) {
   .mf-onboarding-steps { grid-template-columns:1fr; }
 }
