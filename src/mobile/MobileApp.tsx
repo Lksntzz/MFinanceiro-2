@@ -226,15 +226,24 @@ function TransactionsPage({ data }: { data: MobileData }) {
 }
 
 function CardsPage({ cards }: { cards: CreditCard[] }) {
-  const navigate = useNavigate();
   return (
     <div className="mf-mobile-page">
       <MobileHeader title="Cartões" subtitle="Faturas e limites sem excesso de informação" />
-      <button type="button" className="mf-mobile-secondary-button" onClick={() => navigate(MOBILE_ROUTES.purchaseImpact)} disabled={!cards.length}><Gauge size={18} /> Simular impacto de uma compra</button>
-      <div className="mf-mobile-card-stack">{cards.length ? cards.map((card) => {
-        const used = Number(card.used || 0); const limit = Number(card.limit || 0); const usage = limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0;
-        return <article className="mf-mobile-credit-card" key={card.id}><div className="mf-mobile-credit-card__top"><div><small>{card.brand || 'Cartão'}</small><strong>{card.name}</strong></div><CreditCardIcon size={24} /></div><div className="mf-mobile-credit-card__amount"><span>Utilizado</span><strong>{formatCurrency(used)}</strong></div><div className="mf-mobile-progress"><i style={{ width: `${usage}%` }} /></div><div className="mf-mobile-credit-card__meta"><div><small>Disponível</small><b>{formatCurrency(limit - used)}</b></div><div><small>Vencimento</small><b>Dia {card.due_day}</b></div></div></article>;
-      }) : <div className="mf-mobile-list-card"><div className="mf-mobile-empty">Nenhum cartão cadastrado.</div></div>}</div>
+      <div className="mf-mobile-card-stack">
+        {cards.length ? cards.map((card) => {
+          const used = Number(card.used || 0);
+          const limit = Number(card.limit || 0);
+          const usage = limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0;
+          return (
+            <article className="mf-mobile-credit-card" key={card.id}>
+              <div className="mf-mobile-credit-card__top"><div><small>{card.brand || 'Cartão'}</small><strong>{card.name}</strong></div><CreditCardIcon size={24} /></div>
+              <div className="mf-mobile-credit-card__amount"><span>Utilizado</span><strong>{formatCurrency(used)}</strong></div>
+              <div className="mf-mobile-progress"><i style={{ width: `${usage}%` }} /></div>
+              <div className="mf-mobile-credit-card__meta"><div><small>Disponível</small><b>{formatCurrency(limit - used)}</b></div><div><small>Vencimento</small><b>Dia {card.due_day}</b></div></div>
+            </article>
+          );
+        }) : <div className="mf-mobile-list-card"><div className="mf-mobile-empty">Nenhum cartão cadastrado.</div></div>}
+      </div>
     </div>
   );
 }
@@ -245,9 +254,7 @@ function MorePage() {
     <div className="mf-mobile-page">
       <MobileHeader title="Mais" subtitle="Poucas ferramentas, só as que ajudam no celular" />
       <div className="mf-mobile-menu-list">
-        <button type="button" onClick={() => navigate(MOBILE_ROUTES.pulse)}><span className="mf-mobile-menu-icon"><Gauge size={19} /></span><div><strong>MF Pulse</strong><small>Livre hoje, próximo compromisso e ações rápidas</small></div><ChevronRight size={18} /></button>
-        <button type="button" onClick={() => navigate(MOBILE_ROUTES.inbox)}><span className="mf-mobile-menu-icon"><Inbox size={19} /></span><div><strong>MF Inbox · Extratos</strong><small>Revisar extratos e lançamentos extraídos</small></div><ChevronRight size={18} /></button>
-        <button type="button" onClick={() => navigate(MOBILE_ROUTES.documentInbox)}><span className="mf-mobile-menu-icon"><ReceiptText size={19} /></span><div><strong>MF Inbox · Contas e recibos</strong><small>Revisar documentos analisados pelo MF Scan</small></div><ChevronRight size={18} /></button>
+        <button type="button" onClick={() => navigate(MOBILE_ROUTES.inbox)}><span className="mf-mobile-menu-icon"><Inbox size={19} /></span><div><strong>MF Inbox</strong><small>Revisar extratos e lançamentos extraídos</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.scan)}><span className="mf-mobile-menu-icon"><Camera size={19} /></span><div><strong>MF Scan</strong><small>Capturar boleto, conta, QR ou documento</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.quick)}><span className="mf-mobile-menu-icon"><Sparkles size={19} /></span><div><strong>MF Quick</strong><small>Lançamento rápido em poucos toques</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={openDesktopExperience}><span className="mf-mobile-menu-icon"><ExternalLink size={19} /></span><div><strong>Abrir versão completa</strong><small>Planejamento, análises, importações e ferramentas avançadas</small></div><ChevronRight size={18} /></button>
