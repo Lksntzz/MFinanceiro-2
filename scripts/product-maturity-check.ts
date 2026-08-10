@@ -28,12 +28,13 @@ expectContains('src/components/DashboardBootstrap.tsx', ["lazy(() => import('./D
 expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}', 'dismissedAlertsKey', 'persistDismissedAlerts', '<History userId={user.id}', 'onDataChanged={workspace.refresh}']);
 expectContains('src/hooks/useDashboardWorkspace.ts', ["window.addEventListener('mf:finance-data-changed', scheduleRefresh)", "window.removeEventListener('mf:finance-data-changed', scheduleRefresh)"]);
 expectContains('src/lib/unified-transaction-launcher-mount.tsx', ["window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);
-expectContains('src/components/History.tsx', ['mf_preview_categorization_rules', 'Organizar lançamentos genéricos', 'Aplicar regras', "window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);
-expectContains('src/lib/financial-quality.ts', ['Organizar genéricos', '/app/movimentacoes?assist=categorias']);
+expectNotContains('src/components/History.tsx', ['mf_preview_categorization_rules', 'Organizar lançamentos genéricos', 'Criar regras', 'Aplicar regras', 'assist=categorias']);
+expectNotContains('src/lib/financial-quality.ts', ['Muitos lançamentos genéricos', 'Organizar genéricos', '/app/movimentacoes?assist=categorias']);
 expectContains('src/components/FinancialCategoriesTool.tsx', ['glass-card mf-tool-surface']);
 expectContains('src/components/ExpectedIncomeCenter.tsx', ['glass-card mf-tool-surface']);
 expectContains('src/components/FinancialAgendaTool.tsx', ['<FinancialTimeline']);
-expectContains('src/components/IntegrationTool.tsx', ['Regras e automações', '<details', 'mf-open-finance-coming-soon', 'Open Finance', 'Em breve']);
+expectContains('src/components/IntegrationTool.tsx', ['mf-open-finance-coming-soon', 'Open Finance', 'Em breve', 'uso contínuo e automático']);
+expectNotContains('src/components/IntegrationTool.tsx', ['AutomationCenter', 'Regras e automações', 'Regras automáticas', 'Nova regra']);
 expectContains('src/components/AppNavigation.tsx', ['mf:open-command-palette']);
 expectContains('src/components/CommandPalette.tsx', ["event.key === 'ArrowDown'", "event.key === 'ArrowUp'", "event.key === 'Enter'", 'aria-activedescendant']);
 expectContains('src/context/AppContext.tsx', ['data-mf-private', "event.altKey && event.key.toLowerCase() === 'p'"]);
