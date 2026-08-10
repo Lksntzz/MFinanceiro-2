@@ -26,8 +26,8 @@ const financialHealth = read('src/components/FinancialHealth.tsx');
 assert.ok(financialHealth.includes('to="/app/analises/insights"'), 'legacy financial-health route must converge on Insights');
 assert.equal(/calculate|progress|badge|level|healthScore|financialScore/i.test(financialHealth), false, 'legacy financial-health implementation returned');
 
-const automationCenter = read('src/components/AutomationCenter.tsx');
-assert.ok(automationCenter.includes('/app/integracoes'), 'standalone automation center must converge on Conexões');
+const bootstrap = read('src/components/DashboardBootstrap.tsx');
+assert.ok(/legacyAutomationRoute\) return <Navigate to="\/app\/integracoes"/i.test(bootstrap), 'legacy automation route must converge on Conexões');
 
 const details = read('src/components/Details.tsx');
 assert.ok(details.includes('to="/app"'), 'legacy statistics surface must converge on Início');
