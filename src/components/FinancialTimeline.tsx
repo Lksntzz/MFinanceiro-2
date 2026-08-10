@@ -17,11 +17,17 @@ export default function FinancialTimeline({ userId, settings, fixedBills, subscr
   useEffect(() => {
     let active = true;
     const month = currentMonthKey();
-    void supabase.rpc('mf_get_ledger_page', { p_page_size: 250, p_cursor_date: null, p_cursor_created_at: null, p_cursor_id: null }).then(({ data, error }) => {
-      if (!active || error) return;
-      const items = Array.isArray((data as any)?.items) ? (data as any).items : [];
-      setRealized(items.filter((item: any) => String(item.date || '').startsWith(month)).map((item: any) => ({ id: `ledger:${item.id}`, day: safeDay(String(item.date || '').slice(8, 10)), title: item.description || item.category || 'Movimentação', subtitle: item.category || 'Realizado', amount: Math.abs(Number(item.amount || 0)), direction: item.type === 'income' || Number(item.amount || 0) > 0 ? 'income' : 'expense', status: 'realized', icon: item.type === 'income' || Number(item.amount || 0) > 0 ? ArrowUpRight : ArrowDownRight })));
-    }).catch(() => undefined);
+    const loadRealized = async () => {
+      try {
+        const { data, error } = await supabase.rpc('mf_get_ledger_page', { p_page_size: 250, p_cursor_date: null, p_cursor_created_at: null, p_cursor_id: null });
+        if (!active || error) return;
+        const items = Array.isArray((data as any)?.items) ? (data as any).items : [];
+        setRealized(items.filter((item: any) => String(item.date || '').startsWith(month)).map((item: any) => ({ id: `ledger:${item.id}`, day: safeDay(String(item.date || '').slice(8, 10)), title: item.description || item.category || 'Movimentação', subtitle: item.category || 'Realizado', amount: Math.abs(Number(item.amount || 0)), direction: item.type === 'income' || Number(item.amount || 0) > 0 ? 'income' : 'expense', status: 'realized', icon: item.type === 'income' || Number(item.amount || 0) > 0 ? ArrowUpRight : ArrowDownRight })));
+      } catch {
+        if (active) setRealized([]);
+      }
+    };
+    void loadRealized();
     return () => { active = false; };
   }, [userId]);
 
