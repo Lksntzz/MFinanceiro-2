@@ -85,7 +85,11 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
     return [payload.title, payload.text, payload.url].map((value) => value.trim()).filter(Boolean).join('\n');
   }, [payload]);
 
-  const selectedFile = payload?.files[selectedFileIndex] ? sharedFileToFile(payload.files[selectedFileIndex]) : null;
+  const selectedSharedFile = payload?.files[selectedFileIndex] || null;
+  const selectedFile = selectedSharedFile ? sharedFileToFile(selectedSharedFile) : null;
+  const scanKey = selectedSharedFile
+    ? `${payload?.id || shareId}:${selectedSharedFile.name}:${selectedSharedFile.size}:${selectedSharedFile.lastModified}`
+    : `${payload?.id || shareId}:text`;
 
   async function cancelShare() {
     if (shareId) {
@@ -123,7 +127,7 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
         </header>
         <div className="mf-mobile-share-files">
           {payload.files.map((file, index) => (
-            <button key={`${file.name}-${index}`} type="button" data-active={selectedFileIndex === index} onClick={() => setSelectedFileIndex(index)}>
+            <button key={`${file.name}-${file.size}-${file.lastModified}-${index}`} type="button" data-active={selectedFileIndex === index} onClick={() => setSelectedFileIndex(index)}>
               {file.type.startsWith('image/') ? <FileImage size={20} /> : <FileText size={20} />}
               <span><strong>{file.name || `Documento ${index + 1}`}</strong><small>{Math.max(1, Math.round(file.size / 1024))} KB</small></span>
             </button>
@@ -137,6 +141,7 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
 
   return (
     <MobileScan
+      key={scanKey}
       userId={userId}
       accounts={accounts}
       categories={categories}
