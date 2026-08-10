@@ -6,6 +6,7 @@ export const MOBILE_ROUTES = {
   cards: '/app/planejamento/cartoes',
   more: '/app/mobile/mais',
   inbox: '/app/mobile/inbox',
+  documentInbox: '/app/mobile/inbox/documentos',
   canSpend: '/app/mobile/posso-gastar',
   purchaseImpact: '/app/mobile/impacto-compra',
   quick: '/quick',
