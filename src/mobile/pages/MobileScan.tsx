@@ -121,6 +121,7 @@ export default function MobileScan({
   const [parsed, setParsed] = useState<ParsedFinancialCode | null>(null);
   const [draft, setDraft] = useState<MobileScannedDraft | null>(null);
   const [fileName, setFileName] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [ocrExtractionId, setOcrExtractionId] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -167,6 +168,7 @@ export default function MobileScan({
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setFileName('');
+    setSelectedFile(null);
     setParsed(null);
     setDraft(null);
     setOcrExtractionId('');
@@ -198,6 +200,7 @@ export default function MobileScan({
     setSaved(false);
     setOcrExtractionId('');
     setFileName(file.name || 'captura');
+    setSelectedFile(file);
 
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     const nextPreview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
@@ -208,71 +211,24 @@ export default function MobileScan({
       const localParsed = detected ? parseFinancialCode(detected) : null;
       if (detected) setRawInput(detected);
 
-      if (DOCUMENT_OCR_ENABLED) {
-        try {
-          const ocrResult = await analyzeDocumentWithOcr({
-            file,
-            userId,
-            accountId: review.accountId || accounts.find((item) => item.is_default)?.id || accounts[0]?.id || null,
-            captureSource,
-          });
-
-          if (ocrResult) {
-            setOcrExtractionId(ocrResult.extractionId);
-            const metadata = ocrResult.metadata;
-            const fallbackDraft = localParsed?.draft || {
-              description: file.name.replace(/\.[^.]+$/, '') || 'Documento capturado',
-              documentKind: file.type === 'application/pdf' ? 'pdf' : 'image',
-              confidence: 'low' as const,
-            };
-            const mergedDraft: MobileScannedDraft = {
-              amount: Number(metadata.amount || 0) > 0 ? Number(metadata.amount) : fallbackDraft.amount,
-              description: metadata.description || metadata.merchant_name || fallbackDraft.description,
-              merchant: metadata.merchant_name || fallbackDraft.merchant,
-              category: metadata.category_hint || fallbackDraft.category,
-              dueDate: metadata.due_date || fallbackDraft.dueDate,
-              documentKind: metadata.document_kind || fallbackDraft.documentKind,
-              barcode: fallbackDraft.barcode,
-              pixPayload: fallbackDraft.pixPayload,
-              confidence: reviewConfidence(ocrResult.documentConfidence),
-            };
-            applyDraft(mergedDraft, localParsed);
-
-            const suggestedCategory = metadata.category_hint
-              ? expenseCategories.find((category) => category.name.trim().toLocaleLowerCase('pt-BR') === String(metadata.category_hint).trim().toLocaleLowerCase('pt-BR'))
-              : null;
-            setReview((current) => ({
-              ...current,
-              categoryId: suggestedCategory?.id || current.categoryId,
-              status: metadata.payment_status === 'paid' ? 'paid' : metadata.payment_status === 'pending' ? 'pending' : current.status,
-              dueDate: metadata.payment_status === 'paid' ? '' : metadata.due_date || current.dueDate,
-            }));
-
-            const warning = firstUsefulWarning(metadata);
-            setNotice(warning || 'Documento analisado pelo OCR visual. Confirme todos os campos antes de registrar.');
-            return;
-          }
-        } catch (ocrError: any) {
-          const fallbackMessage = ocrError?.message || 'O OCR visual não conseguiu concluir a leitura.';
-          setNotice(`${fallbackMessage} O MF manteve a captura local para revisão manual.`);
-        }
-      }
-
       if (localParsed) {
         applyDraft(localParsed.draft, localParsed);
+        if (DOCUMENT_OCR_ENABLED) setNotice('Código identificado. Se quiser enriquecer empresa, categoria e outros campos visuais, toque em “Analisar com IA”.');
         return;
       }
 
       if (file.type === 'application/pdf') {
         applyDraft({ description: file.name.replace(/\.pdf$/i, '') || 'Documento PDF', documentKind: 'pdf', confidence: 'low' });
         setNotice(DOCUMENT_OCR_ENABLED
-          ? 'PDF recebido. O OCR visual não retornou dados confiáveis; complete a revisão manualmente.'
-          : 'PDF recebido. O OCR visual está preparado para a publicação final; por enquanto, confirme os dados manualmente.');
+          ? 'PDF recebido. Para extrair empresa, valor e vencimento, toque em “Analisar com IA”.'
+          : 'PDF recebido. Confirme os dados manualmente.');
         return;
       }
 
       applyDraft({ description: file.name.replace(/\.[^.]+$/, '') || 'Documento capturado', documentKind: 'image', confidence: 'low' });
-      if (detectorConstructor()) {
+      if (DOCUMENT_OCR_ENABLED) {
+        setNotice('Imagem recebida. Toque em “Analisar com IA” para tentar extrair empresa, valor, vencimento e categoria.');
+      } else if (detectorConstructor()) {
         setNotice('A imagem foi capturada, mas nenhum QR/código legível foi encontrado. Você pode preencher os dados manualmente.');
       } else {
         setNotice('Este navegador não oferece leitura nativa de QR/código. A câmera continua disponível e os dados podem ser confirmados manualmente.');
@@ -284,6 +240,66 @@ export default function MobileScan({
       if (cameraInputRef.current) cameraInputRef.current.value = '';
       if (galleryInputRef.current) galleryInputRef.current.value = '';
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function analyzeSelectedFileWithOcr() {
+    if (!selectedFile || !DOCUMENT_OCR_ENABLED || processing) return;
+    setProcessing(true);
+    setError(null);
+    setNotice(null);
+    setSaved(false);
+
+    try {
+      const ocrResult = await analyzeDocumentWithOcr({
+        file: selectedFile,
+        userId,
+        accountId: review.accountId || accounts.find((item) => item.is_default)?.id || accounts[0]?.id || null,
+        captureSource,
+      });
+
+      if (!ocrResult) {
+        setNotice('OCR visual indisponível neste ambiente. Você ainda pode confirmar os dados manualmente.');
+        return;
+      }
+
+      setOcrExtractionId(ocrResult.extractionId);
+      const metadata = ocrResult.metadata;
+      const fallbackDraft = draft || {
+        description: selectedFile.name.replace(/\.[^.]+$/, '') || 'Documento capturado',
+        documentKind: selectedFile.type === 'application/pdf' ? 'pdf' : 'image',
+        confidence: 'low' as const,
+      };
+      const mergedDraft: MobileScannedDraft = {
+        amount: Number(metadata.amount || 0) > 0 ? Number(metadata.amount) : fallbackDraft.amount,
+        description: metadata.description || metadata.merchant_name || fallbackDraft.description,
+        merchant: metadata.merchant_name || fallbackDraft.merchant,
+        category: metadata.category_hint || fallbackDraft.category,
+        dueDate: metadata.due_date || fallbackDraft.dueDate,
+        documentKind: metadata.document_kind || fallbackDraft.documentKind,
+        barcode: fallbackDraft.barcode,
+        pixPayload: fallbackDraft.pixPayload,
+        confidence: reviewConfidence(ocrResult.documentConfidence),
+      };
+      applyDraft(mergedDraft, parsed);
+
+      const suggestedCategory = metadata.category_hint
+        ? expenseCategories.find((category) => category.name.trim().toLocaleLowerCase('pt-BR') === String(metadata.category_hint).trim().toLocaleLowerCase('pt-BR'))
+        : null;
+      setReview((current) => ({
+        ...current,
+        categoryId: suggestedCategory?.id || current.categoryId,
+        status: metadata.payment_status === 'paid' ? 'paid' : metadata.payment_status === 'pending' ? 'pending' : current.status,
+        dueDate: metadata.payment_status === 'paid' ? '' : metadata.due_date || current.dueDate,
+      }));
+
+      const warning = firstUsefulWarning(metadata);
+      setNotice(warning || 'Documento analisado com IA. Confira todos os campos antes de registrar.');
+    } catch (ocrError: any) {
+      const fallbackMessage = ocrError?.message || 'O OCR visual não conseguiu concluir a leitura.';
+      setNotice(`${fallbackMessage} A captura continua disponível para revisão manual.`);
+    } finally {
+      setProcessing(false);
     }
   }
 
@@ -305,7 +321,7 @@ export default function MobileScan({
 
   async function saveReviewedEntry(event: React.FormEvent) {
     event.preventDefault();
-    if (saving || saved) return;
+    if (saving || processing || saved) return;
     setError(null);
     setNotice(null);
 
@@ -418,6 +434,13 @@ export default function MobileScan({
             <ShieldCheck size={21} />
           </div>
 
+          {selectedFile && DOCUMENT_OCR_ENABLED && !ocrExtractionId && !saved ? (
+            <button className="mf-mobile-secondary-button" type="button" onClick={() => void analyzeSelectedFileWithOcr()} disabled={processing}>
+              {processing ? <Loader2 className="animate-spin" size={18} /> : <ScanLine size={18} />}
+              {processing ? 'Analisando documento...' : 'Analisar com IA'}
+            </button>
+          ) : null}
+
           {parsed?.dynamicPix ? <div className="mf-mobile-feedback warning">QR Pix dinâmico identificado. O valor completo pode depender do payload do PSP; confirme os campos abaixo.</div> : null}
           {!saved && notice ? <div className="mf-mobile-feedback warning">{notice}</div> : null}
 
@@ -463,7 +486,7 @@ export default function MobileScan({
           {error ? <div className="mf-mobile-feedback error">{error}</div> : null}
           {saved && notice ? <div className="mf-mobile-feedback success"><Check size={16} />{notice}</div> : null}
 
-          <button className="mf-mobile-primary-button" type="submit" disabled={saving || saved || !userId}>
+          <button className="mf-mobile-primary-button" type="submit" disabled={saving || processing || saved || !userId}>
             {saving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
             {saved ? 'Registrado' : 'Confirmar no MF'}
           </button>
