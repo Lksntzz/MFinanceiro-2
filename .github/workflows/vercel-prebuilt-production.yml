@@ -103,11 +103,11 @@ jobs:
           NODE
           rm -f "$RUNNER_TEMP/vercel-env.json"
 
-      - name: Install pinned Vercel tooling
-        run: npm install --no-save --package-lock=false vercel@58.9.1
-
       - name: Build production app locally
         run: npm run build
+
+      - name: Install pinned Vercel deployment tooling
+        run: npm install --no-save --package-lock=false vercel@58.9.1 @vercel/routing-utils
 
       - name: Assemble Vercel Build Output API artifact
         run: |
