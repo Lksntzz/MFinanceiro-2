@@ -24,7 +24,7 @@ export default class AppErrorBoundary extends React.Component<React.PropsWithChi
           <AlertTriangle className="mx-auto mb-4 text-amber-300" size={34} />
           <h1 className="text-lg font-black">Não foi possível concluir esta tela</h1>
           <p className="mt-2 text-sm leading-relaxed text-white/50">
-            Seus dados financeiros não foram alterados por este erro. Recarregue o MF para tentar novamente.
+            O MF interrompeu esta tela para evitar continuar em um estado inconsistente. Recarregue e confira a última operação antes de tentar novamente.
           </p>
           <button
             type="button"
