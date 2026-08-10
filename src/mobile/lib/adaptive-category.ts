@@ -11,7 +11,7 @@ export type AdaptiveCategorySuggestion = {
 
 const STOP_WORDS = new Set([
   'a', 'ao', 'aos', 'as', 'com', 'compra', 'comprado', 'comprei', 'da', 'das', 'de', 'debito', 'do', 'dos',
-  'em', 'gastei', 'gasto', 'no', 'nos', 'na', 'nas', 'pagamento', 'paguei', 'pago', 'por', 'pra', 'para',
+  'em', 'gastei', 'gasto', 'no', 'nos', 'na', 'nas', 'pagamento', 'paguei', 'por', 'pra', 'para',
   'real', 'reais', 'r$', 'cartao', 'credito', 'pix', 'ltda', 'me', 'meu', 'minha', 'foi', 'uma', 'um',
 ]);
 const BROAD_FIRST_TOKENS = new Set(['mercado', 'loja', 'posto', 'shopping', 'pag', 'pay']);
@@ -45,7 +45,9 @@ function similarity(left: string, right: string) {
   const rightTokens = adaptiveMerchantTokens(right);
   if (!leftTokens.length || !rightTokens.length) return 0;
   if (leftTokens[0] !== rightTokens[0]) return 0;
-  if (BROAD_FIRST_TOKENS.has(leftTokens[0]) && leftTokens.length > 1 && rightTokens.length > 1 && leftTokens[1] !== rightTokens[1]) return 0;
+  if (BROAD_FIRST_TOKENS.has(leftTokens[0])) {
+    if (leftTokens.length < 2 || rightTokens.length < 2 || leftTokens[1] !== rightTokens[1]) return 0;
+  }
 
   const leftSet = new Set(leftTokens);
   const rightSet = new Set(rightTokens);
