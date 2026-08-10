@@ -1,0 +1,167 @@
+.mf-pulse__body {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.mf-pulse__hero {
+  padding: 22px;
+  border: 1px solid rgba(0, 242, 255, 0.18);
+  border-radius: 26px;
+  background: radial-gradient(circle at top right, rgba(0, 242, 255, 0.14), transparent 13rem), rgba(0, 242, 255, 0.045);
+}
+
+.mf-pulse__hero[data-tone='warning'] {
+  border-color: rgba(245, 190, 80, 0.24);
+  background: rgba(245, 190, 80, 0.045);
+}
+
+.mf-pulse__hero[data-tone='danger'] {
+  border-color: rgba(248, 113, 113, 0.25);
+  background: rgba(248, 113, 113, 0.045);
+}
+
+.mf-pulse__hero-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.mf-pulse__hero > strong {
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(38px, 12vw, 54px);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.mf-pulse__hero > p,
+.mf-pulse__note {
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.mf-pulse__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mf-pulse__grid > div,
+.mf-pulse__commitment {
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mf-pulse__grid > div {
+  min-width: 0;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.mf-pulse__grid small,
+.mf-pulse__commitment small {
+  display: block;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mf-pulse__grid strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-pulse__commitment {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+}
+
+.mf-pulse__commitment-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(0, 242, 255, 0.08);
+  color: #00f2ff;
+}
+
+.mf-pulse__commitment > div:last-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.mf-pulse__commitment strong,
+.mf-pulse__commitment span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-pulse__commitment strong {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.mf-pulse__commitment span {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.44);
+  font-size: 9px;
+}
+
+.mf-pulse__actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.mf-pulse__actions button {
+  display: flex;
+  min-width: 0;
+  min-height: 70px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.mf-pulse__actions button:first-child {
+  border-color: rgba(0, 242, 255, 0.18);
+  background: #00f2ff;
+  color: #001014;
+}
+
+.mf-pulse__note {
+  text-align: center;
+}
+
+@media (max-width: 359px) {
+  .mf-pulse__grid {
+    grid-template-columns: 1fr;
+  }
+}
