@@ -36,6 +36,7 @@ import { MOBILE_ROUTES } from './routes';
 import { openDesktopExperience } from './useMobileExperience';
 import MobileCanISpend from './pages/MobileCanISpend';
 import MobileInbox from './pages/MobileInbox';
+import MobilePurchaseImpact from './pages/MobilePurchaseImpact';
 import MobileQuickAdd from './pages/MobileQuickAdd';
 import MobileScan from './pages/MobileScan';
 import './mobile.css';
@@ -253,9 +254,13 @@ function TransactionsPage({ data }: { data: MobileData }) {
 }
 
 function CardsPage({ cards }: { cards: CreditCard[] }) {
+  const navigate = useNavigate();
   return (
     <div className="mf-mobile-page">
       <MobileHeader title="Cartões" subtitle="Faturas e limites sem excesso de informação" />
+      <button type="button" className="mf-mobile-secondary-button" onClick={() => navigate(MOBILE_ROUTES.purchaseImpact)} disabled={!cards.length}>
+        <Gauge size={18} /> Simular impacto de uma compra
+      </button>
       <div className="mf-mobile-card-stack">
         {cards.length ? cards.map((card) => {
           const used = Number(card.used || 0);
@@ -392,6 +397,7 @@ export default function MobileApp({ user }: { user: User }) {
     if (path === MOBILE_ROUTES.scan) return 'scan';
     if (path === MOBILE_ROUTES.inbox) return 'inbox';
     if (path === MOBILE_ROUTES.canSpend) return 'canSpend';
+    if (path === MOBILE_ROUTES.purchaseImpact) return 'purchaseImpact';
     if (path.startsWith(MOBILE_ROUTES.cards)) return 'cards';
     if (path.startsWith(MOBILE_ROUTES.transactions)) return 'transactions';
     if (path.startsWith(MOBILE_ROUTES.more)) return 'more';
@@ -408,6 +414,7 @@ export default function MobileApp({ user }: { user: User }) {
     if (data.summary) return <MobileCanISpend summary={data.summary} />;
     return <div className="mf-mobile-loading"><strong>Simulação indisponível</strong><span>Complete suas configurações financeiras para calcular o impacto de uma compra.</span><button type="button" className="mf-mobile-primary-button" onClick={() => navigate(MOBILE_ROUTES.home)}>Voltar para o início</button></div>;
   }
+  if (page === 'purchaseImpact') return <MobilePurchaseImpact cards={data.cards} summary={data.summary} />;
 
   let content: React.ReactNode;
   if (page === 'transactions') content = <TransactionsPage data={data} />;
