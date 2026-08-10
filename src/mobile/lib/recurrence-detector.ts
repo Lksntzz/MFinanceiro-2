@@ -189,7 +189,11 @@ export function detectRecurringExpenses(
     const estimatedAmount = Number(median(amounts).toFixed(2));
     if (!estimatedAmount) continue;
     const medianDeviation = median(amounts.map((amount) => Math.abs(amount - estimatedAmount)));
-    const amountVariation = estimatedAmount > 0 ? medianDeviation / estimatedAmount : 1;
+    const relativeMedianDeviation = medianDeviation / estimatedAmount;
+    const rangeVariation = (Math.max(...amounts) - Math.min(...amounts)) / estimatedAmount;
+    // Median deviation is robust against one odd month, while range catches
+    // genuinely variable utility bills whose values move materially across cycles.
+    const amountVariation = Math.max(relativeMedianDeviation, rangeVariation);
     const amountBehavior = amountVariation <= 0.12 ? 'stable' : 'variable';
 
     const name = representativeName(representatives);
