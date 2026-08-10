@@ -36,7 +36,7 @@ function normalizeText(value: string) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('pt-BR')
-    .replace(/\b(?:pix|ted|doc|debito|deb|credito|cred|compra|pagamento|pgto|pgt|transacao|transacao)\b/g, ' ')
+    .replace(/\b(?:pix|ted|doc|debito|deb|credito|cred|compra|pagamento|pgto|pgt|transacao)\b/g, ' ')
     .replace(/\b\d{2,}\b/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -112,7 +112,7 @@ function isAlreadyTracked(name: string, existing: ExistingRecurrence[]) {
   });
 }
 
-function groupRepresentativeRows(rows: RecurrenceHistoryItem[]) {
+function monthlyBuckets(rows: RecurrenceHistoryItem[]) {
   const byMonth = new Map<number, RecurrenceHistoryItem[]>();
   for (const row of rows) {
     const month = monthIndex(row.date);
@@ -121,7 +121,11 @@ function groupRepresentativeRows(rows: RecurrenceHistoryItem[]) {
     bucket.push(row);
     byMonth.set(month, bucket);
   }
+  return byMonth;
+}
 
+function groupRepresentativeRows(rows: RecurrenceHistoryItem[]) {
+  const byMonth = monthlyBuckets(rows);
   const representatives: RecurrenceHistoryItem[] = [];
   for (const bucket of byMonth.values()) {
     const sorted = [...bucket].sort((a, b) => a.date.localeCompare(b.date));
@@ -153,8 +157,17 @@ export function detectRecurringExpenses(
   const suggestions: RecurrenceSuggestion[] = [];
 
   for (const [key, rows] of groups.entries()) {
+    const byMonth = monthlyBuckets(rows);
     const representatives = groupRepresentativeRows(rows);
     if (representatives.length < 3) continue;
+
+    // A monthly bill should happen approximately once per cycle. This blocks
+    // merchants such as supermarkets, fuel stations and mobility apps that can
+    // appear every month but are used many times within the same month.
+    const monthCounts = [...byMonth.values()].map((bucket) => bucket.length);
+    const averagePerActiveMonth = rows.length / Math.max(1, representatives.length);
+    const repeatedMonthRatio = monthCounts.filter((count) => count > 1).length / Math.max(1, monthCounts.length);
+    if (averagePerActiveMonth > 1.6 || repeatedMonthRatio > 0.5) continue;
 
     const months = representatives.map((row) => monthIndex(row.date)).filter((value): value is number => value != null);
     const firstMonth = Math.min(...months);
