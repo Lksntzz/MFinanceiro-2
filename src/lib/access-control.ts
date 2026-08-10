@@ -50,20 +50,19 @@ export async function resolveAuthState(email: string): Promise<ResolvedAuthState
   return state;
 }
 
+/**
+ * Compatibility helper for older callers. Status resolution is deliberately
+ * centralized in resolve-auth-state so the browser never calls the privileged
+ * access-request lookup RPC directly.
+ */
 export async function fetchAccessStatus(email: string): Promise<AccessRequestStatus> {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) return "none";
 
   try {
-    const { data, error } = await supabase.rpc("check_access_request_status", {
-      p_email: normalizedEmail,
-    });
-
-    if (error) throw error;
-    const row = Array.isArray(data) ? data[0] : data;
-    return normalizeStatus(row?.status);
-  } catch (err) {
-    console.error("Error fetching access status:", err);
+    const state = await resolveAuthState(normalizedEmail);
+    return normalizeStatus(state);
+  } catch {
     return "none";
   }
 }
