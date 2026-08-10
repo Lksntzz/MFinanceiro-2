@@ -5,7 +5,13 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import type { FinancialAccount, TransactionCategory } from '../../types';
 import { MOBILE_ROUTES } from '../routes';
-import { getMobileSharedPayload, removeMobileSharedPayload, sharedFileToFile, type MobileSharedPayload } from '../lib/mobile-share-store';
+import {
+  getMobileSharedPayload,
+  keepOnlyUnreviewedSharedFiles,
+  removeMobileSharedPayload,
+  sharedFileToFile,
+  type MobileSharedPayload,
+} from '../lib/mobile-share-store';
 import MobileScan from './MobileScan';
 import './mobile-share.css';
 
@@ -81,6 +87,17 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
 
   const selectedFile = payload?.files[selectedFileIndex] ? sharedFileToFile(payload.files[selectedFileIndex]) : null;
 
+  async function cancelShare() {
+    if (shareId) {
+      try {
+        await removeMobileSharedPayload(shareId);
+      } catch (cleanupError) {
+        console.warn('MF Share could not clear the local payload on cancel:', cleanupError);
+      }
+    }
+    navigate(MOBILE_ROUTES.home);
+  }
+
   if (loading) {
     return <div className="mf-mobile-share-state"><Loader2 className="animate-spin" size={30} /><strong>Recebendo no MF</strong><span>Preparando o conteúdo compartilhado com segurança.</span></div>;
   }
@@ -113,7 +130,7 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
           ))}
         </div>
         <button type="button" className="mf-mobile-primary-button" onClick={() => setFileConfirmed(true)}>Revisar selecionado</button>
-        <button type="button" className="mf-mobile-secondary-button" onClick={() => navigate(MOBILE_ROUTES.home)}>Cancelar</button>
+        <button type="button" className="mf-mobile-secondary-button" onClick={() => void cancelShare()}>Cancelar</button>
       </div>
     );
   }
@@ -124,7 +141,19 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
       accounts={accounts}
       categories={categories}
       onSaved={async () => {
-        if (shareId) await removeMobileSharedPayload(shareId);
+        if (!shareId || !payload) return;
+
+        if (selectedFile) {
+          const nextPayload = await keepOnlyUnreviewedSharedFiles(payload, selectedFileIndex);
+          if (nextPayload) {
+            setPayload(nextPayload);
+            setSelectedFileIndex(0);
+            setFileConfirmed(false);
+          }
+          return;
+        }
+
+        await removeMobileSharedPayload(shareId);
       }}
       initialFile={selectedFile}
       initialText={selectedFile ? '' : sharedText}
