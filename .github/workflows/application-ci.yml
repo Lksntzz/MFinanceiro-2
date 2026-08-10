@@ -39,6 +39,9 @@ jobs:
       - name: Security policy checks
         run: npm run security:check
 
+      - name: Product maturity checks
+        run: npm run product:check
+
       - name: TypeScript check
         run: npm run lint
 
