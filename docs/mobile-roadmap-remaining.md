@@ -52,7 +52,9 @@ Implementar em sequência. Um item só muda para concluído depois de código e 
    - bridge nativo reutiliza as rotas existentes do MF;
    - custom scheme `mfinanceiro://` configurado em iOS e Android;
    - Android tem atalhos nativos para Quick, Scan e Pulse;
+   - Android tem bloco `MF Quick` nas Configurações Rápidas, com desbloqueio obrigatório quando o aparelho estiver protegido;
    - Android recebe PDF/imagem/texto pelo Share Sheet, copia o arquivo em cache privado e encaminha para a mesma fila `Compartilhar para o MF`/MF Scan com revisão humana;
+   - Android é sincronizado e compilado por Gradle no CI com Java 21 e gera APK debug de QA como artefato temporário;
    - iOS tem Home Screen quick actions reais para Quick, Scan e Pulse, incluindo cold launch;
    - template iOS de App Intents/App Shortcuts preparado para Siri/Action Button, mas não ativado sem Universal Links reais;
    - documentação preparada para WidgetKit, Share Extension, Universal Links e Android App Links;
@@ -60,13 +62,25 @@ Implementar em sequência. Um item só muda para concluído depois de código e 
 
 ## Validação automatizada
 
-A branch mantém o `Mobile CI` read-only com:
+A branch mantém o `Mobile CI` read-only com dois gates:
+
+### Core web/mobile
 
 1. `npm ci`;
 2. audit de dependências de produção;
 3. `npm run mobile:check`;
 4. TypeScript;
-5. build Vite de produção.
+5. build Vite de produção;
+6. parse/validação de `ios/App/App/Info.plist`.
+
+### Android nativo
+
+1. Node 24 + Java 21;
+2. `npm ci`;
+3. build dos assets web;
+4. `npx cap sync android`;
+5. `./gradlew :app:assembleDebug --no-daemon`;
+6. upload de `app-debug.apk` como `mf-financeiro-android-debug` com retenção de 7 dias.
 
 `mobile:check` cobre:
 
@@ -76,6 +90,7 @@ A branch mantém o `Mobile CI` read-only com:
 - rejeição de links externos não pertencentes ao MF;
 - Share Target Android e limite/tipos de arquivo;
 - registro do plugin nativo Android e reaproveitamento da fila de revisão;
+- bloco MF Quick das Configurações Rápidas e proteção da tela bloqueada;
 - quick actions iOS para app ativo e cold launch.
 
 ## Itens já em produção antes desta branch
@@ -84,7 +99,7 @@ Home mobile, Movimentos, Cartões, Mais, MF Quick, MF Scan base, MF Inbox de ext
 
 ## Estado desta branch
 
-Os itens 1–5 estão implementados. No item 6, o núcleo nativo que não depende de identidade de loja também está implementado: shells Capacitor, links, atalhos, Share Android e contratos de integração.
+Os itens 1–5 estão implementados. No item 6, o núcleo nativo que não depende de identidade de loja também está implementado e compilado no Android: shells Capacitor, links, atalhos, Share Android, Quick Settings e contratos de integração.
 
 O que permanece externo é justamente o que exige identidade/entitlements assinados: App Intents com Universal Links verificados, WidgetKit/Control Center, Share Extension iOS via App Group, App Links verificados, assinatura e publicação nas lojas. Nenhuma versão nativa deve ser considerada publicada antes de QA em aparelho físico.
 
