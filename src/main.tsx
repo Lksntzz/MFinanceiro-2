@@ -15,6 +15,8 @@ import './index.css';
 import './layout-tuning.css';
 import './navigation.css';
 import './stage6.css';
+import './product-maturity.css';
+import './product-maturity-additions.css';
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 let versionReloadStarted = false;

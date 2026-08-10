@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
 import { Activity, AlertCircle, CreditCard as CreditCardIcon, History as HistoryIcon, PieChart as PieChartIcon, TrendingUp } from 'lucide-react';
-import { Line } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables } from 'chart.js';
 import { addDays, format, isAfter, startOfDay, startOfMonth, startOfWeek, subDays } from 'date-fns';
 
 import { formatCurrency } from '../lib/formatters';
+import type { DataQualityIssue } from '../lib/financial-quality';
+import type { HomeWidgetId } from '../lib/user-preferences';
 import type { CreditCard, FinanceSummary, Transaction, UserSettings } from '../types';
+import DataQualityPanel from './DataQualityPanel';
 
-ChartJS.register(...registerables);
+const DashboardCharts = lazy(() => import('./DashboardCharts'));
 
 function parseTransactionDate(rawDate: string): Date | null {
   const value = String(rawDate || '').trim();
@@ -22,6 +23,8 @@ function transactionDay(rawDate: string): string {
   return parsed ? format(parsed, 'yyyy-MM-dd') : '';
 }
 
+const DEFAULT_WIDGETS: HomeWidgetId[] = ['status', 'alerts', 'quality', 'balance_chart', 'rhythm_chart', 'categories', 'recent', 'cards'];
+
 export default function DashboardHome({
   transactions,
   recentTransactions,
@@ -30,6 +33,8 @@ export default function DashboardHome({
   cards,
   balance,
   isPrivate,
+  visibleWidgets = DEFAULT_WIDGETS,
+  qualityIssues = [],
 }: {
   transactions: Transaction[];
   recentTransactions: Transaction[];
@@ -38,8 +43,11 @@ export default function DashboardHome({
   cards: CreditCard[];
   balance: number;
   isPrivate: boolean;
+  visibleWidgets?: HomeWidgetId[];
+  qualityIssues?: DataQualityIssue[];
 }) {
   const [rhythmFilter, setRhythmFilter] = useState<'day' | 'week' | 'month'>('day');
+  const show = (id: HomeWidgetId) => visibleWidgets.includes(id);
   const dailyLimit = Number(summary?.dailyLimit || 0);
   const todaySpent = Number(summary?.todaySpent || 0);
 
@@ -131,29 +139,31 @@ export default function DashboardHome({
 
   return (
     <main className="mf-dashboard-grid">
-      <section className="mf-kpi-grid">
+      {show('status') && <section className="mf-kpi-grid">
         <article className={`mf-card mf-kpi ${balance < 0 ? 'danger' : ''}`}><span>Saldo atual</span><strong>{formatCurrency(balance, isPrivate)}</strong></article>
         <article className="mf-card mf-kpi accent"><span>Limite diário</span><strong>{formatCurrency(dailyLimit, isPrivate)}</strong></article>
         <article className="mf-card mf-kpi"><span>Ciclo atual</span><strong>{summary?.cyclePeriodLabel || '--'} <small>({summary?.daysRemaining || 0}d)</small></strong></article>
         <article className="mf-card mf-kpi"><span>Gasto hoje</span><strong className={todaySpent > dailyLimit && dailyLimit > 0 ? 'negative' : ''}>{formatCurrency(todaySpent, isPrivate)}</strong></article>
-      </section>
+      </section>}
 
-      <section className="mf-alert-grid">
+      {show('alerts') && <section className="mf-alert-grid">
         <article className={`mf-card mf-alert ${balance < 0 ? 'danger' : ''}`}><AlertCircle size={18} /><div><strong>Status do ciclo</strong><p>{summary?.smartAlert?.message || 'Acompanhe seu saldo e seus compromissos.'}</p></div></article>
         <article className="mf-card mf-alert insight"><TrendingUp size={18} /><div><strong>Leitura financeira</strong><p>{summary?.dailyInsight || summary?.insights?.[0] || 'Mantenha seus registros atualizados para melhorar as recomendações.'}</p></div></article>
-      </section>
+      </section>}
 
-      <article className="mf-card mf-chart-card"><h3><Activity size={16} />Evolução do saldo</h3><div className="mf-chart"><Line data={balanceChart} options={chartOptions} /></div></article>
-      <article className="mf-card mf-chart-card">
+      {show('quality') && <DataQualityPanel issues={qualityIssues} compact />}
+
+      {show('balance_chart') && <article className="mf-card mf-chart-card"><h3><Activity size={16} />Evolução do saldo</h3><div className="mf-chart"><Suspense fallback={<div className="mf-loading">Carregando gráfico…</div>}><DashboardCharts data={balanceChart} options={chartOptions} /></Suspense></div></article>}
+      {show('rhythm_chart') && <article className="mf-card mf-chart-card">
         <div className="mf-chart-heading"><h3><HistoryIcon size={16} />Ritmo de gastos</h3><div className="mf-segmented">{(['day', 'week', 'month'] as const).map((filter) => <button key={filter} className={rhythmFilter === filter ? 'active' : ''} onClick={() => setRhythmFilter(filter)}>{filter === 'day' ? 'Dia' : filter === 'week' ? 'Semana' : 'Mês'}</button>)}</div></div>
-        <div className="mf-chart"><Line data={rhythmChart} options={chartOptions} /></div>
-      </article>
+        <div className="mf-chart"><Suspense fallback={<div className="mf-loading">Carregando gráfico…</div>}><DashboardCharts data={rhythmChart} options={chartOptions} /></Suspense></div>
+      </article>}
 
-      <section className="mf-bottom-grid">
-        <article className="mf-card mf-mini-card"><h3><PieChartIcon size={16} />Categorias principais</h3><div className="mf-category-list">{topCategories.length ? topCategories.map((category) => <div key={category.name} className="mf-category-item"><div><span>{category.name}</span><strong>R$ {category.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div><div className="mf-progress"><i style={{ width: `${category.percentage}%` }} /></div></div>) : <p className="mf-empty">Sem despesas cadastradas.</p>}</div></article>
-        <article className="mf-card mf-mini-card"><h3><HistoryIcon size={16} />Últimos lançamentos</h3><div className="mf-latest-list">{recentTransactions.length ? recentTransactions.slice(0, 4).map((transaction) => <div key={transaction.id}><span><strong>{transaction.description || transaction.category}</strong><small>{format(new Date(transaction.date), 'dd/MM/yyyy')}</small></span><b className={transaction.type === 'income' ? 'positive' : 'negative'}>{transaction.type === 'income' ? '+' : '-'} R$ {Math.abs(Number(transaction.amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b></div>) : <p className="mf-empty">Nenhum lançamento.</p>}</div></article>
-        <article className="mf-card mf-mini-card mf-card-usage"><h3><CreditCardIcon size={16} />Uso de cartões</h3><div className="mf-usage-row"><span>Utilizado</span><strong>R$ {cardUsed.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div><div className="mf-progress large"><i style={{ width: `${cardUsage}%` }} /></div><div className="mf-usage-footer"><span>Restante disponível</span><strong>R$ {cardAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div></article>
-      </section>
+      {(show('categories') || show('recent') || show('cards')) && <section className="mf-bottom-grid">
+        {show('categories') && <article className="mf-card mf-mini-card"><h3><PieChartIcon size={16} />Categorias principais</h3><div className="mf-category-list">{topCategories.length ? topCategories.map((category) => <div key={category.name} className="mf-category-item"><div><span>{category.name}</span><strong>{formatCurrency(category.amount, isPrivate)}</strong></div><div className="mf-progress"><i style={{ width: `${category.percentage}%` }} /></div></div>) : <p className="mf-empty">Sem despesas cadastradas.</p>}</div></article>}
+        {show('recent') && <article className="mf-card mf-mini-card"><h3><HistoryIcon size={16} />Últimos lançamentos</h3><div className="mf-latest-list">{recentTransactions.length ? recentTransactions.slice(0, 4).map((transaction) => <div key={transaction.id}><span><strong>{transaction.description || transaction.category}</strong><small>{format(new Date(transaction.date), 'dd/MM/yyyy')}</small></span><b className={transaction.type === 'income' ? 'positive' : 'negative'}>{transaction.type === 'income' ? '+' : '-'} {formatCurrency(Math.abs(Number(transaction.amount) || 0), isPrivate)}</b></div>) : <p className="mf-empty">Nenhum lançamento.</p>}</div></article>}
+        {show('cards') && <article className="mf-card mf-mini-card mf-card-usage"><h3><CreditCardIcon size={16} />Uso de cartões</h3><div className="mf-usage-row"><span>Utilizado</span><strong>{formatCurrency(cardUsed, isPrivate)}</strong></div><div className="mf-progress large"><i style={{ width: `${cardUsage}%` }} /></div><div className="mf-usage-footer"><span>Restante disponível</span><strong>{formatCurrency(cardAvailable, isPrivate)}</strong></div></article>}
+      </section>}
     </main>
   );
 }

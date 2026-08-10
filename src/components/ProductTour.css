@@ -49,10 +49,19 @@
 .mf-tour-copy { margin: 9px 0 18px; color: rgba(255,255,255,.58); font-size: 12px; line-height: 1.6; }
 .mf-tour-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mf-tour-actions > div { display: flex; gap: 7px; }
-.mf-tour-actions button { min-height: 34px; padding: 0 12px; border-radius: 10px; font-size: 10.5px; font-weight: 850; transition: transform .16s ease, background-color .16s ease, border-color .16s ease; }
-.mf-tour-actions button:hover { transform: translateY(-1px); }
+.mf-tour-actions button,
+.mf-tour-skip-options button { min-height: 34px; padding: 0 12px; border-radius: 10px; font-size: 10.5px; font-weight: 850; transition: transform .16s ease, background-color .16s ease, border-color .16s ease; }
+.mf-tour-actions button:hover,
+.mf-tour-skip-options button:hover { transform: translateY(-1px); }
 .mf-tour-skip, .mf-tour-back { border: 1px solid rgba(255,255,255,.1); color: rgba(255,255,255,.55); background: rgba(255,255,255,.035); }
 .mf-tour-next { border: 1px solid #00e8f4; color: #031012; background: #00e8f4; }
+
+.mf-tour-skip-confirm { min-height: 184px; }
+.mf-tour-skip-options { display: grid; gap: 8px; }
+.mf-tour-skip-options button { width: 100%; text-align: center; }
+.mf-tour-skip-tool { border: 1px solid rgba(255,255,255,.14); color: rgba(255,255,255,.82); background: rgba(255,255,255,.055); }
+.mf-tour-skip-all { border: 1px solid rgba(168,85,247,.34); color: #e9d5ff; background: rgba(126,34,206,.16); }
+.mf-tour-continue { border: 1px solid #00e8f4; color: #031012; background: #00e8f4; }
 
 /* Microinterações globais: discretas, sem animar valores financeiros continuamente. */
 .mf-routed-app .mf-content > *,
@@ -81,11 +90,12 @@
   .mf-tour-card h2 { font-size: 17px; }
   .mf-tour-copy { font-size: 11.5px; }
   .mf-tour-actions { align-items: stretch; }
-  .mf-tour-actions button { min-height: 36px; }
+  .mf-tour-actions button,
+  .mf-tour-skip-options button { min-height: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mf-tour-shade, .mf-tour-spotlight, .mf-tour-progress span, .mf-tour-actions button,
+  .mf-tour-shade, .mf-tour-spotlight, .mf-tour-progress span, .mf-tour-actions button, .mf-tour-skip-options button,
   .mf-routed-app .mf-content .mf-card, .mf-routed-app .mf-side-launch, .mf-routed-app .mf-top-actions .primary { transition: none; }
   .mf-tour-spotlight, .mf-tour-card, .mf-routed-app .mf-content > *, .mf-routed-app .mf-dashboard-grid > *,
   .mf-routed-app .mf-progress > i, .mf-routed-app .mf-side-brand-mark, .mf-routed-app .mf-brand-icon { animation: none; }
