@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "mobile:check": "tsx scripts/mobile-logic-check.ts",
+    "mobile:check": "tsx scripts/mobile-logic-check.ts && tsx scripts/native-shell-check.ts",
     "native:sync": "npm run build && cap sync",
     "native:open:ios": "cap open ios",
     "native:open:android": "cap open android"
@@ -25,7 +25,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.7",
+    "jspdf-autotable": "^4.0.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "papaparse": "^5.5.3",
