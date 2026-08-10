@@ -28,7 +28,9 @@ function sanitizeContext(input: Record<string, unknown> | undefined) {
   for (const [rawKey, rawValue] of Object.entries(input || {})) {
     const key = cleanToken(rawKey, 48);
     if (!key || BLOCKED_KEYS.test(key)) continue;
-    if (rawValue === null || typeof rawValue === 'boolean' || typeof rawValue === 'number') {
+    if (rawValue === null) {
+      output[key] = null;
+    } else if (typeof rawValue === 'boolean' || typeof rawValue === 'number') {
       output[key] = rawValue;
     } else if (typeof rawValue === 'string') {
       output[key] = rawValue.slice(0, 160);
