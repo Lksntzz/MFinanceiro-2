@@ -1,17 +1,7 @@
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-import { MOBILE_ROUTES } from '../routes';
-
-export const NATIVE_SHARE_CAPTURE_EVENT = 'mf:native-share-capture';
-
-export type NativeShareCapture = {
-  id: string;
-  title: string;
-  text: string;
-  file: File | null;
-  error: string;
-};
+import { saveMobileSharedPayload, type MobileSharedFile } from '../lib/mobile-share-store';
 
 type NativeSharePayload = {
   pending: boolean;
@@ -33,19 +23,18 @@ type NativeShareReceiverPlugin = {
 
 const NativeShareReceiver = registerPlugin<NativeShareReceiverPlugin>('NativeShareReceiver');
 
-let pendingCapture: NativeShareCapture | null = null;
 let bridgeInstalled = false;
 let processingShare = false;
 let lastHandledId = '';
 
-function navigateToScan() {
+function navigateToShareRoute(path: string) {
   const current = `${window.location.pathname}${window.location.search}`;
-  if (current === MOBILE_ROUTES.scan) return;
-  window.history.pushState({}, '', MOBILE_ROUTES.scan);
+  if (current === path) return;
+  window.history.pushState({}, '', path);
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
-async function fileFromNativeUri(payload: NativeSharePayload) {
+async function sharedFileFromNativeUri(payload: NativeSharePayload): Promise<MobileSharedFile | null> {
   const fileUri = String(payload.fileUri || '').trim();
   if (!fileUri) return null;
 
@@ -56,16 +45,25 @@ async function fileFromNativeUri(payload: NativeSharePayload) {
   const blob = await response.blob();
   const name = String(payload.fileName || '').trim() || 'documento-compartilhado';
   const type = String(payload.mimeType || '').trim() || blob.type || 'application/octet-stream';
-  return new File([blob], name, {
+  return {
+    name,
     type,
+    size: blob.size,
     lastModified: Number(payload.createdAt || Date.now()),
-  });
+    blob,
+  };
 }
 
-function publishCapture(capture: NativeShareCapture) {
-  pendingCapture = capture;
-  navigateToScan();
-  window.dispatchEvent(new CustomEvent<NativeShareCapture>(NATIVE_SHARE_CAPTURE_EVENT, { detail: capture }));
+function nativeErrorRoute(message: string) {
+  return message.includes('20 MB') ? '/share?error=too-large' : '/share?error=native';
+}
+
+async function clearNativePayload() {
+  try {
+    await NativeShareReceiver.clearPendingShare();
+  } catch (clearError) {
+    console.warn('MF native share cleanup could not be completed:', clearError);
+  }
 }
 
 async function checkPendingNativeShare() {
@@ -77,47 +75,42 @@ async function checkPendingNativeShare() {
     const id = String(payload.id || '').trim();
     if (!payload.pending || !id || id === lastHandledId) return;
 
-    let file: File | null = null;
-    let error = String(payload.error || '').trim();
-    if (!error && payload.fileUri) {
-      try {
-        file = await fileFromNativeUri(payload);
-      } catch (fileError: any) {
-        error = fileError?.message || 'Não foi possível abrir o arquivo compartilhado.';
-      }
+    const nativeError = String(payload.error || '').trim();
+    if (nativeError) {
+      lastHandledId = id;
+      await clearNativePayload();
+      navigateToShareRoute(nativeErrorRoute(nativeError));
+      return;
     }
 
-    const capture: NativeShareCapture = {
+    const file = await sharedFileFromNativeUri(payload);
+    const title = String(payload.title || '').trim();
+    const text = String(payload.text || '').trim();
+    if (!file && !title && !text) {
+      lastHandledId = id;
+      await clearNativePayload();
+      navigateToShareRoute('/share?error=no-content');
+      return;
+    }
+
+    await saveMobileSharedPayload({
       id,
-      title: String(payload.title || '').trim(),
-      text: String(payload.text || '').trim(),
-      file,
-      error,
-    };
+      createdAt: Number(payload.createdAt || Date.now()),
+      title,
+      text,
+      url: '',
+      files: file ? [file] : [],
+    });
 
     lastHandledId = id;
-    try {
-      await NativeShareReceiver.clearPendingShare();
-    } catch (clearError) {
-      console.warn('MF native share cleanup could not be completed:', clearError);
-    }
-
-    publishCapture(capture);
+    await clearNativePayload();
+    navigateToShareRoute(`/share?id=${encodeURIComponent(id)}`);
   } catch (shareError) {
+    // Keep the native payload when hydration/storage fails so a later resume can retry it.
     console.warn('MF native share could not be resolved:', shareError);
   } finally {
     processingShare = false;
   }
-}
-
-export function getPendingNativeShareCapture() {
-  return pendingCapture;
-}
-
-export function clearPendingNativeShareCapture(id?: string) {
-  if (!pendingCapture) return;
-  if (id && pendingCapture.id !== id) return;
-  pendingCapture = null;
 }
 
 export async function installNativeShareBridge() {
