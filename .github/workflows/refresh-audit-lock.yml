@@ -30,6 +30,7 @@ jobs:
         run: npm ci
 
       - name: Apply non-breaking audit fixes to lockfile
+        continue-on-error: true
         run: npm audit fix --package-lock-only --ignore-scripts
 
       - name: Commit lockfile if changed
