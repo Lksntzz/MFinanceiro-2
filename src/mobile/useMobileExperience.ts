@@ -18,7 +18,7 @@ function shouldForceDesktop() {
   return window.sessionStorage.getItem(DESKTOP_OVERRIDE_KEY) === '1';
 }
 
-function computeMobileExperience() {
+export function isCurrentMobileExperience() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
   if (DIRECT_MOBILE_PATHS.has(path)) return true;
   if (shouldForceDesktop()) return false;
@@ -32,12 +32,12 @@ function computeMobileExperience() {
 }
 
 export function useMobileExperience() {
-  const [mobile, setMobile] = useState(computeMobileExperience);
+  const [mobile, setMobile] = useState(isCurrentMobileExperience);
 
   useEffect(() => {
     const media = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`);
     const pointer = window.matchMedia('(pointer: coarse)');
-    const refresh = () => setMobile(computeMobileExperience());
+    const refresh = () => setMobile(isCurrentMobileExperience());
 
     media.addEventListener('change', refresh);
     pointer.addEventListener('change', refresh);
