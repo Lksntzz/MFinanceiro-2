@@ -1,6 +1,7 @@
 // Bank format adapters are pure parsing compatibility layers.
 import './lib/unified-transaction-launcher-mount';
 import './lib/mega-update-announcement-mount';
+import './lib/web-product-orchestrator-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
@@ -12,6 +13,7 @@ import './layout-tuning.css';
 import './navigation.css';
 import './stage6.css';
 import './web-product-refinements.css';
+import './web-product-guidance.css';
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 let versionReloadStarted = false;
