@@ -31,6 +31,18 @@ type CalendarProps = {
   installments?: any[];
 };
 
+type LinkedCalendarContext = {
+  subscriptions: any[];
+  cards: any[];
+  installments: any[];
+};
+
+const EMPTY_LINKED_CONTEXT: LinkedCalendarContext = {
+  subscriptions: [],
+  cards: [],
+  installments: [],
+};
+
 function monthKey(date: Date) {
   return format(startOfMonth(date), 'yyyy-MM-01');
 }
@@ -43,17 +55,19 @@ function safeRecurringDay(raw: unknown, reference: Date) {
 export default function FinancialCalendar({
   fixedBills = [],
   settings,
-  subscriptions = [],
-  cards = [],
-  installments = [],
+  subscriptions,
+  cards,
+  installments,
 }: CalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [occurrences, setOccurrences] = useState<BillOccurrence[]>([]);
   const [occurrencesLoaded, setOccurrencesLoaded] = useState(false);
+  const [linkedContext, setLinkedContext] = useState<LinkedCalendarContext>(EMPTY_LINKED_CONTEXT);
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const userId = String(settings?.user_id || '');
+  const needsLinkedContext = subscriptions === undefined || cards === undefined || installments === undefined;
 
   useEffect(() => {
     let active = true;
@@ -106,7 +120,79 @@ export default function FinancialCalendar({
     };
   }, [userId, currentDate.getFullYear(), currentDate.getMonth()]);
 
-  const annualSubscriptionsWithoutMonth = subscriptions.filter((item) =>
+  useEffect(() => {
+    let active = true;
+    if (!userId || !needsLinkedContext) {
+      setLinkedContext(EMPTY_LINKED_CONTEXT);
+      return () => { active = false; };
+    }
+
+    async function loadLinkedContext() {
+      const [subscriptionsResult, cardsResult, installmentsResult] = await Promise.all([
+        supabase
+          .from('mf_subscriptions')
+          .select('id,name,amount,due_day,billing_cycle,status')
+          .eq('user_id', userId)
+          .order('due_day'),
+        supabase
+          .from('mf_credit_cards')
+          .select('id,name,used,due_day')
+          .eq('user_id', userId)
+          .order('due_day'),
+        supabase
+          .from('mf_card_installments')
+          .select('id,card_id,description,monthly_amount,current_installment,total_installments,due_day')
+          .eq('user_id', userId)
+          .order('due_day'),
+      ]);
+
+      if (!active) return;
+      const firstError = subscriptionsResult.error || cardsResult.error || installmentsResult.error;
+      if (firstError) {
+        console.warn('Não foi possível completar a agenda integrada:', firstError);
+        return;
+      }
+
+      setLinkedContext({
+        subscriptions: (subscriptionsResult.data || []).map((item: any) => ({
+          ...item,
+          amount: Number(item.amount || 0),
+          due_day: Number(item.due_day || 1),
+        })),
+        cards: (cardsResult.data || []).map((item: any) => ({
+          ...item,
+          used: Number(item.used || 0),
+          due_day: Number(item.due_day || 1),
+        })),
+        installments: (installmentsResult.data || []).map((item: any) => ({
+          ...item,
+          monthly_amount: Number(item.monthly_amount || 0),
+          current_installment: Number(item.current_installment || 1),
+          total_installments: Number(item.total_installments || 1),
+          due_day: Number(item.due_day || 1),
+        })),
+      });
+    }
+
+    void loadLinkedContext();
+    const channel = supabase
+      .channel(`financial-calendar-linked-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_subscriptions', filter: `user_id=eq.${userId}` }, () => void loadLinkedContext())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_credit_cards', filter: `user_id=eq.${userId}` }, () => void loadLinkedContext())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mf_card_installments', filter: `user_id=eq.${userId}` }, () => void loadLinkedContext())
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [needsLinkedContext, userId]);
+
+  const calendarSubscriptions = subscriptions ?? linkedContext.subscriptions;
+  const calendarCards = cards ?? linkedContext.cards;
+  const calendarInstallments = installments ?? linkedContext.installments;
+
+  const annualSubscriptionsWithoutMonth = calendarSubscriptions.filter((item) =>
     !['inactive', 'cancelled', 'canceled'].includes(String(item.status || '').toLowerCase())
     && String(item.billing_cycle || '').toLowerCase().includes('year'),
   ).length;
@@ -139,7 +225,7 @@ export default function FinancialCalendar({
 
     const list: CalendarEvent[] = [...billEvents];
 
-    subscriptions
+    calendarSubscriptions
       .filter((item) => !['inactive', 'cancelled', 'canceled'].includes(String(item.status || '').toLowerCase()))
       .filter((item) => !String(item.billing_cycle || '').toLowerCase().includes('year'))
       .forEach((item) => {
@@ -153,7 +239,7 @@ export default function FinancialCalendar({
         });
       });
 
-    cards
+    calendarCards
       .filter((card) => Number(card.used || 0) > 0)
       .forEach((card) => {
         list.push({
@@ -166,8 +252,8 @@ export default function FinancialCalendar({
         });
       });
 
-    const cardIds = new Set(cards.map((card) => String(card.id)));
-    installments
+    const cardIds = new Set(calendarCards.map((card) => String(card.id)));
+    calendarInstallments
       .filter((item) => Number(item.current_installment || 1) <= Number(item.total_installments || 1))
       .forEach((item) => {
         const includedInCardBill = Boolean(item.card_id) && cardIds.has(String(item.card_id));
@@ -211,7 +297,7 @@ export default function FinancialCalendar({
     }
 
     return list.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name));
-  }, [fixedBills, settings, occurrences, occurrencesLoaded, currentDate, subscriptions, cards, installments]);
+  }, [fixedBills, settings, occurrences, occurrencesLoaded, currentDate, calendarSubscriptions, calendarCards, calendarInstallments]);
 
   const summary = useMemo(() => {
     const pendingExpenses = events.filter((event) => event.type === 'expense' && event.status !== 'paid' && event.affectsSummary !== false);
@@ -268,7 +354,7 @@ export default function FinancialCalendar({
         <Summary icon={DollarSign} label="Fluxo previsto do mês" value={money(summary.balance)} tone={summary.balance >= 0 ? 'brand' : 'negative'} />
       </section>
 
-      {(annualSubscriptionsWithoutMonth > 0 || installments.some((item) => item.card_id)) && (
+      {(annualSubscriptionsWithoutMonth > 0 || calendarInstallments.some((item) => item.card_id)) && (
         <p className="shrink-0 text-[9px] leading-relaxed text-white/30">
           Parcelas vinculadas a cartões aparecem como referência, mas não são somadas novamente à fatura. {annualSubscriptionsWithoutMonth > 0 ? `${annualSubscriptionsWithoutMonth} assinatura(s) anual(is) não entram no calendário porque o mês da renovação ainda não é armazenado.` : ''}
         </p>
