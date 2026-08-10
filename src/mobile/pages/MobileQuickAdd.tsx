@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Loader2, ScanLine } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Mic, ScanLine } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
 import type { FinancialAccount, TransactionCategory } from '../../types';
 import { MOBILE_ROUTES } from '../routes';
+import './mobile-voice.css';
 
 type EntryType = 'expense' | 'income';
 
@@ -109,6 +110,11 @@ export default function MobileQuickAdd({ userId, accounts, categories, onSaved }
       </header>
 
       <form className="mf-mobile-quick-form" onSubmit={saveEntry}>
+        <button type="button" className="mf-mobile-voice-quick-entry" onClick={() => navigate(MOBILE_ROUTES.voice)}>
+          <span><Mic size={21} /></span>
+          <div><strong>Falar lançamento</strong><small>Ex.: “Gastei 48 reais de gasolina”</small></div>
+        </button>
+
         <div className="mf-mobile-segmented" role="group" aria-label="Tipo do lançamento">
           <button type="button" data-active={type === 'expense'} onClick={() => { setType('expense'); setCategoryId(''); }}>Despesa</button>
           <button type="button" data-active={type === 'income'} onClick={() => { setType('income'); setCategoryId(''); }}>Receita</button>
