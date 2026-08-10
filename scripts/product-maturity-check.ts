@@ -18,7 +18,11 @@ function expectNotContains(path: string, fragments: string[]) {
   });
 }
 
-expectContains('src/components/ProductTour.tsx', ['getTourScopeId', 'mf-tour:all-skipped:', 'Pular nesta ferramenta', 'Pular tudo']);
+expectContains('src/components/ProductTour.tsx', ['getTourScopeId', 'mf-tour:all-skipped:', 'Pular nesta ferramenta', 'Pular tudo', "tourScopeId === 'home'", 'loadUserPreferences', 'shouldAutoStart = false']);
+expectNotContains('src/components/ProductTour.tsx', ['shouldAutoStart = !globalSkipped && !resolved']);
+expectContains('src/components/PlanningJourney.tsx', ['Progresso do planejamento', 'Conta', 'Receita', 'Compromissos', 'Orçamento', 'Abrir Simulador', '/app/analises/insights']);
+expectContains('src/components/PlanningTool.tsx', ['<PlanningJourney', 'hasPlanningAccount', 'hasPlanningIncome', 'hasPlanningCommitments', 'hasPlanningBudget', "onClick={() => navigate('/app/lancar')}"]);
+expectContains('src/components/PreferencesCenter.tsx', ['Abrir tutorial automaticamente na Início', 'As outras ferramentas só abrem o tutorial quando você usar o botão ?']);
 expectContains('src/lib/user-preferences.ts', ['homeWidgets', 'notifications', 'toursAutoStart', 'privacyDefault', 'reducedMotion', 'highContrast']);
 expectContains('src/components/DashboardBootstrap.tsx', ["lazy(() => import('./Dashboard'))", '<CommandPalette userId={user.id}', '<PreferencesCenter userId={user.id}', '<UndoToast />']);
 expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}']);

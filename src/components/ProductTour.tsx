@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { loadUserPreferences } from '../lib/user-preferences';
 import './ProductTour.css';
 
 type TourStep = { id: string; title: string; description: string; selectors?: string[]; padding?: number };
@@ -26,7 +27,7 @@ function resolveTour(pathname: string): TourDefinition | null {
     s('evolution', 'Evolução do saldo', 'Este gráfico mostra como seu saldo mudou ao longo do tempo, para você enxergar a direção da sua vida financeira.', ['.mf-dashboard-grid > .mf-chart-card:nth-of-type(1)', '.mf-dashboard-grid .mf-chart-card:nth-child(3)']),
     s('rhythm', 'Ritmo de gastos', 'Compare entradas e saídas por dia, semana ou mês e entenda a velocidade com que o dinheiro está entrando e saindo.', ['.mf-dashboard-grid > .mf-chart-card:nth-of-type(2)', '.mf-dashboard-grid .mf-chart-card:nth-child(4)']),
     s('launch', 'Registre entradas e saídas', 'Use Lançar sempre que quiser registrar uma nova movimentação manualmente.', ['.mf-side-launch', '.mf-top-actions .primary']),
-    s('navigation', 'Explore suas ferramentas', 'Movimentações, Investimentos, Planejamento, Análises e Agenda ficam organizados na navegação principal.', NAV),
+    s('navigation', 'Explore suas ferramentas', 'Movimentações, Investimentos, Planejamento, Insights e Agenda ficam organizados na navegação principal.', NAV),
   ]);
   if (path === '/app/movimentacoes') return t('movements-v1', 'Movimentações', [
     s('intro', 'Suas movimentações', 'Aqui fica o histórico central de entradas e saídas do MF Financeiro.'),
@@ -36,21 +37,21 @@ function resolveTour(pathname: string): TourDefinition | null {
   if (path === '/app/movimentacoes/importar') return t('import-v1', 'Importar extrato', [
     s('intro', 'Importe seu extrato', 'Traga lançamentos do banco sem cadastrar um por um.'),
     s('review', 'Revise antes de confirmar', 'Confira os lançamentos antes de gravá-los no seu financeiro.', ['.mf-content form', '.mf-content .mf-card', '.mf-content']),
-    s('batches', 'Concilie depois', 'Lotes e conciliação ajuda a revisar o que entrou.', navItem('/app/movimentacoes/lotes')),
+    s('batches', 'Concilie depois', 'Histórico de importações ajuda a revisar o que entrou.', navItem('/app/movimentacoes/lotes')),
   ]);
-  if (path === '/app/movimentacoes/lotes') return t('batches-v1', 'Lotes e conciliação', [
-    s('intro', 'Lotes e conciliação', 'Revise importações em grupo e identifique itens que precisam de atenção.'),
+  if (path === '/app/movimentacoes/lotes') return t('batches-v1', 'Histórico de importações', [
+    s('intro', 'Histórico de importações', 'Revise importações em grupo e identifique itens que precisam de atenção.'),
     s('actions', 'Resolva pendências', 'As ações da tela fecham o ciclo de revisão das importações.', ACTIONS),
   ]);
   if (path.startsWith('/app/investimentos')) return t('investments-v1', 'Investimentos', [
-    s('intro', 'Sua área de investimentos', 'Carteira, proventos e planejamento de aportes ficam concentrados aqui.'),
-    s('nav', 'Três visões complementares', 'Alterne entre Carteira, Proventos e Planejamento de aportes.', navItem('/app/investimentos')),
+    s('intro', 'Sua área de investimentos', 'Carteira e planejamento de aportes ficam concentrados aqui.'),
+    s('nav', 'Duas visões complementares', 'Alterne entre Carteira e Planejamento de aportes.', navItem('/app/investimentos')),
     s('content', 'Acompanhe evolução e composição', 'Os blocos mostram posição, evolução e próximos passos da carteira.', ['.mf-content .glass-card', '.mf-content .mf-card', '.mf-content']),
   ]);
   if (path === '/app/planejamento') return t('planning-v1', 'Planejamento', [
-    s('intro', 'Planeje o mês', 'Organize contas, orçamento e decisões futuras a partir de uma visão única.'),
-    s('nav', 'Ferramentas de planejamento', 'Contas, cartões, orçamento, metas e projeções ficam no mesmo grupo.', navItem('/app/planejamento')),
-    s('content', 'Transforme dados em plano', 'Compare o planejado com a sua realidade financeira.', CONTENT),
+    s('intro', 'Planeje o mês', 'Organize conta, receita, compromissos e orçamento a partir de uma visão única.'),
+    s('journey', 'Quatro bases do planejamento', 'Conta, Receita, Compromissos e Orçamento mostram o que já está configurado e qual é o próximo passo.', ['[aria-label="Progresso do planejamento"]', '.mf-content .mf-card', '.mf-content']),
+    s('content', 'Transforme dados em plano', 'Quando as quatro bases estiverem prontas, use o Simulador para testar decisões futuras.', CONTENT),
   ]);
   if (path === '/app/planejamento/contas') return t('accounts-v1', 'Contas financeiras', [
     s('intro', 'Contas financeiras', 'Cadastre e organize onde seu dinheiro realmente está.'),
@@ -69,33 +70,33 @@ function resolveTour(pathname: string): TourDefinition | null {
     s('progress', 'Veja o avanço', 'O progresso visual mostra quanto falta para chegar ao objetivo.', ['.mf-content .mf-progress', '.mf-content .mf-card', '.mf-content']),
     s('actions', 'Atualize conforme avança', 'Registre evolução para manter o plano atual.', ACTIONS),
   ]);
-  if (path === '/app/planejamento/projecoes') return t('projections-v1', 'Projeções e cenários', [
-    s('intro', 'Projeções e cenários', 'Teste possibilidades futuras antes de transformar uma hipótese em decisão.'),
+  if (path === '/app/planejamento/projecoes') return t('projections-v1', 'Simulador', [
+    s('intro', 'Simulador', 'Teste possibilidades futuras antes de transformar uma hipótese em decisão.'),
     s('controls', 'Ajuste o cenário', 'Use os controles da tela para comparar resultados em diferentes hipóteses.', ['.mf-content input', '.mf-content button', '.mf-content .mf-card']),
   ]);
   if (path === '/app/analises' || path === '/app/analises/resumo') return t('analysis-v1', 'Análises', [
     s('intro', 'Visão geral das análises', 'Indicadores e gráficos transformam seu histórico em leitura financeira.'),
-    s('nav', 'Aprofunde a leitura', 'Insights e Saúde financeira complementam a visão geral.', navItem('/app/analises/resumo')),
+    s('nav', 'Aprofunde a leitura', 'Insights concentra a interpretação dos seus números.', navItem('/app/analises/insights')),
     s('charts', 'Leia tendências, não só números', 'Use os gráficos para observar comportamento ao longo do tempo.', ['.mf-content canvas', '.mf-content .mf-card', '.mf-content']),
   ]);
   if (path === '/app/analises/insights') return t('insights-v1', 'Insights', [
     s('intro', 'Insights financeiros', 'O MF Financeiro destaca padrões e sinais que merecem sua atenção.'),
     s('cards', 'Priorize o que importa', 'Os cards ajudam a transformar informação em decisão sem excesso de ruído.', CONTENT),
   ]);
-  if (path === '/app/analises/saude') return t('health-v1', 'Saúde financeira', [
-    s('intro', 'Saúde financeira', 'Veja uma leitura consolidada do equilíbrio entre renda, gastos, reserva e compromissos.'),
-    s('indicators', 'Entenda os indicadores', 'Os indicadores visuais ajudam a localizar rapidamente pontos fortes e de atenção.', ['.mf-content .mf-progress', '.mf-content .mf-card', '.mf-content']),
+  if (path === '/app/analises/saude') return t('health-v1', 'Insights', [
+    s('intro', 'Leitura financeira', 'Os diagnósticos úteis agora vivem em Insights, sem score artificial de saúde financeira.'),
+    s('indicators', 'Entenda os indicadores', 'Os indicadores visuais ajudam a localizar rapidamente pontos de atenção.', ['.mf-content .mf-card', '.mf-content']),
   ]);
   if (path === '/app/agenda') return t('agenda-v1', 'Agenda Financeira', [
     s('intro', 'Sua Agenda Financeira', 'Visualize vencimentos, entradas e compromissos organizados por data.'),
-    s('nav', 'Compromissos em um só lugar', 'Contas fixas, assinaturas e receitas previstas vivem dentro da Agenda.', navItem('/app/agenda')),
+    s('nav', 'Compromissos em um só lugar', 'Recorrências e receitas previstas vivem dentro da Agenda.', navItem('/app/agenda')),
     s('calendar', 'Antecipe o que vem pela frente', 'Use a visão temporal para se preparar antes dos compromissos chegarem.', ['.mf-content [class*="calendar"]', '.mf-content .mf-card', '.mf-content']),
   ]);
-  if (path === '/app/agenda/contas-fixas') return t('fixed-v1', 'Contas fixas', [
-    s('intro', 'Contas fixas', 'Cadastre compromissos recorrentes para incluí-los no planejamento.'),
+  if (path === '/app/agenda/contas-fixas') return t('fixed-v1', 'Recorrências', [
+    s('intro', 'Recorrências', 'Cadastre compromissos recorrentes para incluí-los no planejamento.'),
     s('actions', 'Acompanhe pagamentos', 'Mantenha cada compromisso atualizado pelas ações da tela.', ACTIONS),
   ]);
-  if (path === '/app/agenda/assinaturas') return t('subscriptions-v1', 'Assinaturas', [
+  if (path === '/app/agenda/assinaturas') return t('subscriptions-v1', 'Recorrências', [
     s('intro', 'Assinaturas', 'Veja serviços recorrentes e o impacto deles no seu mês.'),
     s('actions', 'Mantenha só o que faz sentido', 'Cadastre, revise e ajuste assinaturas conforme sua rotina muda.', ACTIONS),
   ]);
@@ -103,7 +104,7 @@ function resolveTour(pathname: string): TourDefinition | null {
     s('intro', 'Receitas previstas', 'Organize entradas futuras para enxergar melhor o caixa antes do dinheiro chegar.'),
     s('actions', 'Atualize quando a renda mudar', 'Mantenha previsões e recorrências coerentes pelas ações da tela.', ACTIONS),
   ]);
-  if (path === '/app/integracoes') return t('integrations-v1', 'Integrações', [
+  if (path === '/app/integracoes') return t('integrations-v1', 'Conexões', [
     s('intro', 'Conexões e automações', 'Integre fontes e automatize tarefas para reduzir trabalho manual.'),
     s('actions', 'Configure com controle', 'Cada conexão pode ser revisada e ajustada dentro desta central.', ACTIONS),
     s('nav', 'Continue no fluxo principal', 'A navegação permanece disponível para voltar às demais ferramentas.', NAV),
@@ -125,7 +126,6 @@ function findVisibleTarget(selectors?: string[]) {
 }
 
 function getTourScopeId(tourId: string) {
-  // Tour content can evolve (v1, v2, v3...) without resetting the user's preference.
   return tourId.replace(/-v\d+$/i, '');
 }
 
@@ -142,8 +142,9 @@ function migrateLegacyTourPreference(tourId: string, userId: string, stableStora
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const key = window.localStorage.key(index);
       if (!key || !key.startsWith(legacyPrefix) || !key.endsWith(userSuffix)) continue;
-      if (window.localStorage.getItem(key) !== 'done') continue;
-      window.localStorage.setItem(stableStorageKey, 'done');
+      const legacyValue = window.localStorage.getItem(key);
+      if (!isResolvedPreference(legacyValue)) continue;
+      window.localStorage.setItem(stableStorageKey, legacyValue as 'done' | 'skipped');
       return true;
     }
   } catch {
@@ -170,18 +171,20 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
     setStepIndex(0);
     if (!tour || !storageKey) return;
 
-    let shouldAutoStart = true;
+    let shouldAutoStart = false;
     try {
+      const preferences = loadUserPreferences(userId);
       const globalSkipped = window.localStorage.getItem(globalSkipKey) === 'skipped';
       const storedPreference = window.localStorage.getItem(storageKey);
       const resolved = isResolvedPreference(storedPreference)
         || migrateLegacyTourPreference(tour.id, userId, storageKey);
-      shouldAutoStart = !globalSkipped && !resolved;
+      const isHomeTour = tourScopeId === 'home';
+      shouldAutoStart = isHomeTour && preferences.toursAutoStart && !globalSkipped && !resolved;
     } catch {
-      shouldAutoStart = true;
+      shouldAutoStart = false;
     }
 
-    // Manual starts always remain available, even after "Pular tudo".
+    // Manual starts always remain available from the ? button, even after "Pular tudo".
     const start = () => {
       setStepIndex(0);
       setSkipPromptOpen(false);
@@ -193,7 +196,7 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
       if (timer !== null) window.clearTimeout(timer);
       window.removeEventListener('mf:start-product-tour', start);
     };
-  }, [tour?.id, storageKey, globalSkipKey, userId]);
+  }, [tour?.id, tourScopeId, storageKey, globalSkipKey, userId]);
 
   useEffect(() => {
     if (!open || !step || skipPromptOpen) return;
@@ -281,7 +284,7 @@ export default function ProductTour({ userId, pathname }: { userId: string; path
           <p className="mf-tour-kicker">Preferência do tutorial</p>
           <h2 id="mf-tour-skip-title">Deseja pular o tutorial?</h2>
           <p id="mf-tour-skip-copy" className="mf-tour-copy">
-            Escolha se quer pular apenas o tutorial de {tour.label} ou não receber mais tours automáticos em nenhuma ferramenta.
+            Escolha se quer pular apenas o tutorial de {tour.label} ou desativar a abertura automática do tutorial. O botão ? continuará disponível quando você quiser rever qualquer ferramenta.
           </p>
           <div className="mf-tour-skip-options">
             <button type="button" className="mf-tour-skip-tool" onClick={skipCurrentTour}>Pular nesta ferramenta</button>

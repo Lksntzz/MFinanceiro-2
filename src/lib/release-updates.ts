@@ -10,11 +10,11 @@ export const LATEST_WEB_UPDATE: ReleaseUpdate = {
   id: '2026-08-10-product-maturity',
   title: 'Seu MF, do seu jeito',
   dateLabel: '10 de agosto de 2026',
-  summary: 'O MF Financeiro ficou mais personalizável e previsível para ajudar você a encontrar o que precisa, acompanhar seus dados e manter o controle da sua experiência.',
+  summary: 'O MF Financeiro ficou mais claro, personalizável e previsível para ajudar você a organizar o mês e usar cada ferramenta sem interrupções desnecessárias.',
   highlights: [
-    'A Início e as notificações agora podem ser ajustadas às informações que você realmente quer acompanhar.',
-    'Busca rápida, linha do tempo financeira e verificações de qualidade ajudam a encontrar ações e pendências com menos esforço.',
-    'Privacidade, exportação de dados, histórico de alterações e opções de tutorial ganharam controles mais claros.',
+    'Planejamento agora mostra o progresso entre Conta, Receita, Compromissos e Orçamento e leva ao Simulador quando a base estiver pronta.',
+    'Os tutoriais não interrompem mais a entrada em cada ferramenta: a orientação automática fica na Início e qualquer tutorial pode ser aberto pelo botão ?.',
+    'Preferências, busca rápida, linha do tempo, qualidade dos dados, privacidade e exportação ficaram mais integradas ao uso diário.',
   ],
 };
 

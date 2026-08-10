@@ -35,6 +35,7 @@ import Cartoes from './Cartoes';
 import FinancialCalendar from './FinancialCalendar';
 import FinancialStructure from './FinancialStructure';
 import MonthlyFixedBills from './MonthlyFixedBills';
+import PlanningJourney from './PlanningJourney';
 import ProfileCenter from './ProfileCenter';
 import SubscriptionManager from './SubscriptionManager';
 
@@ -224,6 +225,13 @@ export default function PlanningTool({ user }: { user: User }) {
   const cardsUsed = cards.reduce((sum, card) => sum + Number(card.used || 0), 0);
   const expectedIncome = Number(settings?.net_salary_estimated || settings?.gross_salary || 0);
   const projectedBalance = balance + expectedIncome - pendingFixed - subscriptionMonthly - cardsUsed;
+  const hasPlanningAccount = accounts.some((account) => account.is_active !== false);
+  const hasPlanningIncome = expectedIncome > 0;
+  const hasPlanningCommitments = fixedBills.some((bill: any) => bill.active !== false)
+    || activeSubscriptions.length > 0
+    || cards.some((card) => Number(card.used || 0) > 0)
+    || installments.some((item) => Number(item.current_installment || 1) <= Number(item.total_installments || 1));
+  const hasPlanningBudget = budgets.length > 0;
 
   const spentByCategory = useMemo(() => {
     const map = new Map<string, number>();
@@ -344,7 +352,7 @@ export default function PlanningTool({ user }: { user: User }) {
 
   return (
     <div className="mf-app-shell mf-routed-app">
-      <AppNavigation onLaunch={() => undefined} />
+      <AppNavigation onLaunch={() => navigate('/app/lancar')} />
       <header className="mf-topbar">
         <div className="mf-brand">
           <div className="mf-brand-icon"><Wallet size={20} /></div>
@@ -353,7 +361,7 @@ export default function PlanningTool({ user }: { user: User }) {
         <div className="mf-top-actions">
           <ProfileCenter user={user} settings={settings} accounts={accounts} open={showProfile} onOpenChange={setShowProfile} onSaved={refresh} />
           <button type="button" onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-          <button type="button" className="primary"><Plus size={16} />Lançar</button>
+          <button type="button" className="primary" onClick={() => navigate('/app/lancar')}><Plus size={16} />Lançar</button>
           <button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.replace('/'); }} title="Sair"><LogOut size={17} /></button>
         </div>
       </header>
@@ -369,6 +377,13 @@ export default function PlanningTool({ user }: { user: User }) {
                   <h2 className="text-xl font-black">Visão do mês</h2>
                   <p className="text-sm text-white/40">O que está previsto para acontecer com seu dinheiro neste mês.</p>
                 </div>
+                <PlanningJourney
+                  hasAccount={hasPlanningAccount}
+                  hasIncome={hasPlanningIncome}
+                  hasCommitments={hasPlanningCommitments}
+                  hasBudget={hasPlanningBudget}
+                  onNavigate={navigate}
+                />
                 <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
                   <Metric label="Saldo atual" value={formatCurrency(balance, isPrivate)} icon={<Wallet size={16} />} />
                   <Metric label="Receitas previstas" value={formatCurrency(expectedIncome, isPrivate)} detail="Baseadas na renda cadastrada" icon={<TrendingUp size={16} />} />

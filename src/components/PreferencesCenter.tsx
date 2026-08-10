@@ -78,7 +78,7 @@ export default function PreferencesCenter({ userId }: { userId: string }) {
       // Optional preference.
     }
     setPreferences({ ...preferences, toursAutoStart: true });
-    setMessage('Tours reativados. Eles voltam a aparecer apenas nas ferramentas ainda não concluídas.');
+    setMessage('Tutorial da Início reativado. Nas demais ferramentas, use o botão ? quando quiser rever a orientação.');
   }
 
   async function exportData() {
@@ -117,9 +117,9 @@ export default function PreferencesCenter({ userId }: { userId: string }) {
           </section>
 
           <section className="mf-preference-section">
-            <div className="mf-preference-title"><Sparkles size={17} /><div><strong>Tutoriais e onboarding</strong><small>Atualizações do sistema não reiniciam seus tours.</small></div></div>
-            <label className="mf-setting-row"><span><strong>Abrir tours automaticamente</strong><small>Somente em ferramentas que você ainda não concluiu ou pulou.</small></span><input type="checkbox" checked={preferences.toursAutoStart} onChange={(event) => setPreferences({ ...preferences, toursAutoStart: event.target.checked })} /></label>
-            <button type="button" className="mf-preference-secondary" onClick={resetTours}><RotateCcw size={14} />Reativar tours</button>
+            <div className="mf-preference-title"><Sparkles size={17} /><div><strong>Tutoriais e onboarding</strong><small>Atualizações do sistema não reiniciam o tutorial concluído.</small></div></div>
+            <label className="mf-setting-row"><span><strong>Abrir tutorial automaticamente na Início</strong><small>As outras ferramentas só abrem o tutorial quando você usar o botão ?.</small></span><input type="checkbox" checked={preferences.toursAutoStart} onChange={(event) => setPreferences({ ...preferences, toursAutoStart: event.target.checked })} /></label>
+            <button type="button" className="mf-preference-secondary" onClick={resetTours}><RotateCcw size={14} />Reativar tutorial da Início</button>
           </section>
 
           <section className="mf-preference-section">
