@@ -19,6 +19,35 @@
 .mf-automation-disclosure[open] > summary svg { transform:rotate(180deg); }
 .mf-automation-content { border-top:1px solid rgba(255,255,255,.07); padding:12px; }
 
+/*
+ * Desktop/web spacing contract.
+ *
+ * `.mf-card` is intentionally only the visual surface (border, radius and
+ * background). Feature cards that hold direct copy need their own interior
+ * breathing room. Keeping this rule explicit avoids double-padding older KPI,
+ * chart and glass-card components that already own their spacing.
+ */
+@media (min-width: 821px) {
+  .mf-onboarding-checklist,
+  .mf-data-quality,
+  .mf-financial-timeline {
+    padding: clamp(11px, .85vh, 14px) clamp(12px, .85vw, 16px);
+  }
+
+  .mf-card[aria-label="Progresso do planejamento"],
+  .mf-routed-app .mf-tab-shell > .space-y-4 > form.mf-card,
+  .mf-routed-app .mf-tab-shell > .space-y-4 > .grid[class~="xl:grid-cols-3"] > .mf-card,
+  .mf-routed-app .mf-content > .space-y-4 > section.grid[class~="xl:grid-cols-[360px_1fr]"] > .mf-card {
+    padding: clamp(12px, 1vh, 16px) clamp(14px, 1vw, 18px);
+  }
+
+  .mf-card[aria-label="Progresso do planejamento"] > div,
+  .mf-financial-timeline > .mf-timeline-list,
+  .mf-data-quality > .mf-data-quality-list {
+    min-width: 0;
+  }
+}
+
 @media (max-width: 820px) {
   .mf-onboarding-steps { grid-template-columns:1fr; }
 }
