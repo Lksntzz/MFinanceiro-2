@@ -7,6 +7,7 @@ import { BrowserRouter } from 'react-router';
 import App from './App.tsx';
 import AccessibilityLayer from './components/AccessibilityLayer';
 import { AppProvider } from './context/AppContext';
+import { installNativeDeepLinkBridge } from './mobile/native/native-deep-links';
 import './index.css';
 import './layout-tuning.css';
 import './navigation.css';
@@ -74,6 +75,8 @@ window.addEventListener('load', () => {
 
   startAppVersionWatcher();
 });
+
+void installNativeDeepLinkBridge();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
