@@ -6,10 +6,11 @@ import { MOBILE_ROUTES } from './routes';
 import type { MobileNavItem } from './types';
 import './mobile.css';
 import './mobile-hardening.css';
+import './mobile-nav.css';
 
 const navItems: readonly MobileNavItem[] = [
   { key: 'home', label: 'Início', path: MOBILE_ROUTES.home },
-  { key: 'transactions', label: 'Movimentações', path: MOBILE_ROUTES.transactions },
+  { key: 'transactions', label: 'Movimentos', path: MOBILE_ROUTES.transactions },
   { key: 'cards', label: 'Cartões', path: MOBILE_ROUTES.cards },
   { key: 'more', label: 'Mais', path: MOBILE_ROUTES.more },
 ];
