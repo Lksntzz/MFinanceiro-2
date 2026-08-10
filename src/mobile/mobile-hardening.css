@@ -1,3 +1,12 @@
+html[data-mf-mobile='true'] .mf-mobile-shell,
+html[data-mf-mobile='true'] .mf-mobile-focus-page {
+  display: block;
+}
+
+html[data-mf-mobile='true'] .mf-mobile-loading {
+  display: flex;
+}
+
 .mf-mobile-shell *,
 .mf-mobile-focus-page *,
 .mf-mobile-loading * {
