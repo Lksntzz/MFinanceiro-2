@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { MOBILE_BREAKPOINT_PX } from './routes';
 
 const DESKTOP_OVERRIDE_KEY = 'mf-mobile-desktop-override';
+const DIRECT_MOBILE_PATHS = new Set(['/quick', '/scan', '/voice', '/recurrences']);
 
 function shouldForceDesktop() {
   const params = new URLSearchParams(window.location.search);
@@ -19,9 +20,15 @@ function shouldForceDesktop() {
 
 function computeMobileExperience() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/quick' || path === '/scan' || path === '/voice' || path === '/recurrences') return true;
+  if (DIRECT_MOBILE_PATHS.has(path)) return true;
   if (shouldForceDesktop()) return false;
-  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
+
+  const narrowViewport = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
+  if (narrowViewport) return true;
+
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const compactPhysicalViewport = Math.min(window.innerWidth, window.innerHeight) <= MOBILE_BREAKPOINT_PX;
+  return coarsePointer && compactPhysicalViewport;
 }
 
 export function useMobileExperience() {
@@ -29,16 +36,28 @@ export function useMobileExperience() {
 
   useEffect(() => {
     const media = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`);
+    const pointer = window.matchMedia('(pointer: coarse)');
     const refresh = () => setMobile(computeMobileExperience());
 
     media.addEventListener('change', refresh);
+    pointer.addEventListener('change', refresh);
+    window.addEventListener('resize', refresh);
     window.addEventListener('popstate', refresh);
 
     return () => {
       media.removeEventListener('change', refresh);
+      pointer.removeEventListener('change', refresh);
+      window.removeEventListener('resize', refresh);
       window.removeEventListener('popstate', refresh);
     };
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.mfMobile = mobile ? 'true' : 'false';
+    return () => {
+      delete document.documentElement.dataset.mfMobile;
+    };
+  }, [mobile]);
 
   return mobile;
 }
