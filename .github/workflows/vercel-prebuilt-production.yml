@@ -131,4 +131,4 @@ jobs:
       - name: Deploy prebuilt artifact to production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: ./node_modules/.bin/vercel deploy --prebuilt --prod -T "$VERCEL_TEAM_ID" --token="$VERCEL_TOKEN"
+        run: ./node_modules/.bin/vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
