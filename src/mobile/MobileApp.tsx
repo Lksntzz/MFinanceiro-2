@@ -12,6 +12,7 @@ import {
   ScanLine,
   ShieldCheck,
   Sparkles,
+  UserRound,
   Wallet,
 } from 'lucide-react';
 import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
@@ -39,6 +40,7 @@ import MobileDocumentInbox from './pages/MobileDocumentInbox';
 import MobileInbox from './pages/MobileInbox';
 import MobilePulse from './pages/MobilePulse';
 import MobilePurchaseImpact from './pages/MobilePurchaseImpact';
+import MobileProfile from './pages/MobileProfile';
 import MobileQuickAdd from './pages/MobileQuickAdd';
 import MobileScan from './pages/MobileScan';
 import './mobile.css';
@@ -254,6 +256,7 @@ function MorePage() {
     <div className="mf-mobile-page">
       <MobileHeader title="Mais" subtitle="Poucas ferramentas, só as que ajudam no celular" />
       <div className="mf-mobile-menu-list">
+        <button type="button" onClick={() => navigate(MOBILE_ROUTES.profile)}><span className="mf-mobile-menu-icon"><UserRound size={19} /></span><div><strong>Perfil</strong><small>Conta, preferências e segurança</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.inbox)}><span className="mf-mobile-menu-icon"><Inbox size={19} /></span><div><strong>MF Inbox</strong><small>Revisar extratos e lançamentos extraídos</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.scan)}><span className="mf-mobile-menu-icon"><Camera size={19} /></span><div><strong>MF Scan</strong><small>Capturar boleto, conta, QR ou documento</small></div><ChevronRight size={18} /></button>
         <button type="button" onClick={() => navigate(MOBILE_ROUTES.quick)}><span className="mf-mobile-menu-icon"><Sparkles size={19} /></span><div><strong>MF Quick</strong><small>Lançamento rápido em poucos toques</small></div><ChevronRight size={18} /></button>
@@ -305,6 +308,7 @@ export default function MobileApp({ user }: { user: User }) {
     const path = location.pathname.replace(/\/+$/, '') || '/app';
     if (path === MOBILE_ROUTES.quick) return 'quick';
     if (path === MOBILE_ROUTES.scan) return 'scan';
+    if (path === MOBILE_ROUTES.profile) return 'profile';
     if (path === MOBILE_ROUTES.documentInbox) return 'documentInbox';
     if (path === MOBILE_ROUTES.inbox) return 'inbox';
     if (path === MOBILE_ROUTES.canSpend) return 'canSpend';
@@ -320,6 +324,7 @@ export default function MobileApp({ user }: { user: User }) {
   if (error) return <div className="mf-mobile-loading"><strong>Não foi possível carregar</strong><span>{error}</span><button type="button" className="mf-mobile-primary-button" onClick={() => void refresh()}>Tentar novamente</button></div>;
   if (page === 'quick') return <MobileQuickAdd userId={user.id} accounts={data.accounts} categories={data.categories} history={data.categorizationHistory} onSaved={refresh} />;
   if (page === 'scan') return <MobileScan userId={user.id} accounts={data.accounts} categories={data.categories} history={data.categorizationHistory} onSaved={refresh} />;
+  if (page === 'profile') return <MobileProfile user={user} settings={data.settings} onProfileSaved={refresh} />;
   if (page === 'documentInbox') return <MobileDocumentInbox userId={user.id} accounts={data.accounts} categories={data.categories} history={data.categorizationHistory} onImported={refresh} />;
   if (page === 'inbox') return <MobileInbox userId={user.id} accounts={data.accounts} categories={data.categories} onImported={refresh} />;
   if (page === 'canSpend') {
