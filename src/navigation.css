@@ -1,5 +1,5 @@
 .mf-app-shell.mf-routed-app {
-  padding-left: max(210px, calc(194px + var(--mf-page-pad-x, 12px)));
+  padding-left: max(226px, calc(210px + var(--mf-page-pad-x, 12px)));
 }
 
 .mf-routed-app .mf-topbar {
@@ -16,7 +16,7 @@
   left: max(10px, env(safe-area-inset-left));
   top: max(10px, env(safe-area-inset-top));
   bottom: max(10px, env(safe-area-inset-bottom));
-  width: 184px;
+  width: 200px;
   display: flex;
   flex-direction: column;
   gap: 11px;
@@ -32,8 +32,8 @@
 .mf-side-brand { display: flex; align-items: center; gap: 9px; min-height: 36px; padding: 2px 5px 9px; border-bottom: 1px solid rgba(255,255,255,.065); }
 .mf-side-brand-mark { width: 31px; height: 31px; flex: 0 0 31px; display: grid; place-items: center; border-radius: 10px; color: #041114; background: var(--brand-primary, #00f2ff); font-size: 15px; font-weight: 950; }
 .mf-side-brand-copy { min-width: 0; display: flex; flex-direction: column; }
-.mf-side-brand-copy strong { color: #fff; font-size: 12px; }
-.mf-side-brand-copy small { color: rgba(255,255,255,.3); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.mf-side-brand-copy strong { color: #fff; font-size: 13px; line-height: 1.2; }
+.mf-side-brand-copy small { color: rgba(255,255,255,.38); font-size: 9.5px; font-weight: 800; line-height: 1.3; letter-spacing: .06em; text-transform: uppercase; }
 
 .mf-side-primary {
   min-height: 0;
@@ -47,10 +47,10 @@
 }
 .mf-side-primary::-webkit-scrollbar { display: none; }
 .mf-side-group-items { display: flex; flex-direction: column; gap: 3px; }
-.mf-side-item { width: 100%; min-height: 35px; display: flex; align-items: center; gap: 9px; padding: 8px 9px; border: 1px solid transparent; border-radius: 10px; color: rgba(255,255,255,.55); font-size: 10.5px; font-weight: 820; text-align: left; transition: .16s ease; }
+.mf-side-item { width: 100%; min-height: 37px; display: flex; align-items: center; gap: 9px; padding: 8px 9px; border: 1px solid transparent; border-radius: 10px; color: rgba(255,255,255,.62); font-size: 12px; font-weight: 780; line-height: 1.25; text-align: left; transition: .16s ease; }
 .mf-side-item:hover { color: #fff; background: rgba(255,255,255,.045); }
 .mf-side-item.active { color: #ecfeff; border-color: rgba(0,242,255,.18); background: rgba(0,242,255,.085); box-shadow: inset 2px 0 0 var(--brand-primary, #00f2ff); }
-.mf-side-item.compact { min-height: 30px; padding: 6px 8px; font-size: 9.5px; border-radius: 9px; }
+.mf-side-item.compact { min-height: 32px; padding: 6px 8px; font-size: 11px; font-weight: 760; line-height: 1.25; border-radius: 9px; }
 
 .mf-side-tool { min-width: 0; }
 .mf-side-tool-row {
@@ -63,13 +63,13 @@
 .mf-side-tool-row .mf-side-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mf-side-chevron {
   min-width: 28px;
-  min-height: 35px;
+  min-height: 37px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 9px;
-  color: rgba(255,255,255,.34);
+  color: rgba(255,255,255,.4);
   background: transparent;
   transition: color .16s ease, background-color .16s ease, transform .16s ease;
 }
@@ -84,19 +84,20 @@
   padding-left: 7px;
   border-left: 1px solid rgba(0,242,255,.14);
 }
-.mf-side-primary-children .mf-side-item { color: rgba(255,255,255,.43); }
+.mf-side-primary-children .mf-side-item { color: rgba(255,255,255,.52); }
+.mf-side-primary-children .mf-side-item span { min-width: 0; overflow-wrap: anywhere; }
 .mf-side-primary-children .mf-side-item:hover,
 .mf-side-primary-children .mf-side-item.active { color: #ecfeff; }
 
-.mf-side-launch { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px; border: 0; border-radius: 11px; color: #041114; background: var(--brand-primary, #00f2ff); font-size: 10.5px; font-weight: 950; }
+.mf-side-launch { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px; border: 0; border-radius: 11px; color: #041114; background: var(--brand-primary, #00f2ff); font-size: 11.5px; font-weight: 950; }
 .mf-side-context { min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .mf-side-context::-webkit-scrollbar { display: none; }
-.mf-side-group-label { display: block; margin: 0 8px 5px; color: rgba(255,255,255,.25); font-size: 7.5px; font-weight: 950; letter-spacing: .11em; text-transform: uppercase; }
-.mf-side-context-copy { margin: 4px 7px; color: rgba(255,255,255,.35); font-size: 9.5px; line-height: 1.5; }
+.mf-side-group-label { display: block; margin: 0 8px 5px; color: rgba(255,255,255,.34); font-size: 9px; font-weight: 950; line-height: 1.25; letter-spacing: .09em; text-transform: uppercase; }
+.mf-side-context-copy { margin: 4px 7px; color: rgba(255,255,255,.44); font-size: 10.5px; line-height: 1.5; }
 .mf-side-shortcuts { margin-top: auto; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.06); display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .mf-side-shortcut { height: 31px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.065); border-radius: 9px; color: rgba(255,255,255,.48); background: rgba(255,255,255,.025); }
 .mf-side-shortcut:hover { color: var(--brand-primary,#00f2ff); border-color: rgba(0,242,255,.18); }
-.mf-side-settings { min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; color: rgba(255,255,255,.38); font-size: 9px; font-weight: 800; }
+.mf-side-settings { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; color: rgba(255,255,255,.46); font-size: 10.5px; font-weight: 800; }
 .mf-side-settings:hover, .mf-side-settings.active { color: #fff; background: rgba(255,255,255,.04); }
 
 /* A navegação local das ferramentas roteadas fica centralizada na árvore lateral. */
@@ -105,8 +106,10 @@
 }
 
 @media (min-width: 821px) and (max-width: 1180px) {
-  .mf-app-shell.mf-routed-app { padding-left: max(182px, calc(166px + var(--mf-page-pad-x, 10px))); }
-  .mf-side-panel { width: 156px; padding-inline: 9px; }
+  .mf-app-shell.mf-routed-app { padding-left: max(198px, calc(182px + var(--mf-page-pad-x, 10px))); }
+  .mf-side-panel { width: 172px; padding-inline: 9px; }
+  .mf-side-item { font-size: 11.5px; }
+  .mf-side-item.compact { font-size: 10.5px; }
   .mf-side-tool-row { grid-template-columns: minmax(0, 1fr) 25px; }
   .mf-side-chevron { min-width: 25px; }
   .mf-side-primary-children { margin-left: 9px; padding-left: 5px; }

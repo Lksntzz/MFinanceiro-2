@@ -10,15 +10,19 @@ import {
   normalizeStatementImportResult,
   type StatementImportRpcResult,
 } from '../features/dashboard/dashboard-domain';
-import { supabase } from '../lib/supabase';
-import { calculateFinanceSummary } from '../lib/finance-calculations';
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
+import {
+  readDashboardWorkspaceCache,
+  writeDashboardWorkspaceCache,
+} from '../lib/dashboard-workspace-cache';
+import { calculateFinanceSummary } from '../lib/finance-calculations';
 import {
   LEDGER_PAGE_SIZE,
   mergeLedgerRows,
   readLedgerCache,
   writeLedgerCache,
 } from '../lib/ledger-cache';
+import { supabase } from '../lib/supabase';
 import type {
   CardInstallment,
   CreditCard,
@@ -35,22 +39,26 @@ import type {
 } from '../types';
 
 export function useDashboardWorkspace(userId: string) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [analyticsTransactions, setAnalyticsTransactions] = useState<Transaction[]>([]);
-  const [transactionCount, setTransactionCount] = useState(0);
-  const [ledgerCursor, setLedgerCursor] = useState<LedgerCursor | null>(null);
-  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
+  const initialCache = useMemo(() => ({
+    ledger: readLedgerCache(userId),
+    workspace: readDashboardWorkspaceCache(userId),
+  }), [userId]);
+
+  const [transactions, setTransactions] = useState<Transaction[]>(() => initialCache.ledger?.rows || []);
+  const [analyticsTransactions, setAnalyticsTransactions] = useState<Transaction[]>(() => initialCache.ledger?.rows || []);
+  const [transactionCount, setTransactionCount] = useState(() => initialCache.ledger?.totalCount || 0);
+  const [ledgerCursor, setLedgerCursor] = useState<LedgerCursor | null>(() => initialCache.ledger?.nextCursor || null);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(() => initialCache.ledger?.hasMore || false);
   const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
-  const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
-  const [categories, setCategories] = useState<TransactionCategory[]>([]);
-  const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
-  const [cards, setCards] = useState<CreditCard[]>([]);
-  const [installments, setInstallments] = useState<CardInstallment[]>([]);
-  const [summary, setSummary] = useState<FinanceSummary | null>(null);
+  const [settings, setSettings] = useState<UserSettings | null>(() => initialCache.workspace?.settings || null);
+  const [accounts, setAccounts] = useState<FinancialAccount[]>(() => initialCache.workspace?.accounts || []);
+  const [categories, setCategories] = useState<TransactionCategory[]>(() => initialCache.workspace?.categories || []);
+  const [fixedBills, setFixedBills] = useState<FixedBill[]>(() => initialCache.workspace?.fixedBills || []);
+  const [cards, setCards] = useState<CreditCard[]>(() => initialCache.workspace?.cards || []);
+  const [installments, setInstallments] = useState<CardInstallment[]>(() => initialCache.workspace?.installments || []);
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsComplete, setAnalyticsComplete] = useState(false);
+  const [analyticsComplete, setAnalyticsComplete] = useState(() => Boolean(initialCache.ledger && !initialCache.ledger.hasMore));
   const [error, setError] = useState<string | null>(null);
   const analyticsRequestRef = useRef(0);
   const refreshTimerRef = useRef<number | null>(null);
@@ -96,14 +104,6 @@ export function useDashboardWorkspace(userId: string) {
     setLoading(true);
     setError(null);
 
-    const cached = readLedgerCache(userId);
-    if (cached) {
-      setTransactions(cached.rows);
-      setTransactionCount(cached.totalCount);
-      setHasMoreTransactions(cached.hasMore);
-      setLedgerCursor(cached.nextCursor);
-    }
-
     try {
       const ensured = await supabase.rpc('mf_ensure_financial_structure');
       if (ensured.error) throw ensured.error;
@@ -129,20 +129,32 @@ export function useDashboardWorkspace(userId: string) {
       }
 
       const nextAccounts = normalizeDashboardAccounts(accountsResult.data || []);
+      const nextCategories = (categoriesResult.data || []) as TransactionCategory[];
+      const nextCards = (cardsResult.data || []) as CreditCard[];
+      const nextInstallments = normalizeDashboardInstallments(installmentsResult.data || []);
+      const nextFixedBills = (fixedResult.data || []) as FixedBill[];
       const derivedBalance = nextAccounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
       const page = normalizeDashboardLedgerPage(ledgerResult.data);
       nextSettings = { ...nextSettings, current_balance: derivedBalance };
 
       setSettings(nextSettings);
       setAccounts(nextAccounts);
-      setCategories((categoriesResult.data || []) as TransactionCategory[]);
+      setCategories(nextCategories);
       setTransactions(page.items);
       setTransactionCount(page.total_count);
       setHasMoreTransactions(page.has_more);
       setLedgerCursor(page.next_cursor);
-      setCards((cardsResult.data || []) as CreditCard[]);
-      setInstallments(normalizeDashboardInstallments(installmentsResult.data || []));
-      setFixedBills((fixedResult.data || []) as FixedBill[]);
+      setCards(nextCards);
+      setInstallments(nextInstallments);
+      setFixedBills(nextFixedBills);
+      writeDashboardWorkspaceCache(userId, {
+        settings: nextSettings,
+        accounts: nextAccounts,
+        categories: nextCategories,
+        fixedBills: nextFixedBills,
+        cards: nextCards,
+        installments: nextInstallments,
+      });
       void hydrateAnalyticsLedger(page);
     } catch (refreshError: any) {
       setError(refreshError?.message || 'Não foi possível carregar seus dados financeiros.');
@@ -186,13 +198,12 @@ export function useDashboardWorkspace(userId: string) {
 
   const financeTransactions = analyticsComplete ? analyticsTransactions : transactions;
   const analyticsIncomplete = !analyticsLoading && !analyticsComplete && transactionCount > transactions.length;
-
-  useEffect(() => {
-    if (!settings) { setSummary(null); return; }
+  const summary = useMemo<FinanceSummary | null>(() => {
+    if (!settings) return null;
     try {
-      setSummary(calculateFinanceSummary(financeTransactions, settings, fixedBills, cards, installments));
+      return calculateFinanceSummary(financeTransactions, settings, fixedBills, cards, installments);
     } catch {
-      setSummary(null);
+      return null;
     }
   }, [financeTransactions, settings, fixedBills, cards, installments]);
 
