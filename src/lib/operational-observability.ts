@@ -3,7 +3,23 @@ import { supabase } from './supabase';
 type Severity = 'info' | 'warning' | 'error';
 type SafePrimitive = string | number | boolean | null;
 
-const BLOCKED_KEYS = /(amount|balance|card|account|email|name|description|document|file|token|secret|password|payload|statement|merchant|salary|income|expense)/i;
+const SAFE_CONTEXT_KEYS = new Set([
+  'component',
+  'operation',
+  'status',
+  'provider',
+  'method',
+  'build',
+  'retryable',
+  'online',
+  'visibility',
+  'duration_bucket',
+  'count_bucket',
+  'http_status',
+  'error_code',
+  'reason_code',
+  'surface',
+]);
 const lastSent = new Map<string, number>();
 const MIN_EVENT_INTERVAL_MS = 60_000;
 
@@ -20,6 +36,7 @@ function safeRoute() {
   return window.location.pathname
     .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
     .replace(/\d{5,}/g, ':n')
+    .replace(/[^a-zA-Z0-9_./:-]+/g, '-')
     .slice(0, 180);
 }
 
@@ -27,15 +44,19 @@ function sanitizeContext(input: Record<string, unknown> | undefined) {
   const output: Record<string, SafePrimitive> = {};
   for (const [rawKey, rawValue] of Object.entries(input || {})) {
     const key = cleanToken(rawKey, 48);
-    if (!key || BLOCKED_KEYS.test(key)) continue;
+    if (!SAFE_CONTEXT_KEYS.has(key)) continue;
+
     if (rawValue === null) {
       output[key] = null;
-    } else if (typeof rawValue === 'boolean' || typeof rawValue === 'number') {
+    } else if (typeof rawValue === 'boolean') {
+      output[key] = rawValue;
+    } else if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
       output[key] = rawValue;
     } else if (typeof rawValue === 'string') {
-      output[key] = rawValue.slice(0, 160);
+      output[key] = cleanToken(rawValue, 120);
     }
-    if (Object.keys(output).length >= 12) break;
+
+    if (Object.keys(output).length >= 11) break;
   }
   return output;
 }
@@ -56,17 +77,18 @@ export async function reportOperationalEvent(
   lastSent.set(key, now);
 
   try {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) return;
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) return;
 
-    await supabase.from('mf_operational_events').insert({
-      user_id: data.user.id,
-      event_name: event,
-      area: normalizedArea,
-      severity,
-      context: {
-        route: safeRoute(),
-        ...sanitizeContext(context),
+    await supabase.functions.invoke('operational-event', {
+      body: {
+        eventName: event,
+        area: normalizedArea,
+        severity,
+        context: {
+          route: safeRoute(),
+          ...sanitizeContext(context),
+        },
       },
     });
   } catch {
@@ -78,10 +100,16 @@ export function installGlobalOperationalObservers() {
   if (typeof window === 'undefined') return () => {};
 
   const onError = () => {
-    void reportOperationalEvent('runtime.window_error', 'web-runtime', 'error');
+    void reportOperationalEvent('runtime.window_error', 'web-runtime', 'error', {
+      online: navigator.onLine,
+      visibility: document.visibilityState,
+    });
   };
   const onRejection = () => {
-    void reportOperationalEvent('runtime.unhandled_rejection', 'web-runtime', 'error');
+    void reportOperationalEvent('runtime.unhandled_rejection', 'web-runtime', 'error', {
+      online: navigator.onLine,
+      visibility: document.visibilityState,
+    });
   };
 
   window.addEventListener('error', onError);

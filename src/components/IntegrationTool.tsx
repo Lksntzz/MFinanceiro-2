@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { AlertCircle, Bot, ChevronDown, Eye, EyeOff, Landmark, LogOut, Plus, Wallet } from 'lucide-react';
+import { AlertCircle, Bot, Eye, EyeOff, Landmark, LogOut, Plus, Wallet } from 'lucide-react';
 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
-import { FinancialAccount, TransactionCategory, UserSettings } from '../types';
+import { FinancialAccount, UserSettings } from '../types';
 import AppNavigation from './AppNavigation';
-import AutomationCenter from './AutomationCenter';
 import ProfileCenter from './ProfileCenter';
 
 function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
@@ -20,7 +19,6 @@ export default function IntegrationTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
-  const [categories, setCategories] = useState<TransactionCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
@@ -30,17 +28,15 @@ export default function IntegrationTool({ user }: { user: User }) {
     try {
       const ensured = await supabase.rpc('mf_ensure_financial_structure');
       if (ensured.error) throw ensured.error;
-      const [settingsResult, accountsResult, categoriesResult] = await Promise.all([
+      const [settingsResult, accountsResult] = await Promise.all([
         supabase.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('mf_account_balances').select('*').eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at'),
-        supabase.from('mf_transaction_categories').select('*').eq('user_id', user.id).eq('is_active', true).order('sort_order').order('name'),
       ]);
-      const firstError = settingsResult.error || accountsResult.error || categoriesResult.error;
+      const firstError = settingsResult.error || accountsResult.error;
       if (firstError) throw firstError;
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
       const balance = nextAccounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
       setAccounts(nextAccounts);
-      setCategories((categoriesResult.data || []) as TransactionCategory[]);
       setSettings(settingsResult.data ? ({ ...settingsResult.data, current_balance: balance } as UserSettings) : null);
     } catch (refreshError: any) {
       console.error('Falha ao carregar conexões:', refreshError);
@@ -56,9 +52,8 @@ export default function IntegrationTool({ user }: { user: User }) {
     {error && <div className="mf-error"><AlertCircle size={16} />{error}</div>}
     <section className="mf-content">
       {loading ? <div className="mf-loading">Carregando conexões...</div> : <div className="space-y-4 animate-fade-in">
-        <div><h2 className="flex items-center gap-2 text-xl font-black"><Bot size={20} />Conexões</h2><p className="text-sm text-white/40">Use regras para reduzir trabalho repetitivo. As conexões bancárias serão liberadas quando a experiência estiver pronta para uso contínuo.</p></div>
+        <div><h2 className="flex items-center gap-2 text-xl font-black"><Bot size={20} />Conexões</h2><p className="text-sm text-white/40">As conexões bancárias serão liberadas quando a experiência estiver pronta para uso contínuo e automático.</p></div>
         <div className="mf-open-finance-coming-soon" role="status"><div className="flex min-w-0 gap-3"><Landmark size={19} className="mt-0.5 shrink-0 text-brand-primary" /><div><strong>Conexão bancária via Open Finance</strong><p>Em breve você poderá conectar bancos e trazer contas e movimentações para o MF com sincronização. Até lá, o acesso fica bloqueado para evitar fluxos incompletos.</p></div></div><span>Em breve</span></div>
-        <details className="mf-automation-disclosure"><summary><span><strong>Regras e automações</strong><small>Use somente quando quiser reduzir trabalho repetitivo dentro das suas conexões.</small></span><ChevronDown size={16} /></summary><div className="mf-automation-content"><AutomationCenter userId={user.id} accounts={accounts} categories={categories} /></div></details>
       </div>}
     </section>
   </div>;

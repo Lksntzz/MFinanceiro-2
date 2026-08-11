@@ -27,15 +27,6 @@ function normalizeStatus(raw: unknown): AccessStatus {
   return 'pending';
 }
 
-function mapStatus(status: AccessStatus, variant: 'pt' | 'en') {
-  if (variant === 'pt') {
-    if (status === 'approved') return 'aprovado';
-    if (status === 'denied') return 'negado';
-    return 'pendente';
-  }
-  return status;
-}
-
 function isColumnMismatch(error: any) {
   const message = String(error?.message || '').toLowerCase();
   return message.includes('column') && message.includes('does not exist');
@@ -49,7 +40,6 @@ export default function AdminAccessRequests({ user }: { user: User }) {
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [schemaVariant, setSchemaVariant] = useState<'pt' | 'en'>('pt');
 
   const isAdmin = isAdminUser(user);
 
@@ -89,7 +79,6 @@ export default function AdminAccessRequests({ user }: { user: User }) {
 
       let data: any[] | null = byPt.data;
       let queryError: any = byPt.error;
-      let variant: 'pt' | 'en' = 'pt';
 
       if (byPt.error && isColumnMismatch(byPt.error)) {
         const byEn = await supabase
@@ -98,11 +87,9 @@ export default function AdminAccessRequests({ user }: { user: User }) {
           .order('updated_at', { ascending: false });
         data = byEn.data;
         queryError = byEn.error;
-        variant = 'en';
       }
 
       if (queryError) throw queryError;
-      setSchemaVariant(variant);
       setItems((data || []).map((row: any) => ({
         id: String(row.id),
         name: String(row.nome ?? row.name ?? ''),
@@ -160,44 +147,31 @@ export default function AdminAccessRequests({ user }: { user: User }) {
     setMessage(null);
     try {
       await assertBackendAdmin();
-      const now = new Date().toISOString();
+      const decision = nextStatus === 'approved' ? 'approved' : 'denied';
+      const { data, error: decisionError } = await supabase.functions.invoke('access-request', {
+        body: {
+          action: 'decision',
+          requestId: id,
+          decision,
+        },
+      });
+      if (decisionError) throw decisionError;
 
-      const updatePt = await supabase
-        .from('mf_access_requests')
-        .update({
-          status: mapStatus(nextStatus, 'pt'),
-          observacao: null,
-          aprovado_por: user.id,
-          aprovado_em: now,
-        })
-        .eq('id', id)
-        .select('id,status')
-        .limit(1);
+      const payload = (data || {}) as { error?: string; status?: string; invite?: string; message?: string };
+      if (payload.error) throw new Error(payload.error);
 
-      let result = updatePt;
-      if (updatePt.error && isColumnMismatch(updatePt.error)) {
-        result = await supabase
-          .from('mf_access_requests')
-          .update({
-            status: mapStatus(nextStatus, 'en'),
-            note: null,
-            approved_by: user.id,
-            approved_at: now,
-          })
-          .eq('id', id)
-          .select('id,status')
-          .limit(1);
-      }
-
-      if (result.error) throw result.error;
-      const updated = Array.isArray(result.data) ? result.data[0] : null;
-      if (!updated) throw new Error('Solicitação inexistente ou já alterada por outro administrador.');
-
-      setSchemaVariant(schemaVariant);
+      const resolvedStatus = normalizeStatus(payload.status || nextStatus);
       setItems((current) => current.map((item) => item.id === id
-        ? { ...item, status: normalizeStatus(updated.status) }
+        ? { ...item, status: resolvedStatus }
         : item));
-      setMessage(nextStatus === 'approved' ? 'Solicitação aprovada.' : 'Solicitação negada.');
+
+      if (resolvedStatus === 'approved') {
+        setMessage(payload.invite === 'pending'
+          ? (payload.message || 'Solicitação aprovada. O convite ainda precisa ser reenviado.')
+          : 'Solicitação aprovada e convite de ativação processado.');
+      } else {
+        setMessage('Solicitação negada.');
+      }
     } catch (updateError: any) {
       setError(String(updateError?.message || 'Falha ao atualizar solicitação.'));
       await fetchRequests();
@@ -223,7 +197,7 @@ export default function AdminAccessRequests({ user }: { user: User }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold">Solicitações de acesso</h2>
-          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Gestão manual de aprovação</p>
+          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Aprovação protegida e ativação por convite</p>
         </div>
         <button type="button" onClick={() => void fetchRequests()} disabled={loading} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-white/70 hover:bg-white/10 transition-all disabled:opacity-50 flex items-center gap-2">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar

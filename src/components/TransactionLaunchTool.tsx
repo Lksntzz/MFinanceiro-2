@@ -121,6 +121,7 @@ export default function TransactionLaunchTool({ user }: { user: User }) {
       return;
     }
     setSuccess(true);
+    window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
     window.setTimeout(() => navigate('/app/movimentacoes'), 450);
   }
 

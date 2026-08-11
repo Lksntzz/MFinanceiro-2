@@ -1,4 +1,6 @@
-const CACHE_NAME = 'mfinanceiro-assets-v5';
+const CACHE_NAME = 'mfinanceiro-assets-v6';
+const CACHE_PREFIX = 'mfinanceiro-assets-';
+const MAX_CACHED_ASSETS = 96;
 const SHARE_DB_NAME = 'mf-mobile-share';
 const SHARE_STORE_NAME = 'shares';
 const SHARE_DB_VERSION = 1;
@@ -56,6 +58,23 @@ function isAcceptedSharedFile(file) {
   return file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
 }
 
+function hasPrivateRequestHeaders(request) {
+  return request.headers.has('authorization') || request.headers.has('apikey');
+}
+
+function isCacheableAssetResponse(response) {
+  if (!response.ok || response.type !== 'basic') return false;
+  const cacheControl = String(response.headers.get('cache-control') || '').toLowerCase();
+  return !cacheControl.includes('private') && !cacheControl.includes('no-store');
+}
+
+async function trimAssetCache(cache) {
+  const keys = await cache.keys();
+  const excess = keys.length - MAX_CACHED_ASSETS;
+  if (excess <= 0) return;
+  await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+}
+
 async function handleShareTarget(request) {
   try {
     const formData = await request.formData();
@@ -106,7 +125,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) => Promise.all(
         keys.map((key) => {
           if (key === CACHE_NAME) return Promise.resolve();
-          if (key.startsWith('mfinanceiro-')) return caches.delete(key);
+          if (key.startsWith(CACHE_PREFIX)) return caches.delete(key);
           return Promise.resolve();
         }),
       ))
@@ -132,16 +151,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Vite fingerprints production assets in /assets/. Cache-first is safe because
-  // a content change produces a new URL/hash instead of overwriting an old file.
-  if (url.pathname.startsWith('/assets/')) {
+  // Only immutable, same-origin Vite assets are eligible for persistence.
+  // Authenticated/API requests, query variants and private/no-store responses
+  // are deliberately excluded from the service-worker cache.
+  if (url.pathname.startsWith('/assets/') && !url.search && !hasPrivateRequestHeaders(request)) {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
         const cached = await cache.match(request);
         if (cached) return cached;
 
         const response = await fetch(request);
-        if (response.ok) await cache.put(request, response.clone());
+        if (isCacheableAssetResponse(response)) {
+          await cache.put(request, response.clone());
+          await trimAssetCache(cache);
+        }
         return response;
       }),
     );
