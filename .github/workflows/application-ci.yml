@@ -30,6 +30,11 @@ jobs:
           node-version: '24'
           cache: npm
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: '2.9.5'
+
       - name: Install dependencies
         run: npm ci
 
@@ -44,6 +49,14 @@ jobs:
 
       - name: TypeScript check
         run: npm run lint
+
+      - name: Edge Function type checks
+        run: |
+          deno check --config supabase/functions/access-request/deno.json supabase/functions/access-request/index.ts
+          deno check --config supabase/functions/operational-event/deno.json supabase/functions/operational-event/index.ts
+          deno check --config supabase/functions/document-ocr/deno.json supabase/functions/document-ocr/index.ts
+          deno check --config supabase/functions/statement-ocr/deno.json supabase/functions/statement-ocr/index.ts
+          deno check --config supabase/functions/open-finance-session/deno.json supabase/functions/open-finance-session/index.ts
 
       - name: Production build
         run: npm run build
