@@ -1,5 +1,11 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.103.0";
 
+declare global {
+  var EdgeRuntime: {
+    waitUntil(promise: Promise<unknown>): void;
+  };
+}
+
 export type OperationalSeverity = "info" | "warning" | "error";
 export type SafePrimitive = string | number | boolean | null;
 
