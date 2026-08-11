@@ -25,7 +25,11 @@ expectContains('src/components/PlanningTool.tsx', ['<PlanningJourney', 'hasPlann
 expectContains('src/components/PreferencesCenter.tsx', ['Abrir tutorial automaticamente na Início', 'As outras ferramentas só abrem o tutorial quando você usar o botão ?']);
 expectContains('src/lib/user-preferences.ts', ['version: 2', 'MAX_HOME_WIDGETS = 8', "'balance_chart'", "'rhythm_chart'", "'categories'", "'recent'", "'cards'", 'notifications', 'toursAutoStart']);
 expectContains('src/components/DashboardBootstrap.tsx', ["lazy(() => import('./Dashboard'))", '<CommandPalette userId={user.id}', '<PreferencesCenter userId={user.id}', '<UndoToast />']);
-expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}', 'dismissedAlertsKey', 'persistDismissedAlerts', '<History userId={user.id}', 'onDataChanged={workspace.refresh}']);
+expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}', 'buildDashboardNotifications', '<History userId={user.id}', 'onDataChanged={workspace.refresh}']);
+expectContains('src/features/dashboard/dashboard-notifications.ts', ['dismissedAlertsKey', 'persistDismissedAlerts', 'buildDashboardNotifications']);
+expectContains('src/features/dashboard/dashboard-domain.ts', ['normalizeDashboardLedgerPage', 'buildStatementImportCommand', 'normalizeStatementImportResult']);
+expectContains('src/features/importer/import-review.ts', ['calculateImportBalanceValidation', 'toggleImportedTransaction', 'updateImportedTransaction']);
+expectContains('src/features/payroll/payroll-domain.ts', ['derivePayrollSummary', 'buildPayrollSaveCommand', 'sanitizeItems']);
 expectContains('src/hooks/useDashboardWorkspace.ts', ["window.addEventListener('mf:finance-data-changed', scheduleRefresh)", "window.removeEventListener('mf:finance-data-changed', scheduleRefresh)"]);
 expectContains('src/lib/unified-transaction-launcher-mount.tsx', ["window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);
 expectContains('src/components/History.tsx', ['mf_preview_categorization_rules', 'Organizar lançamentos genéricos', 'Aplicar regras', "window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);

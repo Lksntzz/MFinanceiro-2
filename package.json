@@ -7,6 +7,8 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "npm run test:modules",
+    "test:modules": "tsx scripts/module-boundaries-check.ts",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "security:check": "tsx scripts/security-policy-check.ts && tsx scripts/maintenance-rpc-contract-check.ts",

@@ -4,6 +4,13 @@ import { AlertCircle, Bell, Eye, EyeOff, LogOut, Plus, Search, Settings as Setti
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
+import {
+  appendDismissedAlert,
+  buildDashboardNotifications,
+  loadDismissedAlerts,
+  persistDismissedAlerts,
+  sortTransactionsByDateDesc,
+} from '../features/dashboard/dashboard-notifications';
 import { useDashboardWorkspace } from '../hooks/useDashboardWorkspace';
 import { useUserPreferences } from '../hooks/useUserPreferences';
 import { recordUserActivity } from '../lib/activity-log';
@@ -25,23 +32,6 @@ import ProfileCenter from './ProfileCenter';
 
 const ImportarExtratos = lazy(() => import('./ImportarExtratos'));
 
-function dismissedAlertsKey(userId: string) {
-  return `mf-dismissed-alerts:v1:${userId}`;
-}
-
-function loadDismissedAlerts(userId: string): string[] {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(dismissedAlertsKey(userId)) || '[]');
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string').slice(-250) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistDismissedAlerts(userId: string, ids: string[]) {
-  try { window.localStorage.setItem(dismissedAlertsKey(userId), JSON.stringify(ids.slice(-250))); } catch { /* optional local preference */ }
-}
-
 export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: boolean }) {
   const { isPrivate, setIsPrivate } = useApp();
   const { preferences } = useUserPreferences(user.id);
@@ -50,7 +40,7 @@ export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: 
   const workspace = useDashboardWorkspace(user.id);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>(() => loadDismissedAlerts(user.id));
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>(() => loadDismissedAlerts(user.id, window.localStorage));
 
   const path = location.pathname.replace(/\/+$/, '') || '/app';
   const historySubTab: 'list' | 'import' | 'batches' = path === '/app/movimentacoes/importar' ? 'import' : path === '/app/movimentacoes/lotes' ? 'batches' : 'list';
@@ -60,36 +50,23 @@ export default function Dashboard({ user }: { user: User; isMaintenanceBypass?: 
   const qualityIssues = useMemo(() => assessDataQuality({ accounts: workspace.accounts, categories: workspace.categories, cards: workspace.cards, fixedBills: workspace.fixedBills, transactions: workspace.financeTransactions }), [workspace.accounts, workspace.cards, workspace.categories, workspace.financeTransactions, workspace.fixedBills]);
 
   const notifications = useMemo(() => {
-    const rows: any[] = [];
-    if (preferences.notifications.commitments) {
-      workspace.fixedBills.filter((bill: any) => bill.status !== 'paid').forEach((bill: any) => {
-        const id = `fixed-${bill.id}-${monthKey}`;
-        if (!dismissedAlerts.includes(id)) rows.push({ id, type: 'fixed', title: bill.name, amount: Number(bill.amount || 0), dueDate: Number(bill.due_day || 1), status: 'pending', originalData: bill });
-      });
-    }
-    if (preferences.notifications.cards) {
-      workspace.cards.filter((card: any) => Number(card.limit || 0) > 0 && Number(card.used || 0) / Number(card.limit || 1) >= .8).forEach((card: any) => {
-        const usagePercent = Math.round((Number(card.used || 0) / Number(card.limit || 1)) * 100);
-        const id = `card-limit-${card.id}-${Math.floor(usagePercent / 5) * 5}`;
-        if (!dismissedAlerts.includes(id)) rows.push({ id, type: 'card', title: `${card.name || 'Cartão'} · limite em atenção`, amount: Number(card.used || 0), dueDate: Number(card.due_day || 1), status: 'pending', detail: `${usagePercent}% do limite utilizado`, originalData: card });
-      });
-    }
-    if (preferences.notifications.quality) {
-      qualityIssues.slice(0, 3).forEach((issue) => {
-        const id = `quality-${issue.id}-${issue.description}`;
-        if (!dismissedAlerts.includes(id)) rows.push({ id, type: 'quality', title: issue.title, amount: 0, status: 'attention', detail: issue.description, actionPath: issue.actionPath, actionLabel: issue.actionLabel, originalData: issue });
-      });
-    }
-    return rows;
+    return buildDashboardNotifications({
+      fixedBills: workspace.fixedBills,
+      cards: workspace.cards,
+      qualityIssues,
+      dismissedIds: dismissedAlerts,
+      monthKey,
+      preferences: preferences.notifications,
+    });
   }, [dismissedAlerts, monthKey, preferences.notifications.cards, preferences.notifications.commitments, preferences.notifications.quality, qualityIssues, workspace.cards, workspace.fixedBills]);
 
-  const recent = useMemo(() => [...workspace.transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [workspace.transactions]);
+  const recent = useMemo(() => sortTransactionsByDateDesc(workspace.transactions), [workspace.transactions]);
 
   function dismissAlert(id: string) {
     setDismissedAlerts((current) => {
-      if (current.includes(id)) return current;
-      const next = [...current, id].slice(-250);
-      persistDismissedAlerts(user.id, next);
+      const next = appendDismissedAlert(current, id);
+      if (next === current) return current;
+      persistDismissedAlerts(user.id, next, window.localStorage);
       return next;
     });
   }

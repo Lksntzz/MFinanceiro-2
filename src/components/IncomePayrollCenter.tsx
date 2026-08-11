@@ -15,226 +15,42 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import {
+  buildPayrollSaveCommand,
+  categoryFromDescription,
+  createId,
+  dateForMonth,
+  derivePayrollSummary,
+  emptyForm,
+  legacyItems,
+  monthKey,
+  monthLabel,
+  normalizePayroll,
+  normalizeSettings,
+  normalizeText,
+  numberValue,
+  roundMoney,
+  sanitizeItems,
+  type EditorForm,
+  type PayrollRow,
+  type SettingsRow,
+} from '../features/payroll/payroll-domain';
 import { calculatePayrollFromGross } from '../lib/payroll-tax';
 import {
   analyzePayrollPdf,
-  PayrollItem,
-  PayrollItemCategory,
-  PayrollItemKind,
+  type PayrollItem,
+  type PayrollItemKind,
 } from '../lib/payroll-pdf-parser';
 import { supabase } from '../lib/supabase';
 
-type SettingsRow = {
-  user_id: string;
-  gross_salary: number;
-  net_salary_estimated: number;
-  deductions: number;
-  benefits: number;
-  payday_cycle: 'monthly' | 'biweekly';
-  payday_1: number;
-  payday_2?: number | null;
-  payday_1_percentage?: number | null;
-  payday_2_percentage?: number | null;
-};
-
-type PayrollRow = {
-  id: string;
-  competence: string;
-  gross_salary: number;
-  expected_inss: number;
-  inss_amount: number;
-  expected_irrf: number;
-  irrf_amount: number;
-  other_deductions: number;
-  benefits: number;
-  net_salary: number;
-  cycle_net_salary?: number | null;
-  payday_cycle: 'monthly' | 'biweekly';
-  payday_1: number;
-  payday_2?: number | null;
-  payday_1_percentage: number;
-  payday_2_percentage: number;
-  notes?: string | null;
-  payroll_items?: unknown;
-  source_kind?: 'manual' | 'pdf' | 'mixed';
-  source_file_name?: string | null;
-  updated_at?: string;
-};
-
-type EditorForm = {
-  competence: string;
-  grossSalary: string;
-  paydayCycle: 'monthly' | 'biweekly';
-  payday1: string;
-  payday2: string;
-  payday1Percentage: string;
-  payday2Percentage: string;
-  notes: string;
-};
-
 const inputClass =
   'w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2.5 text-sm text-white outline-none transition focus:border-brand-primary/60';
-
-const monthKey = () => format(new Date(), 'yyyy-MM');
 
 const money = (value: number) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const percentage = (part: number, total: number) =>
   total > 0 ? `${((part / total) * 100).toFixed(2)}%` : '0,00%';
-
-const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-
-const numberValue = (value: string | number | null | undefined) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-};
-
-function dateForMonth(key: string): Date {
-  const parsed = parseISO(`${key || monthKey()}-01T12:00:00`);
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-}
-
-function monthLabel(key: string): string {
-  return format(dateForMonth(key), 'MMMM \'de\' yyyy', { locale: ptBR });
-}
-
-function normalizeText(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
-
-function categoryFromDescription(description: string): PayrollItemCategory {
-  const text = normalizeText(description);
-  if (/\binss\b|previdencia/.test(text)) return 'inss';
-  if (/\birrf\b|imposto de renda/.test(text)) return 'irrf';
-  if (/vale transporte|\bvt\b|transporte/.test(text)) return 'transport';
-  if (/saude|medic|odont|farmacia|coparticipacao/.test(text)) return 'health';
-  if (/alimentacao|refeicao|ticket|cesta|\bvr\b|\bva\b/.test(text)) return 'food';
-  if (/emprestimo|consignado|financiamento/.test(text)) return 'loan';
-  if (/falta|atraso|ausencia/.test(text)) return 'absence';
-  if (/salario|vencimento|ordenado/.test(text)) return 'salary';
-  return 'other';
-}
-
-function createId(prefix = 'manual'): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function normalizeSettings(row: any): SettingsRow {
-  return {
-    ...row,
-    user_id: String(row?.user_id || ''),
-    gross_salary: numberValue(row?.gross_salary),
-    net_salary_estimated: numberValue(row?.net_salary_estimated),
-    deductions: numberValue(row?.deductions),
-    benefits: numberValue(row?.benefits),
-    payday_cycle: row?.payday_cycle === 'biweekly' ? 'biweekly' : 'monthly',
-    payday_1: Number(row?.payday_1 || 5),
-    payday_2: Number(row?.payday_2 || 20),
-    payday_1_percentage: numberValue(row?.payday_1_percentage ?? 50),
-    payday_2_percentage: numberValue(row?.payday_2_percentage ?? 50),
-  };
-}
-
-function normalizePayroll(row: any): PayrollRow {
-  return {
-    ...row,
-    id: String(row.id),
-    competence: String(row.competence),
-    gross_salary: numberValue(row.gross_salary),
-    expected_inss: numberValue(row.expected_inss),
-    inss_amount: numberValue(row.inss_amount),
-    expected_irrf: numberValue(row.expected_irrf),
-    irrf_amount: numberValue(row.irrf_amount),
-    other_deductions: numberValue(row.other_deductions),
-    benefits: numberValue(row.benefits),
-    net_salary: numberValue(row.net_salary),
-    cycle_net_salary: numberValue(row.cycle_net_salary),
-    payday_cycle: row.payday_cycle === 'biweekly' ? 'biweekly' : 'monthly',
-    payday_1: Number(row.payday_1 || 5),
-    payday_2: Number(row.payday_2 || 20),
-    payday_1_percentage: numberValue(row.payday_1_percentage ?? 50),
-    payday_2_percentage: numberValue(row.payday_2_percentage ?? 50),
-  };
-}
-
-function sanitizeItems(raw: unknown, gross = 0): PayrollItem[] {
-  let parsed = raw;
-  if (typeof raw === 'string') {
-    try { parsed = JSON.parse(raw); } catch { parsed = []; }
-  }
-  if (!Array.isArray(parsed)) return [];
-
-  return parsed
-    .map((value: any, index) => {
-      let description = String(value?.description || '').trim();
-      if (/^\*+$/.test(description.replace(/\s/g, ''))) description = 'Rubrica não identificada';
-      if (!description) return null;
-
-      const normalized = normalizeText(description);
-      if (/\b\d{1,3}\/\d{4}-\d{2}\b/.test(normalized)) return null;
-      if (/\b(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/?20\d{2}\b/.test(normalized) && /\d/.test(normalized)) return null;
-
-      const kind: PayrollItemKind = ['earning', 'deduction', 'benefit'].includes(value?.kind)
-        ? value.kind
-        : 'deduction';
-      const amount = numberValue(value?.amount);
-      return {
-        id: String(value?.id || `stored-${index}`),
-        code: value?.code ? String(value.code) : undefined,
-        description,
-        kind,
-        category: (value?.category || categoryFromDescription(description)) as PayrollItemCategory,
-        amount,
-        percentage: gross > 0 ? roundMoney((amount / gross) * 100) : numberValue(value?.percentage),
-        reference: value?.reference ? String(value.reference) : undefined,
-        source: value?.source === 'pdf' ? 'pdf' : 'manual',
-        confidence: numberValue(value?.confidence ?? 1),
-      } as PayrollItem;
-    })
-    .filter((item): item is PayrollItem => Boolean(item));
-}
-
-function legacyItems(row: PayrollRow): PayrollItem[] {
-  const result: PayrollItem[] = [];
-  if (row.inss_amount > 0) result.push({
-    id: createId('legacy'), description: 'INSS', kind: 'deduction', category: 'inss', amount: row.inss_amount,
-    percentage: percentageNumber(row.inss_amount, row.gross_salary), source: 'manual', confidence: 1,
-  });
-  if (row.irrf_amount > 0) result.push({
-    id: createId('legacy'), description: 'IRRF', kind: 'deduction', category: 'irrf', amount: row.irrf_amount,
-    percentage: percentageNumber(row.irrf_amount, row.gross_salary), source: 'manual', confidence: 1,
-  });
-  if (row.other_deductions > 0) result.push({
-    id: createId('legacy'), description: 'Outros descontos', kind: 'deduction', category: 'other', amount: row.other_deductions,
-    percentage: percentageNumber(row.other_deductions, row.gross_salary), source: 'manual', confidence: 1,
-  });
-  if (row.benefits > 0) result.push({
-    id: createId('legacy'), description: 'Benefícios', kind: 'benefit', category: 'other', amount: row.benefits,
-    percentage: percentageNumber(row.benefits, row.gross_salary), source: 'manual', confidence: 1,
-  });
-  return result;
-}
-
-function percentageNumber(part: number, total: number) {
-  return total > 0 ? roundMoney((part / total) * 100) : 0;
-}
-
-function emptyForm(settings: SettingsRow | null, competence = monthKey()): EditorForm {
-  const cycle = settings?.payday_cycle || 'biweekly';
-  return {
-    competence,
-    grossSalary: String(settings?.gross_salary || 0),
-    paydayCycle: cycle,
-    payday1: String(settings?.payday_1 || 5),
-    payday2: String(settings?.payday_2 || 20),
-    payday1Percentage: String(cycle === 'biweekly' ? settings?.payday_1_percentage ?? 60 : 100),
-    payday2Percentage: String(cycle === 'biweekly' ? settings?.payday_2_percentage ?? 40 : 0),
-    notes: '',
-  };
-}
 
 export default function IncomePayrollCenter({ userId }: { userId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -296,35 +112,23 @@ export default function IncomePayrollCenter({ userId }: { userId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, dirty]);
 
-  const gross = numberValue(form.grossSalary);
-  const normalizedItems = useMemo(
-    () => items.map((item) => ({ ...item, percentage: percentageNumber(item.amount, gross) })),
-    [items, gross],
-  );
-  const deductionItems = normalizedItems.filter((item) => item.kind === 'deduction');
-  const benefitItems = normalizedItems.filter((item) => item.kind === 'benefit');
-  const earningItems = normalizedItems.filter((item) => item.kind === 'earning');
-  const actualInss = deductionItems
-    .filter((item) => item.category === 'inss' || /\binss\b/.test(normalizeText(item.description)))
-    .reduce((sum, item) => sum + item.amount, 0);
-  const actualIrrf = deductionItems
-    .filter((item) => item.category === 'irrf' || /\birrf\b|imposto de renda/.test(normalizeText(item.description)))
-    .reduce((sum, item) => sum + item.amount, 0);
-  const totalDeductions = deductionItems.reduce((sum, item) => sum + item.amount, 0);
-  const otherDeductions = Math.max(0, totalDeductions - actualInss - actualIrrf);
-  const benefits = benefitItems.reduce((sum, item) => sum + item.amount, 0);
-  const actualNet = Math.max(0, roundMoney(gross - totalDeductions));
-  const cycleBase = Math.max(0, roundMoney(gross - actualInss - actualIrrf));
-  const firstPercentage = form.paydayCycle === 'biweekly' ? Math.min(100, numberValue(form.payday1Percentage)) : 100;
-  const secondPercentage = form.paydayCycle === 'biweekly' ? Math.min(100, numberValue(form.payday2Percentage)) : 0;
-  const firstPayment = form.paydayCycle === 'biweekly'
-    ? roundMoney(cycleBase * firstPercentage / 100)
-    : cycleBase;
-  const secondPayment = form.paydayCycle === 'biweekly' ? roundMoney(cycleBase - firstPayment) : 0;
-  const estimatedTaxes = useMemo(
-    () => calculatePayrollFromGross(gross, dateForMonth(form.competence)),
-    [gross, form.competence],
-  );
+  const payrollSummary = useMemo(() => derivePayrollSummary(form, items), [form, items]);
+  const {
+    gross,
+    deductionItems,
+    benefitItems,
+    earningItems,
+    actualInss,
+    actualIrrf,
+    totalDeductions,
+    actualNet,
+    cycleBase,
+    firstPercentage,
+    secondPercentage,
+    firstPayment,
+    secondPayment,
+    estimatedTaxes,
+  } = payrollSummary;
 
   function toggleMonth(id: string) {
     setOpenMonths((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -512,51 +316,8 @@ export default function IncomePayrollCenter({ userId }: { userId: string }) {
     setSuccess(null);
 
     try {
-      const payday1 = Number(form.payday1);
-      const payday2 = Number(form.payday2);
-      if (gross <= 0) throw new Error('Informe o total bruto da folha.');
-      if (totalDeductions > gross) throw new Error('Os descontos não podem superar o total bruto.');
-      if (normalizedItems.some((item) => !item.description.trim())) throw new Error('Preencha ou exclua as rubricas sem descrição.');
-      if (!Number.isInteger(payday1) || payday1 < 1 || payday1 > 31) throw new Error('O primeiro dia deve ficar entre 1 e 31.');
-      if (form.paydayCycle === 'biweekly') {
-        if (!Number.isInteger(payday2) || payday2 < 1 || payday2 > 31) throw new Error('O segundo dia deve ficar entre 1 e 31.');
-        if (Math.abs(firstPercentage + secondPercentage - 100) > 0.01) throw new Error('Os percentuais precisam somar 100%.');
-      }
-
-      const sourceKind: 'manual' | 'pdf' | 'mixed' = sourceFileName
-        ? normalizedItems.some((item) => item.source === 'manual') ? 'mixed' : 'pdf'
-        : 'manual';
-
-      const { error: saveError } = await supabase.rpc('mf_save_payroll_statement_v2', {
-        p_competence: `${form.competence}-01`,
-        p_gross_salary: gross,
-        p_expected_inss: estimatedTaxes.inss,
-        p_inss_amount: actualInss,
-        p_expected_irrf: estimatedTaxes.irrf,
-        p_irrf_amount: actualIrrf,
-        p_other_deductions: otherDeductions,
-        p_benefits: benefits,
-        p_payday_cycle: form.paydayCycle,
-        p_payday_1: payday1,
-        p_payday_2: form.paydayCycle === 'biweekly' ? payday2 : null,
-        p_payday_1_percentage: form.paydayCycle === 'biweekly' ? firstPercentage : 100,
-        p_payday_2_percentage: form.paydayCycle === 'biweekly' ? secondPercentage : 0,
-        p_notes: form.notes.trim() || null,
-        p_items: normalizedItems.map((item) => ({
-          id: item.id,
-          code: item.code || null,
-          description: item.description.trim(),
-          kind: item.kind,
-          category: item.category,
-          amount: roundMoney(item.amount),
-          percentage: roundMoney(item.percentage),
-          reference: item.reference || null,
-          source: item.source,
-          confidence: item.confidence,
-        })),
-        p_source_kind: sourceKind,
-        p_source_file_name: sourceFileName,
-      });
+      const command = buildPayrollSaveCommand(form, items, sourceFileName);
+      const { error: saveError } = await supabase.rpc('mf_save_payroll_statement_v2', command.params);
 
       if (saveError) throw saveError;
       setEditorOpen(false);

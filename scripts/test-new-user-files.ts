@@ -1,10 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import {
-  detectFileFormat,
-  parseCsvTransactions,
-  parseSpreadsheetTransactions,
-} from '../src/components/ImportarExtratos';
+import { parseCsvTransactions } from '../src/features/importer/csv-parser';
+import { detectFileFormat } from '../src/features/importer/import-file';
+import { parseSpreadsheetTransactions } from '../src/features/importer/spreadsheet-parser';
 import {
   normalizeHeader,
   parseAmount,
@@ -156,4 +154,3 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-
