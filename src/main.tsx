@@ -1,5 +1,3 @@
-// Bank format adapters are pure parsing compatibility layers.
-import './lib/mega-update-announcement-mount';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
