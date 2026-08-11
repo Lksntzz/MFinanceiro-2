@@ -1,7 +1,6 @@
-import * as XLSX from 'xlsx';
-
 type Cell = string | number | boolean | Date | null | undefined;
-type Row = Cell[];
+export type SpreadsheetRow = Cell[];
+type Row = SpreadsheetRow;
 type Direction = 'income' | 'expense' | 'unknown';
 
 interface BankProfile {
@@ -189,9 +188,13 @@ function parseExcelDate(value: Cell): string | null {
   }
 
   if (typeof value === 'number' && Number.isFinite(value)) {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed && parsed.y >= 2000 && parsed.y <= 2100) {
-      return `${String(parsed.d).padStart(2, '0')}/${String(parsed.m).padStart(2, '0')}/${parsed.y}`;
+    // Excel's 1900 date system includes the fictitious 1900-02-29 at serial 60.
+    const wholeDays = Math.floor(value);
+    const adjustedDays = wholeDays >= 60 ? wholeDays - 1 : wholeDays;
+    const parsed = new Date(Date.UTC(1899, 11, 31) + adjustedDays * 86_400_000);
+    const year = parsed.getUTCFullYear();
+    if (wholeDays > 0 && year >= 2000 && year <= 2100) {
+      return `${String(parsed.getUTCDate()).padStart(2, '0')}/${String(parsed.getUTCMonth() + 1).padStart(2, '0')}/${year}`;
     }
   }
 
@@ -382,14 +385,7 @@ function movementForRow(row: Row, header: HeaderMatch): { credit: number; debit:
   return { credit, debit };
 }
 
-export function standardizeBankSheet(sheet: XLSX.WorkSheet): string | null {
-  const rows = XLSX.utils.sheet_to_json<Row>(sheet, {
-    header: 1,
-    raw: true,
-    defval: '',
-    blankrows: false,
-  });
-
+export function standardizeBankSheet(rows: SpreadsheetRow[]): string | null {
   if (!rows.length) return null;
   const header = findBestHeader(rows);
   if (!header) return null;
@@ -432,4 +428,11 @@ export function standardizeBankSheet(sheet: XLSX.WorkSheet): string | null {
   }
 
   return output.length > 1 ? output.join('\n') : null;
+}
+
+export function spreadsheetRowsToCsv(rows: SpreadsheetRow[]): string {
+  return rows
+    .filter((row) => row.some((cell) => displayCell(cell) !== ''))
+    .map((row) => row.map((cell) => csvField(displayCell(cell))).join(','))
+    .join('\n');
 }

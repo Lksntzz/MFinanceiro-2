@@ -135,7 +135,16 @@ export function detectFileFormat(file: Pick<File, 'name' | 'type'>): FormatDetec
   if (ext === 'ofx' || mime.includes('ofx')) return { format: 'ofx', formatLabel: 'OFX', parserLabel: 'Parser OFX', parserExists: true, supported: true };
   if (ext === 'pdf' || mime.includes('pdf')) return { format: 'pdf', formatLabel: 'PDF', parserLabel: 'Parser PDF', parserExists: true, supported: true };
   if (ext === 'xlsx') return { format: 'xlsx', formatLabel: 'XLSX', parserLabel: 'Parser XLSX', parserExists: true, supported: true };
-  if (ext === 'xls') return { format: 'xls', formatLabel: 'XLS', parserLabel: 'Parser XLS', parserExists: true, supported: true };
+  if (ext === 'xls') {
+    return {
+      format: 'xls',
+      formatLabel: 'XLS',
+      parserLabel: 'Conversão necessária',
+      parserExists: false,
+      supported: false,
+      reason: 'O formato XLS legado não é processado com segurança. Converta o arquivo para XLSX, CSV ou OFX.',
+    };
+  }
   if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
     return { format: 'image', formatLabel: 'Imagem', parserLabel: 'OCR/IA com revisão', parserExists: true, supported: true };
   }

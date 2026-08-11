@@ -96,7 +96,7 @@ export const InvestmentDonutChart = ({ data }: DonutChartProps) => {
               boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
             }}
             itemStyle={{ color: '#fff' }}
-            formatter={(val: number) => [`R$ ${val.toLocaleString('pt-BR')}`, 'Valor']}
+            formatter={(val) => [`R$ ${Number(val ?? 0).toLocaleString('pt-BR')}`, 'Valor']}
           />
         </PieChart>
       )}

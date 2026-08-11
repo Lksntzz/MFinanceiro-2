@@ -5,6 +5,7 @@ import { Navigate, useLocation } from 'react-router';
 
 import { DEFAULT_USER_SETTINGS } from '../lib/constants';
 import { supabase } from '../lib/supabase';
+import WebUpdateAnnouncement from '../lib/mega-update-announcement-mount';
 import { useMobileExperience } from '../mobile/useMobileExperience';
 import CommandPalette from './CommandPalette';
 import PreferencesCenter from './PreferencesCenter';
@@ -134,6 +135,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
       <CommandPalette userId={user.id} />
       <PreferencesCenter userId={user.id} />
       <UndoToast />
+      <WebUpdateAnnouncement />
     </>;
   }
 

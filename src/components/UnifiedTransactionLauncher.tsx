@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createRoot } from 'react-dom/client';
 import {
   ArrowLeftRight,
   Banknote,
@@ -19,8 +18,8 @@ import {
   X,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { CATEGORIES } from './constants';
-import { supabase } from './supabase';
+import { CATEGORIES } from '../lib/constants';
+import { supabase } from '../lib/supabase';
 import { FinancialAccount, TransactionCategory } from '../types';
 
 type EntryType = 'expense' | 'income';
@@ -92,7 +91,6 @@ const PAYMENT_OPTIONS: Record<EntryType, Array<{ id: PaymentMethod; label: strin
 const INCOME_CATEGORIES = ['Salário', 'Renda extra', 'Reembolso', 'Benefícios', 'Investimentos', 'Outros'];
 const money = (value: number) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
-const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 function defaultForm(): FormState {
   return {
@@ -112,9 +110,19 @@ function defaultForm(): FormState {
   };
 }
 
-function UnifiedTransactionLauncher() {
-  const [userId, setUserId] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+type UnifiedTransactionLauncherProps = {
+  userId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDataChanged?: () => void | Promise<void>;
+};
+
+export default function UnifiedTransactionLauncher({
+  userId,
+  open,
+  onOpenChange,
+  onDataChanged,
+}: UnifiedTransactionLauncherProps) {
   const [advanced, setAdvanced] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
@@ -127,20 +135,7 @@ function UnifiedTransactionLauncher() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getUser().then(({ data }) => {
-      if (mounted) setUserId(data.user?.id || null);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => setUserId(session?.user?.id || null));
-    return () => {
-      mounted = false;
-      data.subscription.unsubscribe();
-    };
-  }, []);
-
   async function loadSupportingData() {
-    if (!userId) return;
     const ensured = await supabase.rpc('mf_ensure_financial_structure');
     if (ensured.error) {
       setError(ensured.error.message);
@@ -208,63 +203,23 @@ function UnifiedTransactionLauncher() {
     });
   }
 
-  function openLauncher() {
-    setOpen(true);
+  useEffect(() => {
+    if (!open) return;
     setMessage(null);
     setError(null);
     void loadSupportingData();
-  }
-
-  useEffect(() => {
-    const captureClick = (event: MouseEvent) => {
-      const button = (event.target as HTMLElement | null)?.closest('button');
-      if (!button || button.closest('#mf-unified-transaction-root')) return;
-      const label = normalize(button.textContent || '');
-
-      if (label === 'lancar' || label === 'novo lancamento') {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        openLauncher();
-        return;
-      }
-
-      if (label.includes('registrar pagamento da fatura')) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        const cardContainer = button.closest('article');
-        const cardName = cardContainer?.querySelector('h3')?.textContent?.trim();
-        const card = cards.find((item) => item.name === cardName);
-        if (!card) {
-          setError('Não foi possível identificar o cartão. Abra Lançar uma vez para atualizar a lista.');
-          setOpen(true);
-          void loadSupportingData();
-          return;
-        }
-        if (!window.confirm(`Registrar o pagamento de ${money(card.used)} da fatura ${card.name}?`)) return;
-        void payCardBill(card);
-      }
-    };
-
-    document.addEventListener('click', captureClick, true);
-    return () => document.removeEventListener('click', captureClick, true);
+    // The launcher reloads its supporting data only when it is explicitly opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, userId]);
+  }, [open, userId]);
 
   useEffect(() => {
-    const hideLegacyModal = () => {
-      document.querySelectorAll<HTMLElement>('.mf-modal-backdrop').forEach((backdrop) => {
-        if (backdrop.closest('#mf-unified-transaction-root')) return;
-        const title = normalize(backdrop.querySelector('h2')?.textContent || '');
-        if (title === 'novo lancamento') backdrop.style.display = open ? 'none' : '';
-      });
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) onOpenChange(false);
     };
-    hideLegacyModal();
-    const observer = new MutationObserver(hideLegacyModal);
-    observer.observe(document.body, { subtree: true, childList: true });
-    return () => observer.disconnect();
-  }, [open]);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onOpenChange, open, saving]);
 
   const amount = Number(form.amount || 0);
   const categoryOptions = normalizedCategories.filter((category) =>
@@ -324,6 +279,14 @@ function UnifiedTransactionLauncher() {
     setError(null);
   }
 
+  async function refreshDashboard() {
+    try {
+      await onDataChanged?.();
+    } catch (refreshError) {
+      console.warn('Lançamento confirmado, mas o painel não pôde ser atualizado imediatamente:', refreshError);
+    }
+  }
+
   async function save(keepOpen: boolean) {
     if (!userId || saving) return;
     setSaving(true);
@@ -360,13 +323,13 @@ function UnifiedTransactionLauncher() {
 
       setMessage(form.status === 'pending' ? 'Lançamento pendente registrado.' : 'Lançamento registrado e valores atualizados.');
       await loadSupportingData();
-      window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
+      await refreshDashboard();
 
       if (keepOpen) {
         resetForAnother();
       } else {
         window.setTimeout(() => {
-          setOpen(false);
+          onOpenChange(false);
           setForm(defaultForm());
           setAdvanced(false);
         }, 550);
@@ -386,7 +349,7 @@ function UnifiedTransactionLauncher() {
       if (rpcError) throw rpcError;
       setMessage(item.type === 'income' ? 'Entrada recebida e saldo atualizado.' : 'Saída paga e saldo atualizado.');
       await loadSupportingData();
-      window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
+      await refreshDashboard();
     } catch (payError: any) {
       setError(payError?.message || 'Não foi possível concluir a pendência.');
     } finally {
@@ -394,35 +357,17 @@ function UnifiedTransactionLauncher() {
     }
   }
 
-  async function payCardBill(card: CardRow) {
-    setOpen(true);
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const { error: rpcError } = await supabase.rpc('mf_pay_credit_card_bill_v2', { p_card_id: card.id });
-      if (rpcError) throw rpcError;
-      setMessage(`Fatura ${card.name} paga sem duplicar o gasto das compras.`);
-      await loadSupportingData();
-      window.setTimeout(() => window.location.reload(), 700);
-    } catch (payError: any) {
-      setError(payError?.message || 'Não foi possível registrar o pagamento da fatura.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (!open || !userId) return null;
+  if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm">
-      <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#090909] shadow-2xl">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onOpenChange(false); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="mf-transaction-launcher-title" className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#090909] shadow-2xl">
         <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 md:px-5">
           <div>
-            <h2 className="flex items-center gap-2 text-base font-black"><ListPlus size={19} className="text-brand-primary" /> Central de lançamentos</h2>
+            <h2 id="mf-transaction-launcher-title" className="flex items-center gap-2 text-base font-black"><ListPlus size={19} className="text-brand-primary" /> Central de lançamentos</h2>
             <p className="mt-1 text-[9px] uppercase tracking-[0.17em] text-white/35">Entrada, saída, forma de pagamento e pendências no mesmo lugar</p>
           </div>
-          <button type="button" onClick={() => setOpen(false)} className="rounded-xl bg-white/5 p-2 text-white/45 hover:text-white"><X size={18} /></button>
+          <button type="button" aria-label="Fechar central de lançamentos" disabled={saving} onClick={() => onOpenChange(false)} className="rounded-xl bg-white/5 p-2 text-white/45 hover:text-white disabled:opacity-40"><X size={18} /></button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
@@ -508,19 +453,3 @@ function UnifiedTransactionLauncher() {
 function Field({ label, children, wide }: { label: string; children: React.ReactElement<any>; wide?: boolean }) {
   return <label className={wide ? 'block md:col-span-2' : 'block'}><span className="mb-1.5 block text-[9px] font-bold uppercase tracking-wider text-white/35">{label}</span>{React.cloneElement(children, { className: 'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white outline-none transition focus:border-brand-primary/55' })}</label>;
 }
-
-function mountUnifiedTransactionLauncher() {
-  if (document.getElementById('mf-unified-transaction-root')) return;
-  const host = document.createElement('div');
-  host.id = 'mf-unified-transaction-root';
-  document.body.appendChild(host);
-  createRoot(host).render(<UnifiedTransactionLauncher />);
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mountUnifiedTransactionLauncher, { once: true });
-} else {
-  mountUnifiedTransactionLauncher();
-}
-
-export {};

@@ -4,8 +4,8 @@ import { CheckCircle2, KeyRound, Loader2, LockKeyhole, QrCode, ShieldCheck, X } 
 import { supabase } from '../lib/supabase';
 
 type AalState = {
-  currentLevel: 'aal1' | 'aal2' | null;
-  nextLevel: 'aal1' | 'aal2' | null;
+  currentLevel: string | null;
+  nextLevel: string | null;
 };
 
 type TotpFactor = {
