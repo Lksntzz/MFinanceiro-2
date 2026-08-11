@@ -4,6 +4,8 @@ export type OperationalSeverity = "info" | "warning" | "error";
 export type SafePrimitive = string | number | boolean | null;
 
 const PROD_ORIGIN = "https://mfinanceiro.com.br";
+const VERCEL_PRODUCTION_ALIAS = "m-financeiro-2.vercel.app";
+const VERCEL_TEAM_SUFFIX = "-lucasmanga95-4135s-projects.vercel.app";
 const SAFE_CONTEXT_KEYS = new Set([
   "route",
   "component",
@@ -61,7 +63,8 @@ export function safeOrigin(request: Request) {
     const allowed = url.origin === PROD_ORIGIN
       || hostname === "localhost"
       || hostname === "127.0.0.1"
-      || hostname.endsWith(".vercel.app");
+      || hostname === VERCEL_PRODUCTION_ALIAS
+      || hostname.endsWith(VERCEL_TEAM_SUFFIX);
     return allowed ? url.origin : PROD_ORIGIN;
   } catch {
     return PROD_ORIGIN;
