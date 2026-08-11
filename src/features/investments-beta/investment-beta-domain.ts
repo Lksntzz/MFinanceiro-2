@@ -1,5 +1,6 @@
 export type InvestmentAssetClass = 'stock' | 'fii' | 'etf' | 'bdr' | 'crypto' | 'fixed_income' | 'international' | 'other';
 export type InvestmentOperationType = 'buy' | 'sell';
+export type InvestmentBetaMarketSource = 'brapi-sandbox' | 'brapi-backend';
 
 export type InvestmentBetaOperation = {
   id: string;
@@ -27,7 +28,26 @@ export type InvestmentBetaQuote = {
   change: number;
   changePercent: number;
   updatedAt?: string;
-  source: 'brapi-sandbox';
+  source: InvestmentBetaMarketSource;
+};
+
+export type InvestmentBetaIncomeEvent = {
+  id: string;
+  assetClass: 'stock' | 'fii' | 'etf' | 'bdr';
+  symbol: string;
+  label: string;
+  rate: number;
+  currency: string;
+  approvedOn?: string;
+  recordDate?: string;
+  paymentDate?: string;
+  source: InvestmentBetaMarketSource;
+};
+
+export type InvestmentBetaIncomeProjection = InvestmentBetaIncomeEvent & {
+  eligibilityKnown: boolean;
+  eligibleQuantity: number;
+  expectedAmount: number;
 };
 
 export type InvestmentBetaPosition = {
@@ -80,6 +100,52 @@ export function operationGrossAmount(operation: Pick<InvestmentBetaOperation, 'q
   const trade = Math.max(0, sanitizeNumber(operation.quantity)) * Math.max(0, sanitizeNumber(operation.unitPrice));
   const fees = Math.max(0, sanitizeNumber(operation.fees));
   return Number((operation.type === 'buy' ? trade + fees : Math.max(0, trade - fees)).toFixed(2));
+}
+
+export function quantityHeldOnDate(
+  operations: InvestmentBetaOperation[],
+  assetClass: InvestmentAssetClass,
+  symbolInput: string,
+  dateInput: string,
+): number {
+  const symbol = normalizeSymbol(symbolInput);
+  const cutoff = String(dateInput || '').slice(0, 10);
+  if (!symbol || !cutoff) return 0;
+
+  const quantity = operations
+    .filter((operation) => operation.assetClass === assetClass && normalizeSymbol(operation.symbol) === symbol && String(operation.date || '').slice(0, 10) <= cutoff)
+    .sort((a, b) => {
+      const dateOrder = a.date.localeCompare(b.date);
+      return dateOrder !== 0 ? dateOrder : a.createdAt.localeCompare(b.createdAt);
+    })
+    .reduce((current, operation) => {
+      const operationQuantity = Math.max(0, sanitizeNumber(operation.quantity));
+      return operation.type === 'buy'
+        ? current + operationQuantity
+        : Math.max(0, current - Math.min(current, operationQuantity));
+    }, 0);
+
+  return Number(quantity.toFixed(8));
+}
+
+export function projectInvestmentIncomeEvents(
+  events: InvestmentBetaIncomeEvent[],
+  operations: InvestmentBetaOperation[],
+): InvestmentBetaIncomeProjection[] {
+  return events.map((event) => {
+    const eligibilityKnown = Boolean(event.recordDate);
+    const eligibleQuantity = eligibilityKnown
+      ? quantityHeldOnDate(operations, event.assetClass, event.symbol, event.recordDate || '')
+      : 0;
+    return {
+      ...event,
+      eligibilityKnown,
+      eligibleQuantity,
+      expectedAmount: eligibilityKnown
+        ? Number((eligibleQuantity * Math.max(0, sanitizeNumber(event.rate))).toFixed(2))
+        : 0,
+    };
+  });
 }
 
 export function deriveInvestmentPositions(
