@@ -28,7 +28,7 @@ expectContains('src/components/DashboardBootstrap.tsx', ["lazy(() => import('./D
 expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}', 'dismissedAlertsKey', 'persistDismissedAlerts', '<History userId={user.id}', 'onDataChanged={workspace.refresh}']);
 expectContains('src/hooks/useDashboardWorkspace.ts', ["window.addEventListener('mf:finance-data-changed', scheduleRefresh)", "window.removeEventListener('mf:finance-data-changed', scheduleRefresh)"]);
 expectContains('src/components/TransactionLaunchTool.tsx', ["mf_create_finance_entry_v3", "window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))", 'Lançar movimentação']);
-expectNotContains('src/main.tsx', ['unified-transaction-launcher-mount']);
+expectNotContains('src/main.tsx', ['unified-transaction-launcher-mount', 'mega-update-announcement-mount']);
 expectNotContains('src/components/History.tsx', ['mf_preview_categorization_rules', 'Organizar lançamentos genéricos', 'Criar regras', 'Aplicar regras', 'assist=categorias']);
 expectNotContains('src/lib/financial-quality.ts', ['Muitos lançamentos genéricos', 'Organizar genéricos', '/app/movimentacoes?assist=categorias']);
 expectContains('src/components/FinancialCategoriesTool.tsx', ['glass-card mf-tool-surface']);
@@ -40,7 +40,6 @@ expectContains('src/components/AppNavigation.tsx', ['mf:open-command-palette', "
 expectContains('src/components/CommandPalette.tsx', ["event.key === 'ArrowDown'", "event.key === 'ArrowUp'", "event.key === 'Enter'", 'aria-activedescendant']);
 expectContains('src/context/AppContext.tsx', ['data-mf-private', "event.altKey && event.key.toLowerCase() === 'p'"]);
 expectContains('src/components/DashboardHome.tsx', ["lazy(() => import('./DashboardCharts'))", 'visibleWidgets', 'DataQualityPanel']);
-expectContains('src/lib/mega-update-announcement-mount.tsx', ['LATEST_WEB_UPDATE', 'releaseReadKey', 'notifications.release']);
 expectContains('src/components/NotificationCenter.tsx', ['LATEST_WEB_UPDATE', 'showReleaseUpdate', 'releaseDismissed', 'Apagar atualização', "type: 'fixed' | 'installment' | 'card' | 'daily' | 'quality'"]);
 expectNotContains('src/components/NotificationCenter.tsx', ['2026-08-07-mega-update']);
 expectContains('src/lib/release-updates.ts', ['2026-08-10-home-alerts-and-connections', 'Início completo e alertas que ajudam']);
