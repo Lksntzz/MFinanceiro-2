@@ -108,10 +108,11 @@ alter policy "fixed bill occurrences update own" on public.mf_fixed_bill_occurre
 alter policy "fixed bill occurrences delete own" on public.mf_fixed_bill_occurrences to authenticated;
 
 -- Redacted operational telemetry. No financial description, amount, document text, e-mail,
--- account/card identifiers, or raw exception payload belongs here.
+-- account/card identifiers, or raw exception payload belongs here. Browser clients submit
+-- events through the operational-event Edge Function; direct table access remains closed.
 create table if not exists public.mf_operational_events (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   event_name text not null check (event_name ~ '^[a-z0-9_.-]{3,80}$'),
   area text not null check (area ~ '^[a-z0-9_.-]{2,60}$'),
   severity text not null default 'error' check (severity in ('info', 'warning', 'error')),
@@ -124,18 +125,11 @@ create table if not exists public.mf_operational_events (
 
 alter table public.mf_operational_events enable row level security;
 revoke all on table public.mf_operational_events from public, anon, authenticated;
-grant insert on table public.mf_operational_events to authenticated;
 grant all on table public.mf_operational_events to service_role;
-
 drop policy if exists "operational events insert own" on public.mf_operational_events;
-create policy "operational events insert own"
-on public.mf_operational_events
-for insert
-to authenticated
-with check ((select auth.uid()) = user_id);
 
 comment on table public.mf_operational_events is
-  'Redacted client/runtime operational events. Never store raw financial or document data.';
+  'Redacted client/runtime operational events. Service-write only; never store raw financial, identity, token or document data.';
 
 -- Audit trail for privileged/global configuration mutations.
 create table if not exists public.mf_admin_audit_events (
