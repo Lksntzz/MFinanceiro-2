@@ -18,6 +18,7 @@ const FinancialAccountsTool = lazy(() => import('./FinancialAccountsTool'));
 const FinancialAgendaTool = lazy(() => import('./FinancialAgendaTool'));
 const FinancialCategoriesTool = lazy(() => import('./FinancialCategoriesTool'));
 const IntegrationTool = lazy(() => import('./IntegrationTool'));
+const InvestmentBetaTool = lazy(() => import('./InvestmentBetaTool'));
 const InvestmentTool = lazy(() => import('./InvestmentTool'));
 const PlanningStrategyTool = lazy(() => import('./PlanningStrategyTool'));
 const PlanningTool = lazy(() => import('./PlanningTool'));
@@ -54,6 +55,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   const voiceRoute = location.pathname === '/voice';
   const recurrenceRoute = location.pathname === '/recurrences';
   const launchRoute = location.pathname === '/app/lancar';
+  const betaInvestmentRoute = location.pathname.startsWith('/app/beta/investimentos');
   const investmentRoute = location.pathname.startsWith('/app/investimentos');
   const integrationRoute = location.pathname.startsWith('/app/integracoes');
   const agendaRoute = location.pathname.startsWith('/app/agenda');
@@ -119,6 +121,7 @@ export default function DashboardBootstrap({ user, isMaintenanceBypass }: { user
   if (ready) {
     let tool: React.ReactNode;
     if (launchRoute) tool = <TransactionLaunchTool user={user} />;
+    else if (betaInvestmentRoute) tool = <InvestmentBetaTool user={user} />;
     else if (investmentRoute) tool = <InvestmentTool user={user} />;
     else if (integrationRoute) tool = <IntegrationTool user={user} />;
     else if (agendaRoute) tool = <FinancialAgendaTool user={user} />;
