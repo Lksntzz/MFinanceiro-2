@@ -1,5 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
+import {
+  consumeRateLimit,
+  corsHeaders,
+  createServiceClient,
+  jsonResponse,
+  recordOperationalEvent,
+  requestRateLimitSubject,
+  safeOrigin,
+  valueRateLimitSubject,
+} from "../_shared/edge-security.ts";
 
 type PreparedRequest = {
   request_id?: string | null;
@@ -9,9 +19,14 @@ type PreparedRequest = {
   existing_account?: boolean | null;
 };
 
-const PROD_ORIGIN = "https://mfinanceiro.com.br";
 const INVITE_COOLDOWN_MS = 10 * 60 * 1000;
 const TOKEN_TTL_MS = 10 * 60 * 1000;
+const PUBLIC_IP_LIMIT = 8;
+const PUBLIC_IP_WINDOW_SECONDS = 15 * 60;
+const PUBLIC_EMAIL_LIMIT = 4;
+const PUBLIC_EMAIL_WINDOW_SECONDS = 60 * 60;
+const ADMIN_DECISION_LIMIT = 60;
+const ADMIN_DECISION_WINDOW_SECONDS = 10 * 60;
 
 function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
@@ -25,40 +40,8 @@ function isValidEmail(value: string) {
   return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function safeOrigin(request: Request) {
-  const raw = String(request.headers.get("origin") || "").trim();
-  try {
-    const url = new URL(raw);
-    const hostname = url.hostname.toLowerCase();
-    const allowed = url.origin === PROD_ORIGIN
-      || hostname === "localhost"
-      || hostname === "127.0.0.1"
-      || hostname.endsWith(".vercel.app");
-    return allowed ? url.origin : PROD_ORIGIN;
-  } catch {
-    return PROD_ORIGIN;
-  }
-}
-
-function corsHeaders(request: Request) {
-  return {
-    "Access-Control-Allow-Origin": safeOrigin(request),
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Cache-Control": "no-store",
-    "Vary": "Origin",
-  };
-}
-
-function json(request: Request, body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders(request), "Content-Type": "application/json" },
-  });
-}
-
 function accepted(request: Request) {
-  return json(request, {
+  return jsonResponse(request, {
     accepted: true,
     message: "Se o endereço estiver apto, o MF enviará as próximas instruções por e-mail.",
   }, 202);
@@ -76,15 +59,6 @@ async function sha256Hex(value: string) {
   const bytes = new TextEncoder().encode(value);
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function createServiceClient() {
-  const url = Deno.env.get("SUPABASE_URL");
-  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !serviceRole) throw new Error("server_not_configured");
-  return createClient(url, serviceRole, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 }
 
 async function inviteApprovedRequest(
@@ -137,7 +111,7 @@ async function inviteApprovedRequest(
       const { error: metadataError } = await service.auth.admin.updateUserById(inviteData.user.id, {
         user_metadata: displayName ? { name: displayName } : {},
       });
-      if (metadataError) console.warn("access-request metadata cleanup failed", metadataError.message);
+      if (metadataError) console.warn("access-request metadata cleanup failed");
     }
 
     const { error: completeError } = await service
@@ -159,9 +133,27 @@ async function inviteApprovedRequest(
   }
 }
 
+async function publicRequestAllowed(
+  request: Request,
+  service: ReturnType<typeof createServiceClient>,
+  email: string,
+) {
+  const [ipSubject, emailSubject] = await Promise.all([
+    requestRateLimitSubject(request, "access-request"),
+    valueRateLimitSubject("access-request-email", email),
+  ]);
+  const [ipDecision, emailDecision] = await Promise.all([
+    consumeRateLimit(service, "access-request-ip", ipSubject, PUBLIC_IP_LIMIT, PUBLIC_IP_WINDOW_SECONDS),
+    consumeRateLimit(service, "access-request-email", emailSubject, PUBLIC_EMAIL_LIMIT, PUBLIC_EMAIL_WINDOW_SECONDS),
+  ]);
+  return ipDecision.allowed && emailDecision.allowed;
+}
+
 async function processPublicRequest(request: Request, name: string, email: string) {
   if (!name || !isValidEmail(email)) return;
   const service = createServiceClient();
+  if (!await publicRequestAllowed(request, service, email)) return;
+
   const { data, error } = await service.rpc("mf_prepare_access_request", {
     p_nome: name,
     p_email: email,
@@ -175,7 +167,10 @@ async function processPublicRequest(request: Request, name: string, email: strin
   await inviteApprovedRequest(service, String(row.request_id), safeOrigin(request));
 }
 
-async function authorizeAdmin(request: Request) {
+async function authorizeAdmin(request: Request): Promise<{
+  user: User;
+  service: ReturnType<typeof createServiceClient>;
+} | null> {
   const authHeader = String(request.headers.get("authorization") || "");
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
@@ -190,12 +185,37 @@ async function authorizeAdmin(request: Request) {
 
 async function processAdminDecision(request: Request, payload: Record<string, unknown>) {
   const auth = await authorizeAdmin(request);
-  if (!auth) return json(request, { error: "unauthorized" }, 401);
+  if (!auth) return jsonResponse(request, { error: "unauthorized" }, 401);
+
+  const rateSubject = await valueRateLimitSubject("access-admin", auth.user.id);
+  const rateDecision = await consumeRateLimit(
+    auth.service,
+    "access-admin-decision",
+    rateSubject,
+    ADMIN_DECISION_LIMIT,
+    ADMIN_DECISION_WINDOW_SECONDS,
+  );
+  if (!rateDecision.allowed) {
+    await recordOperationalEvent(
+      auth.service,
+      auth.user.id,
+      "security.rate_limit",
+      "access-admin",
+      "warning",
+      { operation: "decision", retryable: true },
+    ).catch(() => {});
+    return jsonResponse(
+      request,
+      { error: "rate_limited" },
+      429,
+      { "Retry-After": String(rateDecision.retryAfterSeconds) },
+    );
+  }
 
   const requestId = String(payload.requestId || "").trim();
   const decision = String(payload.decision || "").trim().toLowerCase();
   if (!/^[0-9a-f-]{36}$/i.test(requestId) || !["approved", "denied"].includes(decision)) {
-    return json(request, { error: "invalid_request" }, 400);
+    return jsonResponse(request, { error: "invalid_request" }, 400);
   }
 
   const approved = decision === "approved";
@@ -212,15 +232,22 @@ async function processAdminDecision(request: Request, payload: Record<string, un
     .eq("id", requestId)
     .select("id,status")
     .maybeSingle();
-  if (updateError) return json(request, { error: "decision_failed" }, 500);
-  if (!updated) return json(request, { error: "not_found" }, 404);
+  if (updateError) return jsonResponse(request, { error: "decision_failed" }, 500);
+  if (!updated) return jsonResponse(request, { error: "not_found" }, 404);
 
   if (approved) {
     try {
       await inviteApprovedRequest(auth.service, requestId, safeOrigin(request));
-    } catch (error) {
-      console.error("access-request invite failed", error);
-      return json(request, {
+    } catch {
+      await recordOperationalEvent(
+        auth.service,
+        auth.user.id,
+        "access.invite_failed",
+        "access-admin",
+        "error",
+        { operation: "invite", retryable: true },
+      ).catch(() => {});
+      return jsonResponse(request, {
         ok: true,
         status: "approved",
         invite: "pending",
@@ -229,7 +256,7 @@ async function processAdminDecision(request: Request, payload: Record<string, un
     }
   }
 
-  return json(request, {
+  return jsonResponse(request, {
     ok: true,
     status: approved ? "approved" : "denied",
     invite: approved ? "sent_or_recent" : "none",
@@ -238,7 +265,7 @@ async function processAdminDecision(request: Request, payload: Record<string, un
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
-  if (request.method !== "POST") return json(request, { error: "method_not_allowed" }, 405);
+  if (request.method !== "POST") return jsonResponse(request, { error: "method_not_allowed" }, 405);
 
   let payload: Record<string, unknown> = {};
   try {
@@ -248,15 +275,20 @@ Deno.serve(async (request) => {
   }
 
   if (String(payload.action || "request") === "decision") {
-    return processAdminDecision(request, payload);
+    try {
+      return await processAdminDecision(request, payload);
+    } catch {
+      return jsonResponse(request, { error: "decision_failed" }, 500);
+    }
   }
 
   const name = normalizeName(payload.name);
   const email = normalizeEmail(payload.email);
   if (name && isValidEmail(email)) {
     EdgeRuntime.waitUntil(
-      processPublicRequest(request, name, email).catch((error) => {
-        console.error("access-request background processing failed", error);
+      processPublicRequest(request, name, email).catch(() => {
+        // Public responses stay intentionally indistinguishable. Never surface
+        // account existence, rate-limit state or backend processing details.
       }),
     );
   }
