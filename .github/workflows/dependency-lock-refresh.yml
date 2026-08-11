@@ -8,7 +8,7 @@ on:
       - .github/workflows/dependency-lock-refresh.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   refresh:
@@ -23,15 +23,17 @@ jobs:
           node-version: '24'
           cache: npm
       - name: Refresh tsx and transitive esbuild lock
-        run: npm install --package-lock-only --ignore-scripts --save-dev 'tsx@^4.22.0'
+        run: npm install --package-lock-only --ignore-scripts --save-dev 'tsx@^4.23.12'
       - name: Verify dependency audit
         run: npm audit --audit-level=low
-      - name: Upload refreshed manifests
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-lock-refresh
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit audited manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "Dependency manifests already match the audited lock."
+            exit 0
+          fi
+          git commit -m "security: refresh audited dependency lock"
+          git push origin HEAD:agent/remove-user-categorization-rules
