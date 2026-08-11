@@ -31,7 +31,7 @@ expectContains('src/features/dashboard/dashboard-domain.ts', ['normalizeDashboar
 expectContains('src/features/importer/import-review.ts', ['calculateImportBalanceValidation', 'toggleImportedTransaction', 'updateImportedTransaction']);
 expectContains('src/features/payroll/payroll-domain.ts', ['derivePayrollSummary', 'buildPayrollSaveCommand', 'sanitizeItems']);
 expectContains('src/hooks/useDashboardWorkspace.ts', ["window.addEventListener('mf:finance-data-changed', scheduleRefresh)", "window.removeEventListener('mf:finance-data-changed', scheduleRefresh)"]);
-expectContains('src/lib/unified-transaction-launcher-mount.tsx', ["window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);
+expectContains('src/components/TransactionLaunchTool.tsx', ["supabase.rpc('mf_create_finance_entry_v3'", "navigate('/app/movimentacoes')"]);
 expectContains('src/components/History.tsx', ['mf_preview_categorization_rules', 'Organizar lançamentos genéricos', 'Aplicar regras', "window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))"]);
 expectContains('src/lib/financial-quality.ts', ['Organizar genéricos', '/app/movimentacoes?assist=categorias']);
 expectContains('src/components/FinancialCategoriesTool.tsx', ['glass-card mf-tool-surface']);

@@ -71,6 +71,14 @@ function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim().toLowerCase());
 }
 
+function loginStateMessage(state: ResolvedAuthState) {
+  if (state === "pending") return "Sua solicitação ainda está aguardando aprovação.";
+  if (state === "approved") return "Seu acesso foi aprovado. Volte à solicitação para cadastrar sua senha.";
+  if (state === "confirmation_pending") return "Sua conta foi criada, mas o e-mail ainda precisa ser confirmado.";
+  if (state === "denied") return "Esta solicitação de acesso não foi aprovada.";
+  return "Este e-mail ainda não possui conta. Solicite acesso na tela principal.";
+}
+
 export default function Auth() {
   const adminRoute = isAdminRoute();
   const confirmationReturn = !adminRoute && isConfirmationReturn();
@@ -339,6 +347,11 @@ export default function Auth() {
       }
 
       if (isLogin) {
+        const state = await resolveAuthState(normalizedEmail);
+        if (state !== "account") {
+          setError(loginStateMessage(state));
+          return;
+        }
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: normalizedEmail,
           password,
@@ -398,6 +411,12 @@ export default function Auth() {
 
   function goToNormalAccess() {
     window.location.assign("/");
+  }
+
+  function openEmailLogin() {
+    setMode("login");
+    setPassword("");
+    clearMessages();
   }
 
   const title = isAdmin
@@ -504,13 +523,30 @@ export default function Auth() {
           ) : (
             <form onSubmit={handleAuth} className="space-y-4">
               {(isRequest || isActivation) && <div><label className="block text-sm text-white/60 mb-1">Nome</label><input type="text" required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} disabled={isActivation} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none disabled:opacity-60" placeholder="Seu nome" /></div>}
-              <div><label className="block text-sm text-white/60 mb-1">E-mail</label><div className="relative"><Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25" /><input type="email" required autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(null); setInfo(null); }} disabled={!isRequest} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-3 focus:border-brand-primary outline-none disabled:opacity-60" placeholder="seu@email.com" /></div>{isRequest && checkingEmail && <p className="mt-1.5 text-[10px] text-white/25">Verificando se este e-mail já possui conta...</p>}</div>
+              <div><label className="block text-sm text-white/60 mb-1">E-mail</label><div className="relative"><Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25" /><input type="email" required autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(null); setInfo(null); }} disabled={isActivation} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-3 focus:border-brand-primary outline-none disabled:opacity-60" placeholder="seu@email.com" /></div>{isRequest && checkingEmail && <p className="mt-1.5 text-[10px] text-white/25">Verificando se este e-mail já possui conta...</p>}</div>
               {(isLogin || isActivation) && <div><label className="block text-sm text-white/60 mb-1">Senha</label><input type="password" required minLength={8} autoComplete={isActivation ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder={isActivation ? "Crie uma senha com no mínimo 8 caracteres" : "Sua senha"} /></div>}
               {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{error}</div>}
               {info && <div className="p-3 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-sm rounded-lg">{info}</div>}
               <button type="submit" disabled={loading || (isRequest && checkingEmail)} className="w-full bg-brand-primary text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_4px_20px_rgba(0,242,255,0.2)]">{loading ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent" /> : <>{isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}<span>{isLogin ? "Entrar" : isRequest ? "Solicitar acesso" : "Cadastrar senha e continuar"}</span></>}</button>
               {!isRequest && <button type="button" onClick={useAnotherEmail} className="w-full text-[10px] uppercase font-bold tracking-widest text-white/25 hover:text-white/55 transition-colors">Usar outro e-mail</button>}
             </form>
+          )}
+
+          {isRequest && (
+            <section className="mt-4 border-t border-white/10 pt-4" aria-labelledby="mf-existing-access-title">
+              <div id="mf-existing-access-title" className="mb-2 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30 before:h-px before:flex-1 before:bg-white/10 after:h-px after:flex-1 after:bg-white/10">
+                Já possui acesso?
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={openEmailLogin} disabled={loading} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 text-[10px] font-bold text-white/75 transition hover:border-brand-primary/30 hover:bg-brand-primary/[0.07] hover:text-white disabled:opacity-50">
+                  <Mail size={16} /> Entrar com e-mail
+                </button>
+                <button type="button" onClick={handleAdminGithub} disabled={loading} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 text-[10px] font-bold text-white/75 transition hover:border-brand-primary/30 hover:bg-brand-primary/[0.07] hover:text-white disabled:opacity-50">
+                  <Github size={16} /> Entrar com GitHub
+                </button>
+              </div>
+              <p className="mt-2 min-h-4 text-center text-[9px] leading-relaxed text-white/30">GitHub é validado como acesso administrativo.</p>
+            </section>
           )}
         </div>
       )}

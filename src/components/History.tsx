@@ -3,9 +3,9 @@ import { ChevronDown, ChevronRight, FileDown, Loader2, Search, Trash2, WandSpark
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useNavigate, useSearchParams } from 'react-router';
-import * as XLSX from 'xlsx';
 
 import { supabase } from '../lib/supabase';
+import { downloadXlsx } from '../lib/xlsx-export';
 import { Transaction } from '../types';
 
 interface HistoryProps {
@@ -260,20 +260,22 @@ export default function History({
     }
   }
 
-  function exportHistory() {
+  async function exportHistory() {
     if (!filteredTransactions.length) return;
-    const rows = filteredTransactions.map((row) => ({
-      Data: safeDateKey(row.date) === 'sem-data' ? '' : safeDateKey(row.date),
-      Descrição: row.description || '',
-      Categoria: row.category || 'Geral',
-      Tipo: row.type === 'income' ? 'Entrada' : 'Saída',
-      Valor: Math.abs(Number(row.amount) || 0),
-      Situação: normalize(row.status) === 'pending' ? 'Pendente' : 'Realizado',
-      Origem: row.source || '',
-    }));
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Lançamentos');
-    XLSX.writeFile(workbook, `MFinanceiro_Historico_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    const rows = filteredTransactions.map((row) => [
+      safeDateKey(row.date) === 'sem-data' ? '' : safeDateKey(row.date),
+      row.description || '',
+      row.category || 'Geral',
+      row.type === 'income' ? 'Entrada' : 'Saída',
+      Math.abs(Number(row.amount) || 0),
+      normalize(row.status) === 'pending' ? 'Pendente' : 'Realizado',
+      row.source || '',
+    ]);
+    await downloadXlsx(`MFinanceiro_Historico_${new Date().toISOString().slice(0, 10)}.xlsx`, [{
+      name: 'Lançamentos',
+      rows: [['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor', 'Situação', 'Origem'], ...rows],
+      columnWidths: [13, 38, 22, 12, 14, 14, 18],
+    }]);
   }
 
   return (
@@ -287,7 +289,7 @@ export default function History({
           <select value={filterType} onChange={(event) => setFilterType(event.target.value as FilterType)} className="rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs outline-none">
             <option value="all">Todos</option><option value="income">Entradas</option><option value="expense">Saídas</option>
           </select>
-          <button type="button" onClick={exportHistory} disabled={!filteredTransactions.length} className="flex items-center gap-2 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary disabled:opacity-40"><FileDown size={14} /> Excel</button>
+          <button type="button" onClick={() => void exportHistory()} disabled={!filteredTransactions.length} className="flex items-center gap-2 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary disabled:opacity-40"><FileDown size={14} /> Excel</button>
         </div>
       </div>
 

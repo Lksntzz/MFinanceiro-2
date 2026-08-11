@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import writeXlsxFile from 'write-excel-file/node';
 import { parseCsvTransactions } from '../src/features/importer/csv-parser';
 import { detectFileFormat, normalizeImportedTransactions } from '../src/features/importer/import-file';
 import { parseOfxTransactions } from '../src/features/importer/ofx-parser';
@@ -85,11 +85,8 @@ async function run(): Promise<void> {
     ['24/04/2026', 'Freelance Projeto', 800.0, 'credito'],
     ['25/04/2026', 'Farmacia', -56.45, 'debito'],
   ];
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Extrato');
-  const xlsxBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
-  const xlsxFile = new File([xlsxBuffer], 'extrato-teste.xlsx', {
+  const xlsxBuffer = await writeXlsxFile(sheetRows, { sheet: 'Extrato' }).toBuffer();
+  const xlsxFile = new File([new Uint8Array(xlsxBuffer)], 'extrato-teste.xlsx', {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
   results.push(summarize(xlsxFile, await parseSpreadsheetTransactions(xlsxFile, bank)));

@@ -1,4 +1,5 @@
-const CACHE_NAME = 'mfinanceiro-assets-v5';
+const CACHE_PREFIX = 'mfinanceiro-assets-';
+const CACHE_NAME = `${CACHE_PREFIX}v6`;
 const SHARE_DB_NAME = 'mf-mobile-share';
 const SHARE_STORE_NAME = 'shares';
 const SHARE_DB_VERSION = 1;
@@ -11,6 +12,24 @@ const NETWORK_ONLY_PATHS = new Set([
   '/brand.css',
   '/manifest.json',
 ]);
+const STATIC_DESTINATIONS = new Set(['script', 'style', 'image', 'font', 'manifest', 'worker']);
+
+function isCacheableStaticRequest(request) {
+  if (request.method !== 'GET') return false;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.search) return false;
+  if (request.headers.has('authorization') || request.headers.has('apikey')) return false;
+
+  return url.pathname.startsWith('/assets/') && STATIC_DESTINATIONS.has(request.destination);
+}
+
+function isCacheableStaticResponse(response) {
+  if (!response || !response.ok || response.type !== 'basic') return false;
+
+  const cacheControl = response.headers.get('cache-control') || '';
+  return !/\b(?:private|no-store)\b/i.test(cacheControl);
+}
 
 function openShareDb() {
   return new Promise((resolve, reject) => {
@@ -104,11 +123,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        keys.map((key) => {
-          if (key === CACHE_NAME) return Promise.resolve();
-          if (key.startsWith('mfinanceiro-')) return caches.delete(key);
-          return Promise.resolve();
-        }),
+        keys
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .map((key) => caches.delete(key)),
       ))
       .then(() => self.clients.claim()),
   );
@@ -134,6 +151,8 @@ self.addEventListener('fetch', (event) => {
 
   // Vite fingerprints production assets in /assets/. Cache-first is safe because
   // a content change produces a new URL/hash instead of overwriting an old file.
+  if (!isCacheableStaticRequest(request)) return;
+
   if (url.pathname.startsWith('/assets/')) {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
@@ -141,14 +160,10 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
 
         const response = await fetch(request);
-        if (response.ok) await cache.put(request, response.clone());
+        if (isCacheableStaticResponse(response)) await cache.put(request, response.clone());
         return response;
       }),
     );
     return;
   }
-
-  // Everything else uses the browser/network normally and is never persisted
-  // by this service worker.
-  event.respondWith(fetch(request));
 });

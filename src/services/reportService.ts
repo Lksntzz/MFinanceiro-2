@@ -1,20 +1,23 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import { Transaction, Investment } from '../types';
+import { downloadXlsx } from '../lib/xlsx-export';
 
 export const ReportService = {
-  exportTransactionsToExcel: (transactions: Transaction[]) => {
-    const ws = XLSX.utils.json_to_sheet(transactions.map(t => ({
-      Data: new Date(t.date).toLocaleDateString('pt-BR'),
-      Descrição: t.description,
-      Valor: t.amount,
-      Categoria: t.category,
-      Tipo: t.type === 'income' ? 'Entrada' : 'Saída'
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Transações');
-    XLSX.writeFile(wb, `MFinanceiro_Relatorio_Transacoes_${new Date().getTime()}.xlsx`);
+  exportTransactionsToExcel: async (transactions: Transaction[]) => {
+    const rows = transactions.map((transaction) => [
+      new Date(transaction.date).toLocaleDateString('pt-BR'),
+      transaction.description,
+      transaction.amount,
+      transaction.category,
+      transaction.type === 'income' ? 'Entrada' : 'Saída',
+    ]);
+
+    await downloadXlsx(`MFinanceiro_Relatorio_Transacoes_${Date.now()}.xlsx`, [{
+      name: 'Transações',
+      rows: [['Data', 'Descrição', 'Valor', 'Categoria', 'Tipo'], ...rows],
+      columnWidths: [13, 38, 14, 22, 12],
+    }]);
   },
 
   exportPortfolioToPDF: (investments: Investment[], total: number) => {
