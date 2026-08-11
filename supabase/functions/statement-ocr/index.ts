@@ -8,12 +8,18 @@ import {
   merchantKey,
   normalizeLearningKey,
 } from "../_shared/adaptive-learning.ts";
+import {
+  consumeRateLimit,
+  corsHeaders,
+  createServiceClient,
+  jsonResponse,
+  readSupabaseKey,
+  recordOperationalEvent,
+  valueRateLimitSubject,
+} from "../_shared/edge-security.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const OCR_RATE_LIMIT = 8;
+const OCR_RATE_WINDOW_SECONDS = 10 * 60;
 
 const responseSchema = {
   type: "object",
@@ -49,28 +55,6 @@ const responseSchema = {
   },
   required: ["document_confidence", "institution_name", "period_start", "period_end", "statement_balance", "warnings", "transactions"],
 };
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function readSupabaseKey(jsonName: string, directName: string, legacyName: string) {
-  const direct = Deno.env.get(directName);
-  if (direct) return direct;
-  const encoded = Deno.env.get(jsonName);
-  if (encoded) {
-    try {
-      const keys = JSON.parse(encoded) as Record<string, unknown>;
-      if (typeof keys.default === "string") return keys.default;
-    } catch {
-      // Fall through to the legacy environment variable.
-    }
-  }
-  return Deno.env.get(legacyName) || "";
-}
 
 function isoDate(value: unknown): string | null {
   const text = String(value || "").trim();
@@ -113,12 +97,12 @@ function numericConfidenceMap(value: unknown) {
 }
 
 Deno.serve(async (request: Request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) });
+  if (request.method !== "POST") return jsonResponse(request, { error: "Método não permitido." }, 405);
 
   const authorization = request.headers.get("Authorization");
   const token = authorization?.replace(/^Bearer\s+/i, "");
-  if (!authorization || !token) return json({ error: "Autenticação necessária." }, 401);
+  if (!authorization || !token) return jsonResponse(request, { error: "Autenticação necessária." }, 401);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const publishableKey = readSupabaseKey(
@@ -128,8 +112,8 @@ Deno.serve(async (request: Request) => {
   );
   const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || "";
   const model = Deno.env.get("GEMINI_OCR_MODEL") || "gemini-3.6-flash";
-  if (!supabaseUrl || !publishableKey) return json({ error: "Supabase não configurado na função." }, 500);
-  if (!geminiApiKey) return json({ error: "OCR/IA ainda não foi habilitado pelo administrador." }, 503);
+  if (!supabaseUrl || !publishableKey) return jsonResponse(request, { error: "Supabase não configurado na função." }, 500);
+  if (!geminiApiKey) return jsonResponse(request, { error: "OCR/IA ainda não foi habilitado pelo administrador." }, 503);
 
   const supabase = createClient(supabaseUrl, publishableKey, {
     global: { headers: { Authorization: authorization } },
@@ -137,7 +121,24 @@ Deno.serve(async (request: Request) => {
   });
 
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
-  if (userError || !userData.user) return json({ error: "Sessão inválida." }, 401);
+  if (userError || !userData.user) return jsonResponse(request, { error: "Sessão inválida." }, 401);
+
+  const admin = createServiceClient();
+  const rateSubject = await valueRateLimitSubject("statement-ocr-user", userData.user.id);
+  const rateDecision = await consumeRateLimit(admin, "statement-ocr", rateSubject, OCR_RATE_LIMIT, OCR_RATE_WINDOW_SECONDS);
+  if (!rateDecision.allowed) {
+    await recordOperationalEvent(admin, userData.user.id, "security.rate_limit", "statement-ocr", "warning", {
+      operation: "extract",
+      retryable: true,
+      provider: "google-gemini",
+    }).catch(() => {});
+    return jsonResponse(
+      request,
+      { error: "Muitas análises de extrato em pouco tempo. Aguarde e tente novamente." },
+      429,
+      { "Retry-After": String(rateDecision.retryAfterSeconds) },
+    );
+  }
 
   let extractionId = "";
   try {
@@ -192,8 +193,13 @@ Deno.serve(async (request: Request) => {
       }),
     });
     if (!aiResponse.ok) {
-      const providerMessage = (await aiResponse.text()).slice(0, 500);
-      throw new Error(`Falha no OCR/IA (${aiResponse.status}): ${providerMessage}`);
+      await recordOperationalEvent(admin, userData.user.id, "provider.request_failed", "statement-ocr", "error", {
+        provider: "google-gemini",
+        operation: "extract",
+        http_status: aiResponse.status,
+        retryable: aiResponse.status === 429 || aiResponse.status >= 500,
+      }).catch(() => {});
+      throw new Error(`Falha temporária no OCR/IA (${aiResponse.status}).`);
     }
 
     const interaction = await aiResponse.json() as Record<string, unknown>;
@@ -329,7 +335,7 @@ Deno.serve(async (request: Request) => {
       .eq("user_id", userData.user.id);
     if (completeError) throw completeError;
 
-    return json({
+    return jsonResponse(request, {
       extractionId,
       status: "reviewing",
       documentConfidence: clampConfidence(parsed.document_confidence),
@@ -348,6 +354,6 @@ Deno.serve(async (request: Request) => {
         .eq("id", extractionId)
         .eq("user_id", userData.user.id);
     }
-    return json({ error: message }, 400);
+    return jsonResponse(request, { error: message }, 400);
   }
 });
