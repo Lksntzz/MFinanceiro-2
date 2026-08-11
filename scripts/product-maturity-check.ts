@@ -54,7 +54,7 @@ expectContains('playwright.config.ts', ["testDir: './e2e'", 'e2e-mfinanceiro.sup
 expectContains('.github/workflows/e2e-ci.yml', ['pull_request:', 'Install Chromium', 'npm run test:e2e', 'contents: read']);
 expectContains('.github/workflows/critical-e2e.yml', ['workflow_dispatch', 'npm ci', 'MF_E2E_EMAIL', 'MF_E2E_PASSWORD', 'playwright.preview.config.ts']);
 expectContains('tests/e2e/product-maturity.spec.mjs', ['Busca rápida do MF', 'Alt+P', 'Tutoriais e onboarding', 'Pular tudo']);
-expectContains('e2e/financial-critical-flows.spec.ts', ['mf_create_finance_entry_v3', 'mf_commit_statement_import_v2', 'mf_revert_statement_import', 'Exclusivo Alice', 'Exclusivo Bruno']);
+expectContains('e2e/financial-critical-flows.spec.ts', ['mf_create_finance_entry_v3', 'mf_commit_statement_import_v2', 'Desfazer lote', 'Exclusivo Alice', 'Exclusivo Bruno']);
 expectContains('e2e/support/supabase-mock.ts', ['e2e-mfinanceiro.supabase.co', 'mf_get_ledger_page', 'mf_commit_statement_import_v2', 'mf_revert_statement_import']);
 
 console.log('Product maturity contract checks passed.');
