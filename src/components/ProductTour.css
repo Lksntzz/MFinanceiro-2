@@ -85,6 +85,13 @@
 @keyframes mf-progress-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes mf-brand-arrive { 0% { opacity: 0; transform: scale(.86) rotate(-5deg); } 70% { opacity: 1; transform: scale(1.04) rotate(1deg); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
 
+@media (min-width: 821px) {
+  .mf-tour-kicker { font-size: 10.5px; line-height: 1.35; letter-spacing: .13em; }
+  .mf-tour-copy { font-size: 13px; color: rgba(255,255,255,.66); }
+  .mf-tour-actions button,
+  .mf-tour-skip-options button { min-height: 36px; font-size: 12px; }
+}
+
 @media (max-width: 820px) {
   .mf-tour-card { padding: 16px; border-radius: 16px; }
   .mf-tour-card h2 { font-size: 17px; }
