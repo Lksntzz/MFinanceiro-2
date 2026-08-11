@@ -12,6 +12,7 @@
     "security:check": "tsx scripts/security-policy-check.ts && tsx scripts/maintenance-rpc-contract-check.ts",
     "product:check": "tsx scripts/product-maturity-check.ts",
     "mobile:check": "tsx scripts/mobile-logic-check.ts && tsx scripts/native-shell-check.ts && tsx scripts/mobile-layout-contract-check.ts",
+    "test:e2e": "playwright test",
     "native:sync": "npm run build && cap sync",
     "native:open:ios": "cap open ios",
     "native:open:android": "cap open android"
