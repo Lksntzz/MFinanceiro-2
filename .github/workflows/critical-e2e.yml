@@ -38,11 +38,8 @@ jobs:
           test -n "$MF_E2E_EMAIL" || (echo 'Configure o secret MF_E2E_EMAIL com uma conta de QA não produtiva.' && exit 1)
           test -n "$MF_E2E_PASSWORD" || (echo 'Configure o secret MF_E2E_PASSWORD com uma conta de QA não produtiva.' && exit 1)
 
-      - name: Install pinned browser test runner
-        run: npm install --no-save --ignore-scripts @playwright/test@1.55.0
-
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
       - name: Run authenticated browser smoke
-        run: npx playwright test tests/e2e/product-maturity.spec.mjs --reporter=line
+        run: npx playwright test --config=playwright.preview.config.ts
