@@ -45,7 +45,7 @@ expectContains('src/components/DashboardHome.tsx', ["lazy(() => import('./Dashbo
 expectContains('src/lib/mega-update-announcement-mount.tsx', ['LATEST_WEB_UPDATE', 'releaseReadKey', 'notifications.release']);
 expectContains('src/components/NotificationCenter.tsx', ['LATEST_WEB_UPDATE', 'showReleaseUpdate', 'releaseDismissed', 'Apagar atualização', "type: 'fixed' | 'installment' | 'card' | 'daily' | 'quality'"]);
 expectNotContains('src/components/NotificationCenter.tsx', ['2026-08-07-mega-update']);
-expectContains('src/lib/release-updates.ts', ['2026-08-10-home-alerts-and-connections', 'Início completo e alertas que ajudam']);
+expectContains('src/lib/release-updates.ts', ['2026-08-11-desktop-readability-dashboard-stability', 'Mais legibilidade e uma Inicial mais estável']);
 expectContains('supabase/migrations/20260810144500_user_activity_history.sql', ['alter table public.mf_user_activity_events enable row level security', 'grant select, insert on table public.mf_user_activity_events to authenticated', 'using ((select auth.uid()) = user_id)', 'with check ((select auth.uid()) = user_id)']);
 expectNotContains('supabase/migrations/20260810144500_user_activity_history.sql', ['grant update on table public.mf_user_activity_events to authenticated', 'grant delete on table public.mf_user_activity_events to authenticated']);
 expectContains('src/product-maturity.css', ['mf-command-palette', 'mf-preferences-panel', 'data-mf-private', 'mf-undo-toast']);
