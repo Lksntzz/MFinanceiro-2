@@ -55,6 +55,10 @@ const authUi = read('src/components/Auth.tsx');
 assert.equal(/signUp\s*\(|resolveAuthState|Verificando se este e-mail já possui conta|Conta encontrada/.test(authUi), false, 'public auth UI must not enumerate accounts or create users directly');
 assert.ok(authUi.includes("signInWithPassword"), 'existing users must retain password login');
 
+const adminAccessUi = read('src/components/AdminAccessRequests.tsx');
+assert.ok(adminAccessUi.includes("supabase.functions.invoke('access-request'"), 'admin approval must use the trusted access-request Edge Function');
+assert.equal(/\.from\(['"]mf_access_requests['"]\)[\s\S]{0,500}\.update\(/.test(adminAccessUi), false, 'browser admin UI must not directly update access-request approval state');
+
 const app = read('src/App.tsx');
 assert.ok(app.includes("const ACTIVATION_PATH = '/activate'"), 'invite activation route must remain explicit');
 assert.ok(app.includes('<InviteActivation session={session} />'), 'invite activation route must use the authenticated invite session');
@@ -87,6 +91,8 @@ for (const required of [
   'EdgeRuntime.waitUntil',
   'Cache-Control',
   'no-store',
+  'authorizeAdmin',
+  'processAdminDecision',
 ]) {
   assert.ok(accessRequestFunction.includes(required), `access-request function missing: ${required}`);
 }
@@ -108,6 +114,12 @@ for (const required of [
 }
 assert.equal(serviceWorker.includes("key.startsWith('mfinanceiro-')"), false, 'service worker must not delete unrelated MF caches');
 assert.equal(/if \(request\.method === ['"]GET['"]\)[\s\S]{0,500}cache\.put/.test(serviceWorker), false, 'service worker must not cache arbitrary GET responses');
+
+const packageJson = JSON.parse(read('package.json')) as { devDependencies?: Record<string, string> };
+assert.ok(/^\^4\.23\./.test(packageJson.devDependencies?.tsx || ''), 'tsx must stay on the patched 4.23 line or newer');
+const packageLock = read('package-lock.json');
+assert.ok(packageLock.includes('"tsx": "^4.23.12"'), 'package lock must pin the patched tsx range');
+assert.ok(packageLock.includes('"version": "0.28.2"'), 'package lock must contain the patched esbuild 0.28.2 resolution');
 
 const forbiddenBrowserRpcs = [
   'check_access_request_status',
@@ -138,4 +150,4 @@ if (existsSync(legacyOrchestratorPath)) {
   assert.equal(/setInterval\s*\([^)]*window\.location|setInterval\s*\(sync\s*,/s.test(orchestrator), false, 'product guidance must use router state instead of navigation polling');
 }
 
-console.log('Security policy checks passed: permissions, DB hardening, invite-only auth, browser RPC boundaries, destructive paths, service-worker cache isolation, legacy surfaces and architecture boundaries.');
+console.log('Security policy checks passed: permissions, DB hardening, invite-only auth, trusted admin approval, patched dependencies, browser RPC boundaries, destructive paths, service-worker cache isolation, legacy surfaces and architecture boundaries.');
