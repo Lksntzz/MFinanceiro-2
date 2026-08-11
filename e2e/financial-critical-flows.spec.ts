@@ -12,12 +12,26 @@ const statementFixture = fileURLToPath(new URL('./fixtures/statement.csv', impor
 
 let state: SupabaseMockState;
 
+async function dismissAutomaticTour(page: Page) {
+  const tour = page.getByRole('dialog', { name: /Tutorial:/ });
+  try {
+    await tour.waitFor({ state: 'visible', timeout: 1_500 });
+  } catch {
+    return;
+  }
+
+  await page.getByRole('button', { name: 'Pular tour' }).click();
+  await page.getByRole('button', { name: 'Pular tudo' }).click();
+  await expect(tour).toBeHidden();
+}
+
 async function loginAs(page: Page, email: string, password: string) {
   await expect(page.getByRole('heading', { name: 'Acesse sua conta' })).toBeVisible();
   await page.getByLabel('E-mail').fill(email);
   await page.getByLabel('Senha').fill(password);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page).toHaveURL(/\/app(?:$|\/)/);
+  await dismissAutomaticTour(page);
 }
 
 async function openMovement(page: Page, description: string) {
