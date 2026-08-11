@@ -134,7 +134,7 @@ export default function FinancialAccountsTool({ user }: { user: User }) {
 
           {loading ? <div className="mf-loading">Carregando contas...</div> : (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-              <section className="glass-card space-y-3">
+              <section className="glass-card mf-tool-surface space-y-3">
                 <div className="flex items-center gap-3"><Wallet size={18} className="text-brand-primary" /><div><h3 className="text-sm font-bold">Suas contas</h3><p className="text-[10px] text-white/40">O saldo total do MF é a soma das contas ativas.</p></div></div>
                 {accounts.map((account) => (
                   <article key={account.id} className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${account.is_active ? 'border-white/10 bg-white/[0.03]' : 'border-white/5 bg-black/20 opacity-55'}`}>
@@ -152,7 +152,7 @@ export default function FinancialAccountsTool({ user }: { user: User }) {
                 <p className="text-[10px] text-white/35">{activeAccounts.length} conta(s) ativa(s). Evite cadastrar cartão de crédito ou ativo de investimento como conta para não duplicar patrimônio.</p>
               </section>
 
-              <form onSubmit={createAccount} className="glass-card space-y-3">
+              <form onSubmit={createAccount} className="glass-card mf-tool-surface space-y-3">
                 <div><h3 className="text-sm font-bold">Adicionar conta</h3><p className="mt-1 text-[10px] text-white/40">Use o saldo real no momento do cadastro.</p></div>
                 <label className="block text-[10px] text-white/50">Nome<input required value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Ex.: Nubank" className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-brand-primary" /></label>
                 <label className="block text-[10px] text-white/50">Tipo<select value={accountType} onChange={(event) => setAccountType(event.target.value as FinancialAccountType)} className="mt-1 w-full rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs"><option value="checking">Conta corrente</option><option value="savings">Poupança</option><option value="cash">Carteira / dinheiro</option><option value="other">Outra</option></select></label>
