@@ -157,23 +157,23 @@ export default function Auth() {
             <form onSubmit={mode === 'login' ? handleLogin : handleRequest} className="space-y-4">
               {mode === 'request' && (
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Nome</label>
-                  <input type="text" required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Seu nome" />
+                  <label htmlFor="mf-auth-name" className="block text-sm text-white/60 mb-1">Nome</label>
+                  <input id="mf-auth-name" type="text" required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Seu nome" />
                 </div>
               )}
 
               <div>
-                <label className="block text-sm text-white/60 mb-1">E-mail</label>
+                <label htmlFor="mf-auth-email" className="block text-sm text-white/60 mb-1">E-mail</label>
                 <div className="relative">
                   <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25" />
-                  <input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-3 focus:border-brand-primary outline-none" placeholder="seu@email.com" />
+                  <input id="mf-auth-email" type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-3 focus:border-brand-primary outline-none" placeholder="seu@email.com" />
                 </div>
               </div>
 
               {mode === 'login' && (
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Senha</label>
-                  <input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Sua senha" />
+                  <label htmlFor="mf-auth-password" className="block text-sm text-white/60 mb-1">Senha</label>
+                  <input id="mf-auth-password" type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:border-brand-primary outline-none" placeholder="Sua senha" />
                 </div>
               )}
 
