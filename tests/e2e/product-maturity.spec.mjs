@@ -10,16 +10,29 @@ if (!baseURL || !email || !password) {
 
 test.use({ baseURL, viewport: { width: 1440, height: 900 } });
 
+async function dismissAutomaticTour(page) {
+  const tour = page.getByRole('dialog', { name: /Tutorial:/ });
+  try {
+    await tour.waitFor({ state: 'visible', timeout: 1_500 });
+  } catch {
+    return;
+  }
+  await page.getByRole('button', { name: 'Pular tour' }).click();
+  await page.getByRole('button', { name: 'Pular tudo' }).click();
+  await expect(tour).toBeHidden();
+}
+
 test('login, busca, agenda, privacidade e preferências', async ({ page }) => {
   await page.goto('/');
-  await page.getByPlaceholder('seu@email.com').waitFor({ state: 'visible', timeout: 10_000 });
-  await page.getByPlaceholder('seu@email.com').fill(email);
+  await page.getByLabel('E-mail').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByLabel('E-mail').fill(email);
 
   await expect(page.getByText('Acesse sua conta')).toBeVisible({ timeout: 8_000 });
-  await page.getByPlaceholder('Sua senha').fill(password);
+  await page.getByLabel('Senha').fill(password);
   await page.getByRole('button', { name: 'Entrar' }).click();
 
   await expect(page).toHaveURL(/\/app(?:\/|$)/, { timeout: 15_000 });
+  await dismissAutomaticTour(page);
   await expect(page.getByLabel('Navegação financeira')).toBeVisible();
 
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
