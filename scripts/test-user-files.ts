@@ -1,8 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import {
-  detectFileFormat,
-  parseSpreadsheetTransactions,
-} from '../src/components/ImportarExtratos';
+import { detectFileFormat } from '../src/features/importer/import-file';
+import { parseSpreadsheetTransactions } from '../src/features/importer/spreadsheet-parser';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 async function main() {

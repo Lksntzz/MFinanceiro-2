@@ -4,7 +4,11 @@ import { AlertCircle, CheckCircle2, RotateCcw } from 'lucide-react';
 import { FinancialAccount, ImportedTransaction, StatementImportOptions } from '../types';
 import ImportarExtratosCore from './ImportarExtratosCore';
 
-export * from './ImportarExtratosCore';
+export { detectFileFormat, normalizeImportedTransactions } from '../features/importer/import-file';
+export { parseCsvTransactions } from '../features/importer/csv-parser';
+export { parseOfxTransactions } from '../features/importer/ofx-parser';
+export { parsePdfTransactions } from '../features/importer/pdf-parser';
+export { parseSpreadsheetTransactions } from '../features/importer/spreadsheet-parser';
 
 export interface StatementImportResult {
   batch_id: string;

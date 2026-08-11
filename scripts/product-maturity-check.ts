@@ -25,7 +25,11 @@ expectContains('src/components/PlanningTool.tsx', ['<PlanningJourney', 'hasPlann
 expectContains('src/components/PreferencesCenter.tsx', ['Abrir tutorial automaticamente na Início', 'As outras ferramentas só abrem o tutorial quando você usar o botão ?']);
 expectContains('src/lib/user-preferences.ts', ['version: 2', 'MAX_HOME_WIDGETS = 8', "'balance_chart'", "'rhythm_chart'", "'categories'", "'recent'", "'cards'", 'notifications', 'toursAutoStart']);
 expectContains('src/components/DashboardBootstrap.tsx', ["lazy(() => import('./Dashboard'))", '<CommandPalette userId={user.id}', '<PreferencesCenter userId={user.id}', '<UndoToast />', "location.pathname === '/app/lancar'", '<TransactionLaunchTool user={user} />']);
-expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}', 'dismissedAlertsKey', 'persistDismissedAlerts', '<History userId={user.id}', 'onDataChanged={workspace.refresh}']);
+expectContains('src/components/Dashboard.tsx', ['assessDataQuality', 'deleteWithUndo', 'offerUndo', 'importWithAudit', 'showReleaseUpdate={preferences.notifications.release}', 'buildDashboardNotifications', '<History userId={user.id}', 'onDataChanged={workspace.refresh}']);
+expectContains('src/features/dashboard/dashboard-notifications.ts', ['dismissedAlertsKey', 'persistDismissedAlerts', 'buildDashboardNotifications']);
+expectContains('src/features/dashboard/dashboard-domain.ts', ['normalizeDashboardLedgerPage', 'buildStatementImportCommand', 'normalizeStatementImportResult']);
+expectContains('src/features/importer/import-review.ts', ['calculateImportBalanceValidation', 'toggleImportedTransaction', 'updateImportedTransaction']);
+expectContains('src/features/payroll/payroll-domain.ts', ['derivePayrollSummary', 'buildPayrollSaveCommand', 'sanitizeItems']);
 expectContains('src/hooks/useDashboardWorkspace.ts', ["window.addEventListener('mf:finance-data-changed', scheduleRefresh)", "window.removeEventListener('mf:finance-data-changed', scheduleRefresh)"]);
 expectContains('src/components/TransactionLaunchTool.tsx', ["mf_create_finance_entry_v3", "window.dispatchEvent(new CustomEvent('mf:finance-data-changed'))", 'Lançar movimentação']);
 expectNotContains('src/main.tsx', ['unified-transaction-launcher-mount', 'mega-update-announcement-mount']);
@@ -48,7 +52,7 @@ expectNotContains('supabase/migrations/20260810144500_user_activity_history.sql'
 expectContains('src/product-maturity.css', ['mf-command-palette', 'mf-preferences-panel', 'data-mf-private', 'mf-undo-toast']);
 expectContains('src/product-maturity-additions.css', ['mf-onboarding-checklist', 'mf-automation-disclosure', 'mf-command-results button.active', 'mf-tool-surface', 'mf-open-finance-coming-soon', 'display:none']);
 expectContains('src/main.tsx', ["import './product-maturity.css'", "import './product-maturity-additions.css'"]);
-expectContains('package.json', ['"test:e2e": "playwright test"', '"@playwright/test": "1.62.1"']);
+expectContains('package.json', ['"test": "npm run test:modules"', '"test:modules": "tsx scripts/module-boundaries-check.ts"', '"test:e2e": "playwright test"', '"@playwright/test": "1.62.1"']);
 expectContains('playwright.config.ts', ["testDir: './e2e'", 'e2e-mfinanceiro.supabase.co', "name: 'chromium'"]);
 expectContains('.github/workflows/e2e-ci.yml', ['pull_request:', 'Install Chromium', 'npm run test:e2e', 'contents: read']);
 expectContains('.github/workflows/critical-e2e.yml', ['workflow_dispatch', 'npm ci', 'MF_E2E_EMAIL', 'MF_E2E_PASSWORD', 'playwright.preview.config.ts']);

@@ -1,11 +1,8 @@
 import * as XLSX from 'xlsx';
-import {
-  detectFileFormat,
-  normalizeImportedTransactions,
-  parseCsvTransactions,
-  parseOfxTransactions,
-  parseSpreadsheetTransactions,
-} from '../src/components/ImportarExtratos';
+import { parseCsvTransactions } from '../src/features/importer/csv-parser';
+import { detectFileFormat, normalizeImportedTransactions } from '../src/features/importer/import-file';
+import { parseOfxTransactions } from '../src/features/importer/ofx-parser';
+import { parseSpreadsheetTransactions } from '../src/features/importer/spreadsheet-parser';
 
 type SimulationResult = {
   arquivo: string;
@@ -130,4 +127,3 @@ run().catch((error) => {
   console.error('Falha na simulacao:', error);
   process.exitCode = 1;
 });
-
