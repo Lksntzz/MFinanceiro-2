@@ -30,6 +30,10 @@ assert.match(edgeFunction, /\/auth\/v1\/user/);
 assert.match(edgeFunction, /identity\.role !== "admin"/);
 assert.match(edgeFunction, /identity\.aal !== "aal2"/);
 assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
+assert.match(edgeFunction, /MF_MAINTENANCE_CONTROL_SECRET/);
+assert.match(edgeFunction, /MF_ADMIN_SERVICE_INGEST_SECRET/);
+assert.match(edgeFunction, /x-mf-maintenance-control-secret/);
+assert.match(edgeFunction, /safeEqual\(suppliedControlSecret, expectedControlSecret\)/);
 assert.ok(
   !edgeFunction.includes('mf_set_maintenance_scope') && !edgeFunction.includes('mf_set_maintenance_mode'),
   'Server control endpoint must not depend on legacy browser-admin RPCs',
