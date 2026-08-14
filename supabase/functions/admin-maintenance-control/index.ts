@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-type MaintenanceScope = "mobile" | "desktop" | "both";
+type MaintenanceTarget = "mobile" | "desktop" | "ios";
 type MaintenanceAction = "get" | "set";
 
 type MaintenanceRow = {
@@ -19,6 +19,7 @@ type AdminProfile = {
 const DEFAULT_ADMIN_URL = "https://lyhsttditfrxmfnnligk.supabase.co";
 const DEFAULT_ADMIN_PUBLISHABLE_KEY = "sb_publishable_WzbybFQdgY1O8-PeKrlYNw_0cv1euNa";
 const DEFAULT_MESSAGE = "Estamos realizando melhorias importantes. O MF Financeiro estará disponível novamente em breve.";
+const VALID_TARGETS = new Set<MaintenanceTarget>(["mobile", "desktop", "ios"]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -59,14 +60,24 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   }
 }
 
-function normalizeScope(value: unknown): MaintenanceScope | null {
-  const scope = String(value || "").trim().toLowerCase();
-  return scope === "mobile" || scope === "desktop" || scope === "both" ? scope : null;
+function normalizeTargets(body: Record<string, unknown>): MaintenanceTarget[] {
+  const rawTargets = Array.isArray(body.targets) ? body.targets : [];
+  const explicit = rawTargets
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter((value): value is MaintenanceTarget => VALID_TARGETS.has(value as MaintenanceTarget));
+
+  if (explicit.length > 0) return Array.from(new Set(explicit));
+
+  // Compatibilidade temporária com clientes antigos baseados em scope.
+  const scope = String(body.scope || "").trim().toLowerCase();
+  if (scope === "both") return ["mobile", "desktop"];
+  if (scope === "all") return ["mobile", "desktop", "ios"];
+  if (VALID_TARGETS.has(scope as MaintenanceTarget)) return [scope as MaintenanceTarget];
+  return [];
 }
 
 function safeMessage(value: unknown) {
-  const message = String(value || "").trim();
-  return (message || DEFAULT_MESSAGE).slice(0, 240);
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 240);
 }
 
 async function verifyAdminIdentity(token: string) {
@@ -120,7 +131,7 @@ function financeHeaders(serviceRole: string) {
 
 async function readMaintenanceState(supabaseUrl: string, serviceRole: string) {
   const response = await fetch(
-    `${supabaseUrl}/rest/v1/mf_global_settings?key=in.(global,mobile,desktop)&select=key,maintenance_mode,maintenance_message,updated_at&order=key.asc`,
+    `${supabaseUrl}/rest/v1/mf_global_settings?key=in.(global,mobile,desktop,ios)&select=key,maintenance_mode,maintenance_message,updated_at&order=key.asc`,
     { headers: financeHeaders(serviceRole) },
   );
 
@@ -134,24 +145,28 @@ async function readMaintenanceState(supabaseUrl: string, serviceRole: string) {
     global: byKey.global || null,
     mobile: byKey.mobile || byKey.global || null,
     desktop: byKey.desktop || byKey.global || null,
+    ios: byKey.ios || byKey.mobile || byKey.global || null,
   };
 }
 
 async function setMaintenanceState(
   supabaseUrl: string,
   serviceRole: string,
-  scope: MaintenanceScope,
+  targets: MaintenanceTarget[],
   enabled: boolean,
-  message: string,
+  requestedMessage: string,
 ) {
+  const currentState = await readMaintenanceState(supabaseUrl, serviceRole);
   const timestamp = new Date().toISOString();
-  const keys = scope === "both" ? ["mobile", "desktop"] : [scope];
-  const payload = keys.map((key) => ({
-    key,
-    maintenance_mode: enabled,
-    maintenance_message: message,
-    updated_at: timestamp,
-  }));
+  const payload = targets.map((key) => {
+    const existing = currentState[key];
+    return {
+      key,
+      maintenance_mode: enabled,
+      maintenance_message: requestedMessage || existing?.maintenance_message || DEFAULT_MESSAGE,
+      updated_at: timestamp,
+    };
+  });
 
   const response = await fetch(
     `${supabaseUrl}/rest/v1/mf_global_settings?on_conflict=key`,
@@ -177,10 +192,6 @@ Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
 
-  // O endpoint Financeiro nunca é um endpoint de browser. Além do JWT de um
-  // usuário do MF Administração, exige prova server-to-server que só a Edge
-  // Function administrativa possui. Um admin não pode pular o MF Administração
-  // e chamar este endpoint diretamente sem o segredo de canal.
   const expectedControlSecret =
     Deno.env.get("MF_MAINTENANCE_CONTROL_SECRET")
     || Deno.env.get("MF_ADMIN_SERVICE_INGEST_SECRET")
@@ -223,17 +234,13 @@ Deno.serve(async (request: Request) => {
     if (identity.role !== "admin") return json({ error: "Somente administradores podem alterar a manutenção." }, 403);
     if (identity.aal !== "aal2") return json({ error: "A operação exige uma sessão administrativa AAL2/MFA." }, 403);
 
-    const scope = normalizeScope(body.scope);
-    if (!scope) return json({ error: "Escopo inválido. Use mobile, desktop ou both." }, 400);
+    const targets = normalizeTargets(body);
+    if (!targets.length) return json({ error: "Selecione ao menos um destino: desktop, mobile ou ios." }, 400);
 
     const enabled = body.enabled === true;
     const message = safeMessage(body.message);
-    if (enabled && message.length < 10) {
-      return json({ error: "Informe uma mensagem de manutenção com pelo menos 10 caracteres." }, 400);
-    }
-
-    const state = await setMaintenanceState(supabaseUrl, serviceRole, scope, enabled, message);
-    return json({ state, changed: { scope, enabled } });
+    const state = await setMaintenanceState(supabaseUrl, serviceRole, targets, enabled, message);
+    return json({ state, changed: { targets, enabled } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha inesperada no controle de manutenção.";
     return json({ error: message }, 500);
