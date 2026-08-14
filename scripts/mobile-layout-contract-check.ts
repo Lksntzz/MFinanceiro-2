@@ -31,10 +31,12 @@ for (const route of ['profile', 'documentInbox', 'purchaseImpact', 'pulse']) {
   assert.ok(app.includes(`MOBILE_ROUTES.${route}`), `Advanced route ${route} must remain implemented behind the approved layout`);
 }
 
-assert.ok(maintenance.includes(".in('key', ['global', 'mobile', 'desktop'])"), 'Maintenance config must read independent mobile and desktop scopes with legacy fallback');
-assert.ok(maintenance.includes('isCurrentMobileExperience()'), 'Maintenance config must project state to the current client surface');
+assert.ok(maintenance.includes(".in('key', ['global', 'mobile', 'desktop', 'ios'])"), 'Maintenance config must read desktop, mobile and iOS targets with legacy fallback');
+assert.ok(maintenance.includes("Capacitor.getPlatform()"), 'Maintenance must identify native iOS independently from generic mobile');
+assert.ok(maintenance.includes("platform === 'ios'"), 'Native iOS must use the dedicated maintenance target');
+assert.ok(maintenance.includes('isCurrentMobileExperience()'), 'Web maintenance config must still project state to the current client surface');
 assert.ok(appGate.includes("table: 'mf_global_settings'"), 'Application must continue listening to maintenance changes');
-assert.ok(!appGate.includes("filter: 'key=eq.global'"), 'Maintenance listener must not ignore scoped mobile/desktop rows');
+assert.ok(!appGate.includes("filter: 'key=eq.global'"), 'Maintenance listener must not ignore scoped target rows');
 assert.ok(appGate.includes(".on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, () =>"), 'Maintenance broadcasts must trigger a fresh scoped read');
 
 assert.ok(!mobileProfile.includes('mf_set_maintenance_scope'), 'MF Financeiro mobile must not mutate maintenance state');
@@ -42,4 +44,4 @@ assert.ok(!mobileProfile.includes('mfa.getAuthenticatorAssuranceLevel'), 'Mainte
 assert.ok(!existsSync('src/components/AdminMaintenanceControl.tsx'), 'Desktop maintenance administration component must be removed from MF Financeiro');
 assert.match(appGate, /if \(maintenanceEnabled\) \{[\s\S]*<MaintenanceScreen/, 'Financeiro must continue enforcing maintenance for every user, including legacy admins');
 
-console.log('Mobile layout contract: approved primary structure preserved; maintenance administration centralized in MF Administração.');
+console.log('Mobile layout contract: maintenance targets support desktop, mobile/Android and native iOS.');
