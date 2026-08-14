@@ -13,6 +13,7 @@ export async function extractStatementWithOcr(file: File, accountId: string): Pr
   extractionId: string;
   transactions: ImportedTransaction[];
   documentConfidence: number;
+  statementBalance?: number;
   warnings: string[];
 }> {
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -56,6 +57,20 @@ export async function extractStatementWithOcr(file: File, accountId: string): Pr
   if (functionError) throw functionError;
   if (data?.error) throw new Error(String(data.error));
 
+  let statementBalance = optionalFiniteNumber(data?.statementBalance);
+  if (statementBalance === undefined) {
+    const { data: extractionResult } = await supabase
+      .from('mf_document_extractions')
+      .select('result_metadata')
+      .eq('id', extraction.id)
+      .eq('user_id', userData.user.id)
+      .single();
+    const metadata = extractionResult?.result_metadata;
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      statementBalance = optionalFiniteNumber((metadata as Record<string, unknown>).statement_balance);
+    }
+  }
+
   const rawItems = Array.isArray(data?.items) ? data.items as Array<Record<string, unknown>> : [];
   const transactions = rawItems.map((item, index) => {
     const signedAmount = Number(item.signed_amount || 0);
@@ -87,6 +102,7 @@ export async function extractStatementWithOcr(file: File, accountId: string): Pr
     extractionId: extraction.id,
     transactions,
     documentConfidence: Math.min(1, Math.max(0, Number(data?.documentConfidence || 0))),
+    statementBalance,
     warnings: Array.isArray(data?.warnings)
       ? data.warnings.map(String)
       : ['Revise as linhas e confirme manualmente os itens com confiança abaixo de 85%.'],
