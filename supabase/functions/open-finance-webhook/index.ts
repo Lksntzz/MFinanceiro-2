@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { createApiKey, fetchItem } from "../_shared/pluggy.ts";
+import { reportMfAdminServiceEvent } from "../_shared/mf-admin-telemetry.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -14,13 +15,25 @@ Deno.serve(async (request: Request) => {
 
   const expectedSecret = env("OPEN_FINANCE_WEBHOOK_SECRET");
   const suppliedSecret = new URL(request.url).searchParams.get("token") || request.headers.get("x-open-finance-webhook-secret") || "";
+  // Do not emit telemetry for unauthorized public requests: that would allow an
+  // attacker to generate diagnostic noise intentionally.
   if (!expectedSecret || suppliedSecret !== expectedSecret) return json({ error: "Webhook não autorizado." }, 401);
 
+  const correlationId = crypto.randomUUID();
+  const startedAt = Date.now();
   const supabaseUrl = env("SUPABASE_URL");
   const serviceKey = env("SUPABASE_SECRET_KEY") || env("SUPABASE_SERVICE_ROLE_KEY");
   const internalSecret = env("OPEN_FINANCE_INTERNAL_SECRET");
-  if (!supabaseUrl || !serviceKey || !internalSecret) return json({ error: "Webhook não configurado." }, 500);
+  if (!supabaseUrl || !serviceKey || !internalSecret) {
+    reportMfAdminServiceEvent({
+      module: 'open_finance.webhook', operation: 'bootstrap', errorCode: 'OPEN_FINANCE_WEBHOOK_UNCONFIGURED',
+      message: 'Webhook Open Finance sem configuração de backend', category: 'infrastructure', severity: 'critical', correlationId,
+    });
+    return json({ error: "Webhook não configurado." }, 500);
+  }
 
+  let diagnosticUserId: string | null = null;
+  let event = '';
   try {
     const payload = await request.json() as {
       event?: string;
@@ -31,8 +44,8 @@ Deno.serve(async (request: Request) => {
       createdTransactionsLink?: string;
       error?: unknown;
     };
-    const event = String(payload.event || "");
-    const itemId = String(payload.itemId || "");
+    event = String(payload.event || "").slice(0, 100);
+    const itemId = String(payload.itemId || "").trim();
     if (!itemId) return json({ accepted: true, ignored: "missing-item" }, 202);
 
     const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -42,11 +55,11 @@ Deno.serve(async (request: Request) => {
       .eq("provider", "pluggy")
       .eq("provider_connection_ref", itemId)
       .maybeSingle();
+    diagnosticUserId = connection?.user_id || null;
 
-    // The browser callback is intentionally not the only source of truth. Some
-    // Open Finance flows can finish after the user has left/closed the widget.
-    // The Connect Token stores our Supabase user id as clientUserId, so a signed
-    // Pluggy webhook can safely recover ownership and bind the Item server-side.
+    // The browser callback is not the source of truth. Connect Token stores our
+    // Supabase user id as clientUserId, so a signed provider webhook can recover
+    // ownership server-side even if the user closed the widget.
     if (!connection && event !== "item/deleted") {
       try {
         const apiKey = await createApiKey();
@@ -55,6 +68,7 @@ Deno.serve(async (request: Request) => {
         if (isUuid(userId)) {
           const { data: authUser, error: authUserError } = await admin.auth.admin.getUserById(userId);
           if (!authUserError && authUser.user) {
+            diagnosticUserId = userId;
             const connectorId = item.connector?.id == null ? null : String(item.connector.id);
             const institutionName = String(item.connector?.name || "Instituição Open Finance").trim();
             const { data: inserted, error: insertError } = await admin
@@ -69,11 +83,11 @@ Deno.serve(async (request: Request) => {
                 status: event === "item/error" ? "error" : "active",
                 sync_status: event === "item/error" ? "error" : "idle",
                 scopes: ["ACCOUNTS_READ", "TRANSACTIONS_READ"],
-                last_error: event === "item/error" ? JSON.stringify(payload.error || "Erro informado pelo Pluggy").slice(0, 1000) : null,
+                last_error: event === "item/error" ? "O provedor informou erro na conexão." : null,
                 metadata: {
                   provider: "pluggy",
-                  client_user_id: userId,
                   auto_bound_by_webhook: true,
+                  ownership_verified: true,
                   pluggy_execution_status: item.executionStatus || null,
                   pluggy_status: item.status || null,
                   bound_at: new Date().toISOString(),
@@ -95,26 +109,43 @@ Deno.serve(async (request: Request) => {
             }
           }
         }
-      } catch (bindError) {
-        console.warn("Não foi possível vincular Item Pluggy pelo webhook:", bindError);
+      } catch {
+        reportMfAdminServiceEvent({
+          module: 'open_finance.webhook', operation: 'auto_bind', errorCode: 'OPEN_FINANCE_WEBHOOK_BIND_FAILED',
+          message: 'Webhook não conseguiu vincular conexão Open Finance', category: 'integration', severity: 'high',
+          correlationId, userId: diagnosticUserId, durationMs: Date.now() - startedAt,
+        });
       }
     }
 
     if (!connection) {
-      return json({ accepted: true, event, itemId, deferred: true }, 202);
+      return json({ accepted: true, event, deferred: true }, 202);
     }
+    diagnosticUserId = connection.user_id;
 
     if (event === "item/error") {
       await admin.from("mf_bank_connections").update({
         status: "error",
         sync_status: "error",
-        last_error: JSON.stringify(payload.error || "Erro informado pelo Pluggy").slice(0, 1000),
+        last_error: "O provedor informou erro na conexão.",
       }).eq("id", connection.id);
+      reportMfAdminServiceEvent({
+        module: 'open_finance.webhook', operation: 'item_error', errorCode: 'OPEN_FINANCE_PROVIDER_ITEM_ERROR',
+        message: 'Provedor informou erro no Item Open Finance', category: 'integration', severity: 'high',
+        impact: 'partial_operation', correlationId, userId: connection.user_id,
+      });
       return json({ accepted: true, event, connectionId: connection.id });
     }
 
     if (event === "item/deleted") {
-      await admin.from("mf_bank_connections").update({ status: "revoked", sync_status: "idle", next_sync_at: null }).eq("id", connection.id);
+      await admin.from("mf_bank_connections")
+        .update({ status: "revoked", sync_status: "idle", next_sync_at: null, last_error: null })
+        .eq("id", connection.id);
+      await admin.from("mf_financial_accounts")
+        .update({ is_active: false })
+        .eq("user_id", connection.user_id)
+        .eq("bank_connection_id", connection.id)
+        .eq("provider", "pluggy");
       return json({ accepted: true, event, connectionId: connection.id });
     }
 
@@ -127,22 +158,45 @@ Deno.serve(async (request: Request) => {
     ]);
     if (!syncEvents.has(event)) return json({ accepted: true, event, ignored: true });
 
+    const deletedTransactionIds = event === 'transactions/deleted' && Array.isArray(payload.transactionIds)
+      ? payload.transactionIds.map(String).filter(Boolean).slice(0, 2_000)
+      : [];
+
     const syncResponse = await fetch(`${supabaseUrl}/functions/v1/open-finance-sync`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-open-finance-internal-secret": internalSecret,
       },
-      body: JSON.stringify({ itemId, triggerSource: "webhook" }),
+      body: JSON.stringify({
+        itemId,
+        triggerSource: "webhook",
+        providerEvent: event,
+        deletedTransactionIds,
+      }),
     });
-    const syncPayload = await syncResponse.json().catch(() => ({}));
+    await syncResponse.json().catch(() => ({}));
     if (!syncResponse.ok) {
-      await admin.from("mf_bank_connections").update({ sync_status: "error", last_error: JSON.stringify(syncPayload).slice(0, 1000) }).eq("id", connection.id);
-      return json({ accepted: true, event, syncQueued: false, syncError: syncPayload }, 202);
+      const safeFailure = `Sincronização Open Finance falhou (HTTP ${syncResponse.status}).`;
+      await admin.from("mf_bank_connections")
+        .update({ sync_status: "error", last_error: safeFailure })
+        .eq("id", connection.id);
+      reportMfAdminServiceEvent({
+        module: 'open_finance.webhook', operation: 'dispatch_sync', errorCode: 'OPEN_FINANCE_WEBHOOK_SYNC_FAILED',
+        message: 'Webhook não conseguiu concluir sincronização Open Finance', category: 'integration', severity: 'high',
+        impact: 'partial_operation', correlationId, userId: connection.user_id, durationMs: Date.now() - startedAt,
+        context: { provider_status: syncResponse.status },
+      });
+      return json({ accepted: true, event, connectionId: connection.id, syncQueued: false }, 202);
     }
 
-    return json({ accepted: true, event, connectionId: connection.id, sync: syncPayload });
-  } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Falha ao processar webhook." }, 400);
+    return json({ accepted: true, event, connectionId: connection.id, syncQueued: true });
+  } catch {
+    reportMfAdminServiceEvent({
+      module: 'open_finance.webhook', operation: event || 'process', errorCode: 'OPEN_FINANCE_WEBHOOK_FAILED',
+      message: 'Processamento de webhook Open Finance falhou', category: 'integration', severity: 'high',
+      impact: 'partial_operation', correlationId, userId: diagnosticUserId, durationMs: Date.now() - startedAt,
+    });
+    return json({ error: "Falha ao processar webhook." }, 400);
   }
 });
