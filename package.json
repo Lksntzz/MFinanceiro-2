@@ -12,7 +12,7 @@
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "security:check": "node --import tsx scripts/security-policy-check.ts && node --import tsx scripts/maintenance-rpc-contract-check.ts",
+    "security:check": "node --import tsx scripts/security-policy-check.ts && node --import tsx scripts/maintenance-rpc-contract-check.ts && node --import tsx scripts/access-approval-contract-check.ts",
     "product:check": "node --import tsx scripts/product-maturity-check.ts",
     "mobile:check": "node --import tsx scripts/mobile-logic-check.ts && node --import tsx scripts/native-shell-check.ts && node --import tsx scripts/mobile-layout-contract-check.ts",
     "check": "npm run lint && npm test && npm run security:check && npm run product:check && npm run mobile:check && npm run build",
