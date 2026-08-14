@@ -113,6 +113,12 @@ function numericConfidenceMap(value: unknown) {
   return result;
 }
 
+function optionalFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
@@ -270,7 +276,7 @@ Deno.serve(async (request: Request) => {
         transaction_type: type,
         source_name: String(item.source || parsed.institution_name || "OCR/IA").trim().slice(0, 120),
         external_id: String(item.external_id || "").trim().slice(0, 240) || null,
-        running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : null,
+        running_balance: optionalFiniteNumber(item.running_balance),
         category_id: adaptivePattern?.category_id || null,
         category_name: categoryName,
         overall_confidence: valid ? calibratedConfidence : Math.min(calibratedConfidence, 0.4),
@@ -324,7 +330,7 @@ Deno.serve(async (request: Request) => {
       institution_key: institutionKey,
       period_start: isoDate(parsed.period_start),
       period_end: isoDate(parsed.period_end),
-      statement_balance: Number.isFinite(Number(parsed.statement_balance)) ? Number(parsed.statement_balance) : null,
+      statement_balance: optionalFiniteNumber(parsed.statement_balance),
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20) : [],
       item_count: items.length,
       requires_human_review: true,
