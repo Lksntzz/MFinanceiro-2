@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const shell = readFileSync('src/mobile/MobileAppShell.tsx', 'utf8');
 const app = readFileSync('src/mobile/MobileApp.tsx', 'utf8');
 const appGate = readFileSync('src/App.tsx', 'utf8');
 const maintenance = readFileSync('src/lib/maintenance.ts', 'utf8');
 const mobileProfile = readFileSync('src/mobile/pages/MobileProfile.tsx', 'utf8');
-const desktopMaintenance = readFileSync('src/components/AdminMaintenanceControl.tsx', 'utf8');
 
 const cardsBlock = app.slice(app.indexOf('function CardsPage'), app.indexOf('function MorePage'));
 const moreBlock = app.slice(app.indexOf('function MorePage'), app.indexOf('export default function MobileApp'));
@@ -37,13 +36,10 @@ assert.ok(maintenance.includes('isCurrentMobileExperience()'), 'Maintenance conf
 assert.ok(appGate.includes("table: 'mf_global_settings'"), 'Application must continue listening to maintenance changes');
 assert.ok(!appGate.includes("filter: 'key=eq.global'"), 'Maintenance listener must not ignore scoped mobile/desktop rows');
 assert.ok(appGate.includes(".on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, () =>"), 'Maintenance broadcasts must trigger a fresh scoped read');
-assert.ok(mobileProfile.includes("setScope('mobile')"), 'Mobile admin profile must expose mobile-only maintenance');
-assert.ok(mobileProfile.includes("setScope('desktop')"), 'Mobile admin profile must expose desktop-only maintenance');
-assert.ok(mobileProfile.includes("setScope('both')"), 'Mobile admin profile must expose combined maintenance');
-assert.ok(mobileProfile.includes("supabase.rpc('mf_set_maintenance_scope'"), 'Mobile maintenance must use the scoped privileged RPC');
-assert.ok(mobileProfile.includes('user.app_metadata?.role'), 'Mobile administrator visibility must rely on trusted app metadata');
-assert.ok(mobileProfile.includes('mfa.getAuthenticatorAssuranceLevel'), 'Mobile privileged maintenance must retain MFA session checks');
-assert.ok(desktopMaintenance.includes("supabase.rpc('mf_set_maintenance_mode'"), 'Desktop maintenance UI must remain on its existing RPC contract');
-assert.ok(!desktopMaintenance.includes("mf_set_maintenance_scope"), 'Mobile implementation must not redesign desktop maintenance controls');
 
-console.log('Mobile layout contract: approved primary structure and scoped maintenance preserved.');
+assert.ok(!mobileProfile.includes('mf_set_maintenance_scope'), 'MF Financeiro mobile must not mutate maintenance state');
+assert.ok(!mobileProfile.includes('mfa.getAuthenticatorAssuranceLevel'), 'Maintenance MFA workflow must live in MF Administração, not the Financeiro profile');
+assert.ok(!existsSync('src/components/AdminMaintenanceControl.tsx'), 'Desktop maintenance administration component must be removed from MF Financeiro');
+assert.match(appGate, /if \(maintenanceEnabled\) \{[\s\S]*<MaintenanceScreen/, 'Financeiro must continue enforcing maintenance for every user, including legacy admins');
+
+console.log('Mobile layout contract: approved primary structure preserved; maintenance administration centralized in MF Administração.');
