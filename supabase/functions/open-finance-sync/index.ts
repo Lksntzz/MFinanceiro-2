@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { createApiKey, fetchAccounts, fetchTransactions, PluggyAccount, PluggyTransaction } from "../_shared/pluggy.ts";
+import { reportMfAdminServiceEvent } from "../_shared/mf-admin-telemetry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,11 +40,16 @@ function triggerSource(value: unknown, callerUserId: string | null) {
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
+  const correlationId = crypto.randomUUID();
+  const startedAt = Date.now();
 
   const supabaseUrl = env("SUPABASE_URL");
   const serviceKey = env("SUPABASE_SECRET_KEY") || env("SUPABASE_SERVICE_ROLE_KEY");
   const anonKey = env("SUPABASE_PUBLISHABLE_KEY") || env("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !serviceKey) return json({ error: "Supabase administrativo não configurado." }, 500);
+  if (!supabaseUrl || !serviceKey) {
+    reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'bootstrap', errorCode: 'OPEN_FINANCE_SYNC_FAILED', message: 'Open Finance sync sem configuração de backend', category: 'infrastructure', severity: 'critical', correlationId, context: { supabase_configured: Boolean(supabaseUrl), service_key_configured: Boolean(serviceKey) } });
+    return json({ error: "Supabase administrativo não configurado." }, 500);
+  }
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const internalSecret = env("OPEN_FINANCE_INTERNAL_SECRET");
@@ -73,7 +79,10 @@ Deno.serve(async (request: Request) => {
     if (callerUserId) connectionQuery = connectionQuery.eq("user_id", callerUserId);
 
     const { data: connection, error: connectionError } = await connectionQuery.single();
-    if (connectionError || !connection) throw new Error("Conexão Pluggy não encontrada.");
+    if (connectionError || !connection) {
+      reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'resolve_connection', errorCode: 'OPEN_FINANCE_CONNECTION_NOT_FOUND', message: 'Conexão Open Finance não encontrada', category: 'integration', severity: 'high', correlationId, userId: callerUserId });
+      throw new Error("Conexão Pluggy não encontrada.");
+    }
     if (!connection.provider_connection_ref) throw new Error("Conexão sem item Pluggy associado.");
     if (connection.status === "revoked" || connection.status === "revocation_pending") throw new Error("Essa conexão já foi revogada.");
 
@@ -87,6 +96,7 @@ Deno.serve(async (request: Request) => {
       .maybeSingle();
     if (lockError) throw lockError;
     if (!lock) {
+      reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'acquire_lock', errorCode: 'OPEN_FINANCE_ALREADY_SYNCING', message: 'Sincronização Open Finance já estava em andamento', category: 'performance', severity: 'medium', correlationId, userId: connection.user_id });
       return json({
         connectionId: connection.id,
         itemId: connection.provider_connection_ref,
@@ -108,7 +118,13 @@ Deno.serve(async (request: Request) => {
     syncRunId = syncRun.id;
 
     const apiKey = await createApiKey();
-    const accounts = await fetchAccounts(apiKey, connection.provider_connection_ref);
+    let accounts: PluggyAccount[];
+    try {
+      accounts = await fetchAccounts(apiKey, connection.provider_connection_ref);
+    } catch (error) {
+      reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'fetch_accounts', errorCode: 'OPEN_FINANCE_FETCH_ACCOUNTS_FAILED', message: 'Falha ao buscar contas no provedor Open Finance', category: 'integration', severity: 'high', correlationId, userId: connection.user_id, durationMs: Date.now() - startedAt });
+      throw error;
+    }
     let receivedCount = 0;
     let importedCount = 0;
     let duplicateCount = 0;
@@ -156,7 +172,13 @@ Deno.serve(async (request: Request) => {
         localAccountId = data.id;
       }
 
-      const transactions = await fetchTransactions(apiKey, providerAccount.id, body.dateFrom || null, body.dateTo || null);
+      let transactions: PluggyTransaction[];
+      try {
+        transactions = await fetchTransactions(apiKey, providerAccount.id, body.dateFrom || null, body.dateTo || null);
+      } catch (error) {
+        reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'fetch_transactions', errorCode: 'OPEN_FINANCE_FETCH_TRANSACTIONS_FAILED', message: 'Falha ao buscar transações no provedor Open Finance', category: 'integration', severity: 'high', correlationId, userId: connection.user_id, durationMs: Date.now() - startedAt });
+        throw error;
+      }
       receivedCount += transactions.length;
 
       for (const transaction of transactions) {
@@ -169,7 +191,10 @@ Deno.serve(async (request: Request) => {
         const category = categories.find((item: any) => item.name?.toLowerCase() === providerCategory.toLowerCase() && (item.category_type === "both" || item.category_type === type))
           || categories.find((item: any) => item.name?.toLowerCase() === "outros" && (item.category_type === "both" || item.category_type === type))
           || categories.find((item: any) => item.category_type === "both" || item.category_type === type);
-        if (!category) throw new Error("Nenhuma categoria financeira ativa disponível para a sincronização.");
+        if (!category) {
+          reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'resolve_category', errorCode: 'OPEN_FINANCE_CATEGORY_MISSING', message: 'Nenhuma categoria financeira compatível para Open Finance', category: 'business_rule', severity: 'high', impact: 'financial_risk', correlationId, userId: connection.user_id });
+          throw new Error("Nenhuma categoria financeira ativa disponível para a sincronização.");
+        }
 
         const description = transaction.description || transaction.descriptionRaw || "Movimentação Open Finance";
         const payload = {
@@ -210,7 +235,10 @@ Deno.serve(async (request: Request) => {
         const { error: insertError } = await admin.from("mf_finance_ledger_entries").insert(payload);
         if (insertError) {
           if (insertError.code === "23505") duplicateCount += 1;
-          else throw insertError;
+          else {
+            reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'insert_ledger', errorCode: 'OPEN_FINANCE_LEDGER_INSERT_FAILED', message: 'Ledger recusou lançamento vindo do Open Finance', category: 'business_rule', severity: 'high', impact: 'financial_risk', correlationId, userId: connection.user_id, context: { provider_error_code: String(insertError.code || '').slice(0, 24) } });
+            throw insertError;
+          }
         } else importedCount += 1;
       }
 
@@ -246,6 +274,7 @@ Deno.serve(async (request: Request) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao sincronizar Open Finance.";
     const finishedAt = new Date().toISOString();
+    reportMfAdminServiceEvent({ module: 'open_finance.sync', operation: 'sync', errorCode: 'OPEN_FINANCE_SYNC_FAILED', message: 'Sincronização Open Finance falhou', category: 'integration', severity: 'high', impact: 'partial_operation', correlationId, userId: callerUserId, durationMs: Date.now() - startedAt, context: { has_sync_run: Boolean(syncRunId), had_connection_lock: Boolean(lockedConnectionId) } });
     if (syncRunId) {
       await admin.from("mf_bank_sync_runs").update({ status: "failed", error_message: message, finished_at: finishedAt }).eq("id", syncRunId);
     }

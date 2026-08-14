@@ -29,6 +29,7 @@ import { extractStatementWithOcr } from '../features/importer/ocr-service';
 import { analyzeSpreadsheetContent } from '../features/importer/spreadsheet-parser';
 import { standardizeBankCsv } from '../lib/bank-csv-normalizer';
 import { supabase } from '../lib/supabase';
+import { createOperationalCorrelationId, reportOperationalEvent } from '../lib/operational-observability';
 import {
   Upload,
   FileText,
@@ -66,6 +67,7 @@ export default function ImportarExtratos({
   internalAccountAliases
 }: ImportarExtratosProps) {
   const importSessionRef = useRef(0);
+  const importCorrelationRef = useRef<string | null>(null);
   const pdfPasswordResolverRef = useRef<((password: string | null) => void) | null>(null);
   const [step, setStep] = useState<'upload' | 'processing' | 'review' | 'success'>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -152,6 +154,7 @@ export default function ImportarExtratos({
 
   const resetImportState = useCallback((targetStep: 'upload' | 'processing' = 'upload') => {
     importSessionRef.current += 1;
+    importCorrelationRef.current = null;
     setFile(null);
     setImportedData([]);
     setImportDiagnostics(null);
@@ -166,6 +169,9 @@ export default function ImportarExtratos({
 
   const processFile = async (selectedFile: File) => {
     const sessionId = ++importSessionRef.current;
+    const correlationId = createOperationalCorrelationId();
+    const startedAt = performance.now();
+    importCorrelationRef.current = correlationId;
     const isStale = () => importSessionRef.current !== sessionId;
     const fileSnapshot = await cloneFileForSession(selectedFile);
 
@@ -206,6 +212,10 @@ export default function ImportarExtratos({
 
       if (!detection.supported || !detection.parserExists) {
         if (isStale()) return;
+        reportOperationalEvent('statement.format_unsupported', 'statement-import', 'warning', {
+          format: detection.format,
+          parser_exists: detection.parserExists,
+        }, { correlationId, durationMs: performance.now() - startedAt });
         setImportedData([]);
         setImportDiagnostics({
           fileName: selectedFile.name,
@@ -278,6 +288,10 @@ export default function ImportarExtratos({
               rejectedLineReasons: ocrWarnings,
             };
           } catch (ocrError) {
+            reportOperationalEvent('statement.ocr_fallback_failed', 'statement-import', 'error', {
+              format: detection.format,
+              local_rows_valid: false,
+            }, { correlationId });
             pdfDebugInfo = {
               ...pdfResult.debug,
               reason: `${pdfResult.debug.reason || 'PDF sem texto transacional.'} OCR/IA indisponível: ${ocrError instanceof Error ? ocrError.message : 'falha desconhecida'}`,
@@ -309,6 +323,13 @@ export default function ImportarExtratos({
 
       if (isStale()) return;
 
+      const invalidDateCount = parsed.filter((item) => !item.date || Number.isNaN(new Date(item.date).getTime())).length;
+      if (invalidDateCount > 0) {
+        reportOperationalEvent('statement.invalid_date_fallback', 'statement-import', 'error', {
+          format: detection.format, invalid_date_count: invalidDateCount, parsed_count: parsed.length,
+        }, { correlationId, severity: 'high', impact: 'financial_risk' });
+      }
+
       const normalized = ensureMinimumTransactionFields(normalizeImportedTransactions(parsed));
       const validFound = normalized.filter(
         (item) => item.status === 'ready' && item.amount > 0 && item.description !== 'Sem descricao'
@@ -316,6 +337,16 @@ export default function ImportarExtratos({
 
       setImportedData(normalized);
       setOcrExtractionId(currentOcrExtractionId);
+      if (ocrDocumentConfidence !== null && ocrDocumentConfidence < 0.85) {
+        reportOperationalEvent('statement.ocr_low_confidence', 'statement-import', 'warning', {
+          format: detection.format, confidence: Math.round(ocrDocumentConfidence * 100) / 100, parsed_count: parsed.length,
+        }, { correlationId });
+      }
+      if (pdfDebugInfo?.usedGenericFallback) {
+        reportOperationalEvent('statement.parse_empty', 'statement-import', 'warning', {
+          format: detection.format, generic_fallback_used: true, parsed_count: parsed.length,
+        }, { correlationId, module: 'statement_import.pdf', operation: 'generic_fallback', errorCode: 'STATEMENT_PDF_GENERIC_FALLBACK' });
+      }
       let debugNote: string | undefined;
       if (ocrDocumentConfidence !== null) {
         debugNote = `OCR/IA -> confiança do documento: ${Math.round(ocrDocumentConfidence * 100)}%; revisão humana obrigatória; ${ocrWarnings.join(' | ')}`;
@@ -337,6 +368,11 @@ export default function ImportarExtratos({
         ofxContent,
         pdfReason: pdfDebugInfo?.reason,
       });
+      if (validFound === 0) {
+        reportOperationalEvent('statement.parse_empty', 'statement-import', 'warning', {
+          format: detection.format, parsed_count: normalized.length, lines_extracted: parserDebug.linesExtracted, lines_ignored: parserDebug.linesIgnored,
+        }, { correlationId, durationMs: performance.now() - startedAt });
+      }
       setImportDiagnostics({
         fileName: selectedFile.name,
         mimeType: fileSnapshot.type || 'desconhecido',
@@ -363,6 +399,9 @@ export default function ImportarExtratos({
       setStep('review');
     } catch (error) {
       if (isStale()) return;
+      reportOperationalEvent('statement.process_failed', 'statement-import', 'error', { phase: 'process_file' }, {
+        correlationId, durationMs: performance.now() - startedAt,
+      });
       console.error('Erro ao processar arquivo:', error);
       setImportedData([]);
       setImportDiagnostics({
@@ -443,7 +482,12 @@ export default function ImportarExtratos({
 
     const results = await Promise.all(updates);
     const failed = results.find((result) => result.error);
-    if (failed?.error) throw new Error(`Não foi possível salvar a revisão do OCR: ${failed.error.message}`);
+    if (failed?.error) {
+      reportOperationalEvent('statement.ocr_review_persist_failed', 'statement-import', 'error', { update_count: updates.length }, {
+        correlationId: importCorrelationRef.current || undefined,
+      });
+      throw new Error(`Não foi possível salvar a revisão do OCR: ${failed.error.message}`);
+    }
   }
 
   const handleFinalImport = async () => {
@@ -453,6 +497,9 @@ export default function ImportarExtratos({
 
     setIsImporting(true);
     setImportError(null);
+    const correlationId = importCorrelationRef.current || createOperationalCorrelationId();
+    importCorrelationRef.current = correlationId;
+    const startedAt = performance.now();
 
     try {
       if (!file || !selectedAccountId) throw new Error('Selecione um arquivo e a conta financeira de destino.');
@@ -481,6 +528,9 @@ export default function ImportarExtratos({
       setStep('success');
     } catch (error) {
       console.error('Falha ao importar lançamentos:', error);
+      reportOperationalEvent('statement.import_failed', 'statement-import', 'error', {
+        selected_count: readyItemsCount, review_acknowledged: reviewAcknowledged, mode: balanceMode,
+      }, { correlationId, durationMs: performance.now() - startedAt, severity: 'high', impact: 'financial_risk' });
       setImportError(
         error instanceof Error && error.message
           ? error.message
