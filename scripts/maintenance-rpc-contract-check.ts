@@ -5,6 +5,10 @@ const migration = readFileSync(
   'supabase/migrations/20260814170000_centralize_maintenance_control.sql',
   'utf8',
 );
+const iosMigration = readFileSync(
+  'supabase/migrations/20260814221000_add_ios_maintenance_target.sql',
+  'utf8',
+);
 const edgeFunction = readFileSync(
   'supabase/functions/admin-maintenance-control/index.ts',
   'utf8',
@@ -24,6 +28,9 @@ assert.match(
   'Scoped maintenance RPC must not remain executable by authenticated browser users',
 );
 
+assert.match(iosMigration, /where key = 'mobile'/);
+assert.match(iosMigration, /'ios'/);
+
 assert.match(edgeFunction, /MF_ADMIN_SUPABASE_URL/);
 assert.match(edgeFunction, /MF_ADMIN_PUBLISHABLE_KEY/);
 assert.match(edgeFunction, /\/auth\/v1\/user/);
@@ -34,6 +41,8 @@ assert.match(edgeFunction, /MF_MAINTENANCE_CONTROL_SECRET/);
 assert.match(edgeFunction, /MF_ADMIN_SERVICE_INGEST_SECRET/);
 assert.match(edgeFunction, /x-mf-maintenance-control-secret/);
 assert.match(edgeFunction, /safeEqual\(suppliedControlSecret, expectedControlSecret\)/);
+assert.match(edgeFunction, /"mobile", "desktop", "ios"/);
+assert.match(edgeFunction, /body\.targets/);
 assert.ok(
   !edgeFunction.includes('mf_set_maintenance_scope') && !edgeFunction.includes('mf_set_maintenance_mode'),
   'Server control endpoint must not depend on legacy browser-admin RPCs',
@@ -49,4 +58,4 @@ assert.match(
   'Maintenance enforcement must apply before Financeiro renders the authenticated product',
 );
 
-console.log('Maintenance control boundary: MF Financeiro enforces state; MF Administração is the exclusive control plane.');
+console.log('Maintenance control boundary: one Admin control plane targets desktop, mobile/Android and iOS.');
