@@ -10,7 +10,7 @@ create or replace function public.mf_pay_fixed_bill_current(
 returns jsonb
 language plpgsql
 security definer
-set search_path = 'public'
+set search_path = ''
 as $$
 declare
   v_user uuid := auth.uid();

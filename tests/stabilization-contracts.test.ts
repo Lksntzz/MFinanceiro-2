@@ -14,7 +14,7 @@ test('Open Finance sync writes canonical account table, never the balance view',
 });
 
 test('Open Finance migration owns provider metadata on canonical accounts', () => {
-  const migration = read('supabase/migrations/20260807130000_pluggy_open_finance_integration.sql');
+  const migration = read('supabase/migrations/20260814053000_open_finance_stabilization.sql');
   assert.match(migration, /alter table public\.mf_financial_accounts/);
   assert.match(migration, /bank_connection_id/);
   assert.match(migration, /create or replace view public\.mf_account_balances/);
