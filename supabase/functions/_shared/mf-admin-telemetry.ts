@@ -45,7 +45,9 @@ function cleanIdentifier(value: unknown, maxLength: number) {
 function diagnosticEnvironment(): 'production' | 'preview' | 'development' | 'unknown' {
   const value = String(Deno.env.get('MF_DIAG_ENVIRONMENT') || '').trim().toLowerCase();
   if (value === 'production' || value === 'preview' || value === 'development') return value;
-  return 'unknown';
+  // Deployed Supabase Edge Functions run in a managed deployment isolate. Local
+  // `supabase functions serve` has no deployment id and remains development.
+  return Deno.env.get('DENO_DEPLOYMENT_ID') ? 'production' : 'development';
 }
 
 function sanitizeContext(input?: Record<string, unknown>) {
@@ -61,48 +63,66 @@ function sanitizeContext(input?: Record<string, unknown>) {
   return output;
 }
 
+function keepAlive(task: Promise<unknown>) {
+  try {
+    const runtime = (globalThis as typeof globalThis & {
+      EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void };
+    }).EdgeRuntime;
+    if (typeof runtime?.waitUntil === 'function') {
+      runtime.waitUntil(task);
+      return;
+    }
+  } catch {
+    // Telemetry may never affect the financial response.
+  }
+  void task;
+}
+
 export function reportMfAdminServiceEvent(event: ServiceDiagnosticEvent) {
-  const url = String(Deno.env.get('MF_ADMIN_SERVICE_INGEST_URL') || '').trim();
-  const secret = String(Deno.env.get('MF_ADMIN_SERVICE_INGEST_SECRET') || '').trim();
-  if (!url || !secret) return;
+  try {
+    const url = String(Deno.env.get('MF_ADMIN_SERVICE_INGEST_URL') || '').trim();
+    const secret = String(Deno.env.get('MF_ADMIN_SERVICE_INGEST_SECRET') || '').trim();
+    if (!url || !secret) return;
 
-  const module = cleanIdentifier(event.module, 80);
-  const operation = cleanIdentifier(event.operation, 100);
-  const errorCode = cleanIdentifier(event.errorCode.toUpperCase(), 120);
-  if (!module || !operation || !errorCode) return;
+    const module = cleanIdentifier(event.module, 80);
+    const operation = cleanIdentifier(event.operation, 100);
+    const errorCode = cleanIdentifier(event.errorCode.toUpperCase(), 120);
+    if (!module || !operation || !errorCode) return;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
-  const durationMs = Number(event.durationMs);
-  const body = {
-    module,
-    operation,
-    error_code: errorCode,
-    message: String(event.message || errorCode).slice(0, 180),
-    category: event.category || 'unclassified',
-    severity: event.severity || 'high',
-    impact: event.impact || 'none',
-    correlation_id: event.correlationId,
-    surface: 'edge',
-    environment: diagnosticEnvironment(),
-    deploy_id: Deno.env.get('DENO_DEPLOYMENT_ID') || undefined,
-    duration_ms: Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : undefined,
-    technical_context: sanitizeContext(event.context),
-    user_id: event.userId || undefined,
-  };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+    const durationMs = Number(event.durationMs);
+    const body = {
+      module,
+      operation,
+      error_code: errorCode,
+      message: String(event.message || errorCode).slice(0, 180),
+      category: event.category || 'unclassified',
+      severity: event.severity || 'high',
+      impact: event.impact || 'none',
+      correlation_id: event.correlationId,
+      surface: 'edge',
+      environment: diagnosticEnvironment(),
+      deploy_id: Deno.env.get('DENO_DEPLOYMENT_ID') || undefined,
+      duration_ms: Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : undefined,
+      technical_context: sanitizeContext(event.context),
+      user_id: event.userId || undefined,
+    };
 
-  const task = fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-mf-service-ingest-secret': secret,
-      'x-mf-source-service': module,
-    },
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  }).catch(() => {}).finally(() => clearTimeout(timer));
+    const task = fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-mf-service-ingest-secret': secret,
+        'x-mf-source-service': module,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    }).catch(() => {}).finally(() => clearTimeout(timer));
 
-  // Supabase keeps the isolate alive for the background task without delaying
-  // the financial response. The 1.2s AbortController still bounds telemetry.
-  EdgeRuntime.waitUntil(task);
+    keepAlive(task);
+  } catch {
+    // Intentional no-op: diagnostics are strictly best-effort and must never
+    // throw into OCR, Open Finance, ledger, or any other product operation.
+  }
 }
