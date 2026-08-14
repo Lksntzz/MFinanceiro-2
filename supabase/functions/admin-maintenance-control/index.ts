@@ -22,14 +22,14 @@ const DEFAULT_MESSAGE = "Estamos realizando melhorias importantes. O MF Financei
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-mf-maintenance-control-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
 
@@ -37,6 +37,15 @@ function bearerToken(request: Request) {
   const authorization = request.headers.get("Authorization") || "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || "";
+}
+
+function safeEqual(left: string, right: string) {
+  if (!left || !right || left.length !== right.length) return false;
+  let result = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return result === 0;
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> {
@@ -167,6 +176,21 @@ async function setMaintenanceState(
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
+
+  // O endpoint Financeiro nunca é um endpoint de browser. Além do JWT de um
+  // usuário do MF Administração, exige prova server-to-server que só a Edge
+  // Function administrativa possui. Um admin não pode pular o MF Administração
+  // e chamar este endpoint diretamente sem o segredo de canal.
+  const expectedControlSecret =
+    Deno.env.get("MF_MAINTENANCE_CONTROL_SECRET")
+    || Deno.env.get("MF_ADMIN_SERVICE_INGEST_SECRET")
+    || "";
+  if (!expectedControlSecret) return json({ error: "Canal de controle de manutenção não configurado." }, 503);
+
+  const suppliedControlSecret = request.headers.get("x-mf-maintenance-control-secret") || "";
+  if (!safeEqual(suppliedControlSecret, expectedControlSecret)) {
+    return json({ error: "Canal de controle não autorizado." }, 401);
+  }
 
   const token = bearerToken(request);
   if (!token) return json({ error: "Autenticação administrativa necessária." }, 401);
