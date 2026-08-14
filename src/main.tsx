@@ -5,7 +5,11 @@ import App from './App.tsx';
 import AccessibilityLayer from './components/AccessibilityLayer';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { AppProvider } from './context/AppContext';
-import { installGlobalOperationalObservers } from './lib/operational-observability';
+import {
+  createOperationalCorrelationId,
+  installGlobalOperationalObservers,
+  reportOperationalEvent,
+} from './lib/operational-observability';
 import { installNativeDeepLinkBridge } from './mobile/native/native-deep-links';
 import { installNativeShareBridge } from './mobile/native/native-share';
 import './index.css';
@@ -83,6 +87,30 @@ window.addEventListener('load', () => {
 });
 
 installGlobalOperationalObservers();
+
+if (DIAG_ENVIRONMENT === 'preview') {
+  const previewWindow = window as typeof window & { __mfDiagSmokeTest?: () => string };
+  previewWindow.__mfDiagSmokeTest = () => {
+    const correlationId = createOperationalCorrelationId();
+    reportOperationalEvent(
+      'diagnostic.preview_smoke_test',
+      'observability-transport',
+      'info',
+      { synthetic: true, phase: '1.6' },
+      {
+        category: 'infrastructure',
+        module: 'observability.transport',
+        operation: 'preview_smoke_test',
+        errorCode: 'PHASE16_PREVIEW_SMOKE_TEST',
+        impact: 'none',
+        correlationId,
+        severity: 'low',
+      },
+    );
+    return correlationId;
+  };
+}
+
 void installNativeDeepLinkBridge();
 void installNativeShareBridge();
 
