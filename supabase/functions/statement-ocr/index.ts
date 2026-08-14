@@ -358,6 +358,7 @@ Deno.serve(async (request: Request) => {
       reviewThreshold,
       qualityProfileSampleSize,
       adaptiveCategoryMatches,
+      statementBalance: metadata.statement_balance,
       warnings: metadata.warnings,
       items: storedItems,
     });

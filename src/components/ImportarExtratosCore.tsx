@@ -520,6 +520,7 @@ export default function ImportarExtratos({
         fileSize: file.size,
         fileHash,
         parserName: importDiagnostics?.parserLabel,
+        correlationId,
         diagnostics: importDiagnostics
           ? { ...importDiagnostics } as unknown as Record<string, unknown>
           : undefined,

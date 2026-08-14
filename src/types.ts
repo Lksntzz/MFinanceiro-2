@@ -131,6 +131,9 @@ export interface FinancialAccount {
   account_type: FinancialAccountType;
   currency: string;
   institution_name?: string | null;
+  provider?: string | null;
+  provider_account_ref?: string | null;
+  bank_connection_id?: string | null;
   opening_balance: number;
   current_balance: number;
   transaction_count: number;
@@ -176,6 +179,7 @@ export interface StatementImportOptions {
   fileSize?: number;
   fileHash?: string;
   parserName?: string;
+  correlationId?: string;
   diagnostics?: Record<string, unknown>;
 }
 

@@ -261,35 +261,23 @@ export function useDashboardWorkspace(userId: string) {
   }, [refresh]);
 
   const payFixedBill = useCallback(async (bill: FixedBill) => {
-    const { error: entryError } = await supabase.rpc('mf_create_finance_entry_v3', {
-      p_type: 'expense',
-      p_amount: Math.abs(Number(bill.amount || 0)),
-      p_date: format(new Date(), 'yyyy-MM-dd'),
-      p_description: `Pagamento: ${bill.name}`,
-      p_account_id: null,
-      p_category_id: null,
-      p_category: bill.category || 'Contas Fixas',
+    const correlationId = createOperationalCorrelationId();
+    const startedAt = performance.now();
+    const { error: paymentError } = await supabase.rpc('mf_pay_fixed_bill_current', {
+      p_fixed_bill_id: bill.id,
       p_payment_method: 'unspecified',
-      p_status: 'paid',
-      p_source: 'Agenda',
-      p_card_id: null,
-      p_due_date: null,
-      p_notes: null,
-      p_installment_count: 1,
     });
-    if (entryError) {
-      reportOperationalEvent('fixed_bill.pay_failed', 'fixed-bill', 'error', { phase: 'create_entry' }, { impact: 'financial_risk' });
-      setError(entryError.message);
-      return;
-    }
-    const { error: billError } = await supabase.from('mf_fixed_bills').update({ status: 'paid', last_paid_month: format(new Date(), 'yyyy-MM') }).eq('id', bill.id).eq('user_id', userId);
-    if (billError) {
-      reportOperationalEvent('fixed_bill.pay_failed', 'fixed-bill', 'error', { phase: 'mark_bill_paid' }, { impact: 'financial_risk' });
-      setError(billError.message);
+    if (paymentError) {
+      reportOperationalEvent('fixed_bill.pay_failed', 'fixed-bill', 'error', { phase: 'atomic_payment' }, {
+        correlationId,
+        durationMs: performance.now() - startedAt,
+        impact: 'financial_risk',
+      });
+      setError(paymentError.message);
       return;
     }
     await refresh();
-  }, [refresh, userId]);
+  }, [refresh]);
 
   const importTransactions = useCallback(async (
     imported: ImportedTransaction[],
@@ -297,7 +285,7 @@ export function useDashboardWorkspace(userId: string) {
     options: StatementImportOptions,
   ): Promise<StatementImportRpcResult> => {
     const command = buildStatementImportCommand(imported, newBalance, options);
-    const correlationId = createOperationalCorrelationId();
+    const correlationId = options.correlationId || createOperationalCorrelationId();
     const startedAt = performance.now();
     const { data, error: rpcError } = await supabase.rpc('mf_commit_statement_import_v2', command.params);
     if (rpcError) {
