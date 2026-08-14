@@ -2,7 +2,9 @@ import type { ImportedTransaction } from '../../types';
 import type { ImportBalanceValidation } from './import-types';
 
 function signedAmount(item: ImportedTransaction): number {
-  return item.type === 'income' ? Math.abs(item.amount) : -Math.abs(item.amount);
+  const amount = Number(item.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return item.type === 'income' ? Math.abs(amount) : -Math.abs(amount);
 }
 
 function importedTimestamp(value: string): number {
@@ -10,30 +12,49 @@ function importedTimestamp(value: string): number {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
-export function calculateImportBalanceValidation(items: ImportedTransaction[]): ImportBalanceValidation | null {
+export function calculateImportBalanceValidation(
+  items: ImportedTransaction[],
+  documentStatementBalance?: number,
+): ImportBalanceValidation | null {
   const withRunningBalance = items
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => item.running_balance !== undefined && Number.isFinite(item.running_balance));
-  if (!withRunningBalance.length) return null;
 
-  const ascending = [...withRunningBalance].sort((a, b) => {
-    const byDate = importedTimestamp(a.item.date) - importedTimestamp(b.item.date);
-    return byDate || a.index - b.index;
-  });
-  const descending = [...withRunningBalance].sort((a, b) => {
-    const byDate = importedTimestamp(b.item.date) - importedTimestamp(a.item.date);
-    return byDate || b.index - a.index;
-  });
-  const first = ascending[0]?.item;
-  const last = descending[0]?.item;
-  if (!first || !last) return null;
+  if (withRunningBalance.length) {
+    const ascending = [...withRunningBalance].sort((a, b) => {
+      const byDate = importedTimestamp(a.item.date) - importedTimestamp(b.item.date);
+      return byDate || a.index - b.index;
+    });
+    const descending = [...withRunningBalance].sort((a, b) => {
+      const byDate = importedTimestamp(b.item.date) - importedTimestamp(a.item.date);
+      return byDate || b.index - a.index;
+    });
+    const first = ascending[0]?.item;
+    const last = descending[0]?.item;
+    if (!first || !last) return null;
 
-  const openingBalance = Number(first.running_balance || 0) - signedAmount(first);
+    const openingBalance = Number(first.running_balance ?? 0) - signedAmount(first);
+    const selectedNet = items
+      .filter((item) => item.status === 'ready')
+      .reduce((sum, item) => sum + signedAmount(item), 0);
+    const expectedFinal = openingBalance + selectedNet;
+    const statementFinal = Number(last.running_balance ?? 0);
+    const diff = expectedFinal - statementFinal;
+
+    return { expectedFinal, statementFinal, diff, isClose: Math.abs(diff) < 0.01 };
+  }
+
+  if (!items.length || documentStatementBalance === undefined || !Number.isFinite(documentStatementBalance)) {
+    return null;
+  }
+
+  const statementFinal = Number(documentStatementBalance);
+  const fullStatementNet = items.reduce((sum, item) => sum + signedAmount(item), 0);
   const selectedNet = items
     .filter((item) => item.status === 'ready')
     .reduce((sum, item) => sum + signedAmount(item), 0);
-  const expectedFinal = openingBalance + selectedNet;
-  const statementFinal = Number(last.running_balance || 0);
+  const inferredOpeningBalance = statementFinal - fullStatementNet;
+  const expectedFinal = inferredOpeningBalance + selectedNet;
   const diff = expectedFinal - statementFinal;
 
   return { expectedFinal, statementFinal, diff, isClose: Math.abs(diff) < 0.01 };
