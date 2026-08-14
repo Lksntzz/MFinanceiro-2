@@ -16,10 +16,12 @@ import './product-maturity.css';
 import './product-maturity-additions.css';
 
 const VERSION_CHECK_INTERVAL_MS = 60_000;
+const DIAG_ENVIRONMENT = String(import.meta.env.VITE_MF_DIAG_ENVIRONMENT || '').trim().toLowerCase();
+const SHOULD_USE_SERVICE_WORKER = import.meta.env.PROD && DIAG_ENVIRONMENT !== 'preview';
 let versionReloadStarted = false;
 
 async function checkForAppUpdate() {
-  if (!import.meta.env.PROD || versionReloadStarted) return;
+  if (!SHOULD_USE_SERVICE_WORKER || versionReloadStarted) return;
 
   try {
     const response = await fetch(`/version.json?check=${Date.now()}`, {
@@ -49,7 +51,7 @@ async function checkForAppUpdate() {
 }
 
 function startAppVersionWatcher() {
-  if (!import.meta.env.PROD) return;
+  if (!SHOULD_USE_SERVICE_WORKER) return;
 
   void checkForAppUpdate();
   window.setInterval(() => void checkForAppUpdate(), VERSION_CHECK_INTERVAL_MS);
@@ -62,7 +64,7 @@ function startAppVersionWatcher() {
 
 window.addEventListener('load', () => {
   if ('serviceWorker' in navigator) {
-    if (import.meta.env.PROD) {
+    if (SHOULD_USE_SERVICE_WORKER) {
       navigator.serviceWorker.register('/sw.js').then((registration) => {
         registration.update().catch(() => {});
       }).catch(() => {
