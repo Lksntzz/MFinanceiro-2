@@ -321,7 +321,6 @@ export default function App() {
   const adminRoute = window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
   const adminIntent = hasAdminOAuthIntent();
   const maintenanceEnabled = Boolean(maintenance?.maintenance_mode);
-  const hiddenAdminLogin = new URLSearchParams(window.location.search).get('maintenance_admin') === '1';
 
   if (validatingAdminEntry || (session && (adminRoute || adminIntent) && !isAdmin)) {
     return (
@@ -334,8 +333,10 @@ export default function App() {
     );
   }
 
-  if (maintenanceEnabled && !isAdmin) {
-    if (!session && (hiddenAdminLogin || adminRoute)) return <Auth />;
+  // O MF Financeiro apenas aplica o estado de manutenção. Não existe bypass
+  // operacional no produto financeiro: a administração é feita exclusivamente
+  // pelo MF Administração.
+  if (maintenanceEnabled) {
     return (
       <Suspense fallback={<LoadingScreen label="Carregando manutenção" />}>
         <MaintenanceScreen message={maintenance?.maintenance_message} />
@@ -347,10 +348,7 @@ export default function App() {
 
   return (
     <Suspense fallback={<LoadingScreen label="Carregando sua área financeira" />}>
-      <DashboardBootstrap
-        user={session.user}
-        isMaintenanceBypass={isAdmin && maintenanceEnabled}
-      />
+      <DashboardBootstrap user={session.user} />
     </Suspense>
   );
 }
