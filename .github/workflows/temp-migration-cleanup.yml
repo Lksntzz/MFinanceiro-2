@@ -1,0 +1,54 @@
+name: Temporary migration cleanup
+
+on:
+  push:
+    branches:
+      - staging/mf-admin-observability-1.4
+    paths:
+      - .github/workflows/temp-migration-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging/mf-admin-observability-1.4
+          fetch-depth: 0
+      - name: Move unapplied Pluggy migration to current timeline
+        run: |
+          test -f supabase/migrations/20260807130000_pluggy_open_finance_integration.sql
+          test ! -f supabase/migrations/20260814053000_open_finance_stabilization.sql
+          git mv supabase/migrations/20260807130000_pluggy_open_finance_integration.sql supabase/migrations/20260814053000_open_finance_stabilization.sql
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/stabilization-contracts.test.ts')
+          text = path.read_text()
+          old = "supabase/migrations/20260807130000_pluggy_open_finance_integration.sql"
+          new = "supabase/migrations/20260814053000_open_finance_stabilization.sql"
+          if text.count(old) != 1:
+              raise SystemExit('migration test path anchor mismatch')
+          path.write_text(text.replace(old, new))
+
+          fixed = Path('supabase/migrations/20260814052000_atomic_current_fixed_bill_payment.sql')
+          fixed_text = fixed.read_text()
+          old_search = "set search_path = 'public'"
+          if fixed_text.count(old_search) != 1:
+              raise SystemExit('fixed-bill search_path anchor mismatch')
+          fixed.write_text(fixed_text.replace(old_search, "set search_path = ''"))
+          PY
+      - name: Validate contracts
+        run: |
+          npm ci
+          npm test
+          git diff --check
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/migrations/20260814053000_open_finance_stabilization.sql supabase/migrations/20260814052000_atomic_current_fixed_bill_payment.sql tests/stabilization-contracts.test.ts
+          git commit -m "chore: align stabilization migrations with current timeline"
+          git push origin HEAD:staging/mf-admin-observability-1.4
