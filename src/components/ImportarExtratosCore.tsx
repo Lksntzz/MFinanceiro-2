@@ -76,6 +76,7 @@ export default function ImportarExtratos({
   const [balanceMode, setBalanceMode] = useState<'keep' | 'apply_new' | 'statement'>('keep');
   const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
   const [ocrExtractionId, setOcrExtractionId] = useState<string | null>(null);
+  const [ocrStatementBalance, setOcrStatementBalance] = useState<number | undefined>(undefined);
   const [rejectedOcrItemIds, setRejectedOcrItemIds] = useState<string[]>([]);
   const [pdfPasswordPrompt, setPdfPasswordPrompt] = useState<{ fileName?: string; incorrect?: boolean } | null>(null);
   const [pdfPassword, setPdfPassword] = useState('');
@@ -123,7 +124,7 @@ export default function ImportarExtratos({
     resolve?.(value);
   }, []);
 
-  const balanceValidation = calculateImportBalanceValidation(importedData);
+  const balanceValidation = calculateImportBalanceValidation(importedData, ocrStatementBalance);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -158,6 +159,7 @@ export default function ImportarExtratos({
     setBalanceMode('keep');
     setReviewAcknowledged(false);
     setOcrExtractionId(null);
+    setOcrStatementBalance(undefined);
     setRejectedOcrItemIds([]);
     setImportError(null);
     setCommittedCount(0);
@@ -176,6 +178,7 @@ export default function ImportarExtratos({
     setBalanceMode('keep');
     setReviewAcknowledged(false);
     setOcrExtractionId(null);
+    setOcrStatementBalance(undefined);
     setRejectedOcrItemIds([]);
     setImportError(null);
     setCommittedCount(0);
@@ -189,6 +192,7 @@ export default function ImportarExtratos({
       let rawTextPreview = '';
       let ocrDocumentConfidence: number | null = null;
       let currentOcrExtractionId: string | null = null;
+      let currentOcrStatementBalance: number | undefined;
       let ocrWarnings: string[] = [];
       let parserDebug: ParserDebugSummary = { linesExtracted: 0, linesIgnored: 0, rejectedLineReasons: [] };
       let pdfDebugInfo: {
@@ -271,6 +275,7 @@ export default function ImportarExtratos({
             parsed = ocrResult.transactions;
             currentOcrExtractionId = ocrResult.extractionId;
             ocrDocumentConfidence = ocrResult.documentConfidence;
+            currentOcrStatementBalance = ocrResult.statementBalance;
             ocrWarnings = ocrResult.warnings;
             parserDebug = {
               linesExtracted: parsed.length,
@@ -299,6 +304,7 @@ export default function ImportarExtratos({
         parsed = ocrResult.transactions;
         currentOcrExtractionId = ocrResult.extractionId;
         ocrDocumentConfidence = ocrResult.documentConfidence;
+        currentOcrStatementBalance = ocrResult.statementBalance;
         ocrWarnings = ocrResult.warnings;
         parserDebug = {
           linesExtracted: parsed.length,
@@ -316,6 +322,7 @@ export default function ImportarExtratos({
 
       setImportedData(normalized);
       setOcrExtractionId(currentOcrExtractionId);
+      setOcrStatementBalance(currentOcrStatementBalance);
       let debugNote: string | undefined;
       if (ocrDocumentConfidence !== null) {
         debugNote = `OCR/IA -> confiança do documento: ${Math.round(ocrDocumentConfidence * 100)}%; revisão humana obrigatória; ${ocrWarnings.join(' | ')}`;
