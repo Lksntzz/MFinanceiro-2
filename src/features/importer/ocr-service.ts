@@ -3,6 +3,12 @@ import { supabase } from '../../lib/supabase';
 import { hashImportFile, inferFileMimeType } from './import-file';
 import { generateTransactionId } from './statement-parser-utils';
 
+function optionalFiniteNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export async function extractStatementWithOcr(file: File, accountId: string): Promise<{
   extractionId: string;
   transactions: ImportedTransaction[];
@@ -71,7 +77,7 @@ export async function extractStatementWithOcr(file: File, accountId: string): Pr
       confidence,
       original_description: description,
       bank_source: String(item.source_name || 'OCR/IA'),
-      running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : undefined,
+      running_balance: optionalFiniteNumber(item.running_balance),
       source: 'ocr_ai',
       review_status: 'pending',
     } satisfies ImportedTransaction;
