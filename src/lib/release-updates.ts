@@ -7,14 +7,14 @@ export type ReleaseUpdate = {
 };
 
 export const LATEST_WEB_UPDATE: ReleaseUpdate = {
-  id: '2026-08-10-home-alerts-and-connections',
-  title: 'Início completo e alertas que ajudam',
-  dateLabel: '10 de agosto de 2026',
-  summary: 'O MF Financeiro recuperou a visão completa da Início e tornou alertas e ferramentas de organização mais claros, persistentes e acionáveis.',
+  id: '2026-08-11-desktop-readability-dashboard-stability',
+  title: 'Mais legibilidade e uma Inicial mais estável',
+  dateLabel: '11 de agosto de 2026',
+  summary: 'O MF Financeiro Web recebeu ajustes de leitura, navegação e estabilidade para deixar o uso diário mais claro e consistente.',
   highlights: [
-    'Gráficos, categorias, lançamentos recentes e cartões voltam a compor a visão completa da Início.',
-    'Alertas dispensados não reaparecem ao trocar de ferramenta, e categorias genéricas podem ser organizadas em lote pelas suas regras.',
-    'Categorias e Receitas previstas ganharam mais respiro; Open Finance agora aparece claramente como uma função em breve.',
+    'Nomes de ferramentas, subferramentas, textos funcionais e gráficos ganharam melhor legibilidade no desktop.',
+    'A Inicial agora preserva o último estado válido ao trocar de ferramenta, evitando o flash temporário de valores zerados.',
+    'Contas financeiras receberam mais espaçamento interno para melhorar a leitura sem alterar seus dados ou regras financeiras.',
   ],
 };
 
