@@ -87,19 +87,22 @@ supabase functions serve mf-automation-gateway \
 FUNCTION_PID=$!
 
 FUNCTION_URL="$API_URL/functions/v1/mf-automation-gateway"
-for _ in $(seq 1 45); do
+# A 502 is normal while the local Edge Runtime is still booting. The probe uses
+# an intentionally wrong secret, so HTTP 401 is the positive readiness signal.
+code="000"
+for _ in $(seq 1 60); do
   code="$(curl -sS -o /dev/null -w '%{http_code}' \
     -X POST "$FUNCTION_URL" \
     -H 'Content-Type: application/json' \
     -H 'x-mf-internal-secret: boot-probe' \
     -d '{}' || true)"
-  if [[ "$code" != "000" ]]; then
+  if [[ "$code" == "401" ]]; then
     break
   fi
   sleep 1
 done
-if [[ "${code:-000}" == "000" ]]; then
-  echo "mf-automation-gateway did not start" >&2
+if [[ "$code" != "401" ]]; then
+  echo "mf-automation-gateway did not become ready; last HTTP code: $code" >&2
   cat "$FUNCTION_LOG" >&2 || true
   exit 1
 fi
