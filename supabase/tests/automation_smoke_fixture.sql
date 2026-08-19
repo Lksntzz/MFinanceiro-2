@@ -89,3 +89,14 @@ revoke all on public.mf_card_installments from anon, authenticated;
 revoke all on public.mf_document_extractions from anon, authenticated;
 revoke all on public.mf_statement_import_batches from anon, authenticated;
 revoke all on public.mf_bank_connections from anon, authenticated;
+
+grant select on public.mf_budgets to service_role;
+grant select on public.mf_finance_ledger_entries to service_role;
+grant select on public.mf_credit_cards to service_role;
+grant select on public.mf_financial_goals to service_role;
+grant select on public.mf_fixed_bills to service_role;
+grant select on public.mf_subscriptions to service_role;
+grant select on public.mf_card_installments to service_role;
+grant select on public.mf_document_extractions to service_role;
+grant select on public.mf_statement_import_batches to service_role;
+grant select on public.mf_bank_connections to service_role;
