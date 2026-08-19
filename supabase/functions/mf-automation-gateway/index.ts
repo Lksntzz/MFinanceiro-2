@@ -5,6 +5,7 @@ import {
   requireAutomationInternalAuth,
 } from '../_shared/mf-automation-auth.ts';
 import {
+  ACTION_SCOPE,
   AUTOMATION_CONTRACT_VERSION,
   validateAutomationEnvelope,
   validateTargetEnvelope,
@@ -60,6 +61,7 @@ async function idempotencyPut(
     correlationId: string;
     contextRef?: string | null;
     response: Record<string, unknown>;
+    ttlSeconds?: number;
   },
 ) {
   const { error } = await admin.rpc('mf_automation_idempotency_put', {
@@ -68,9 +70,21 @@ async function idempotencyPut(
     p_correlation_id: input.correlationId,
     p_context_ref: input.contextRef || null,
     p_response: input.response,
-    p_ttl_seconds: 86_400,
+    p_ttl_seconds: input.ttlSeconds || 86_400,
   });
   if (error) throw new Error('AUTOMATION_IDEMPOTENCY_WRITE_FAILED');
+}
+
+async function requireValidContext(
+  admin: ReturnType<typeof createAutomationAdminClient>,
+  contextRef: string,
+  requiredScope: string,
+) {
+  const { data, error } = await admin.rpc('mf_peek_automation_context', {
+    p_context_ref: contextRef,
+    p_required_scope: requiredScope,
+  });
+  if (error || !data) throw new Error('AUTOMATION_CONTEXT_INVALID');
 }
 
 Deno.serve(async (request: Request) => {
@@ -111,6 +125,7 @@ Deno.serve(async (request: Request) => {
         action: envelope.action,
         correlationId: envelope.correlation_id,
         response,
+        ttlSeconds: 600,
       });
       return json(request, response, 200);
     }
@@ -118,6 +133,12 @@ Deno.serve(async (request: Request) => {
     const envelope = validateAutomationEnvelope(body);
     correlationId = envelope.correlation_id;
     action = envelope.action;
+
+    await requireValidContext(
+      admin,
+      envelope.user_context.context_ref,
+      ACTION_SCOPE[envelope.action],
+    );
 
     const cached = await idempotencyGet(admin, envelope.idempotency_key);
     if (cached) return json(request, cached, 200);
