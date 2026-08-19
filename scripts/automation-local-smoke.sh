@@ -16,7 +16,7 @@ cleanup() {
     kill "$FUNCTION_PID" >/dev/null 2>&1 || true
   fi
   supabase stop --no-backup >/dev/null 2>&1 || true
-  rm -f "${AUTOMATION_ENV_FILE:-}"
+  rm -f "${AUTOMATION_ENV_FILE:-}" "${FUNCTION_LOG:-}" "${PULSE_BODY_FILE:-}"
 }
 trap cleanup EXIT
 
@@ -42,6 +42,9 @@ assert_http_code() {
   local label="$3"
   if [[ "$actual" != "$expected" ]]; then
     echo "[$label] expected HTTP $expected, received $actual" >&2
+    if [[ -n "${FUNCTION_LOG:-}" && -f "$FUNCTION_LOG" ]]; then
+      tail -n 120 "$FUNCTION_LOG" >&2 || true
+    fi
     exit 1
   fi
 }
@@ -178,11 +181,20 @@ PULSE_REQUEST="$(cat <<EOF
 {"version":"1.0.0","action":"pulse.context","correlation_id":"$PULSE_CORRELATION","idempotency_key":"pulse.context:$PULSE_CORRELATION","user_context":{"context_ref":"$CONTEXT_REF","mode":"automation_initiated","scope":"pulse"},"payload":{}}
 EOF
 )"
-PULSE_RESPONSE_1="$(curl -fsS \
+PULSE_BODY_FILE="$(mktemp)"
+PULSE_CODE="$(curl -sS -o "$PULSE_BODY_FILE" -w '%{http_code}' \
   -X POST "$FUNCTION_URL" \
   -H 'Content-Type: application/json' \
   -H "x-mf-internal-secret: $AUTOMATION_INTERNAL_SECRET" \
   -d "$PULSE_REQUEST")"
+if [[ "$PULSE_CODE" != "200" ]]; then
+  echo "[pulse.context] expected HTTP 200, received $PULSE_CODE" >&2
+  cat "$PULSE_BODY_FILE" >&2 || true
+  echo >&2
+  tail -n 120 "$FUNCTION_LOG" >&2 || true
+  exit 1
+fi
+PULSE_RESPONSE_1="$(cat "$PULSE_BODY_FILE")"
 PULSE_RESPONSE_2="$(curl -fsS \
   -X POST "$FUNCTION_URL" \
   -H 'Content-Type: application/json' \
