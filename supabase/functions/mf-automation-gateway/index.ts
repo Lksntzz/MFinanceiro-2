@@ -46,8 +46,15 @@ async function readBody(request: Request) {
   }
 }
 
-async function idempotencyGet(admin: ReturnType<typeof createAutomationAdminClient>, key: string) {
-  const { data, error } = await admin.rpc('mf_automation_idempotency_get', { p_key: key });
+async function idempotencyGet(
+  admin: ReturnType<typeof createAutomationAdminClient>,
+  key: string,
+  contextRef: string | null,
+) {
+  const { data, error } = await admin.rpc('mf_automation_idempotency_get', {
+    p_key: key,
+    p_context_ref: contextRef,
+  });
   if (error) throw new Error('AUTOMATION_IDEMPOTENCY_READ_FAILED');
   if (!data) return null;
   return data as Record<string, unknown>;
@@ -72,7 +79,12 @@ async function idempotencyPut(
     p_response: input.response,
     p_ttl_seconds: input.ttlSeconds || 86_400,
   });
-  if (error) throw new Error('AUTOMATION_IDEMPOTENCY_WRITE_FAILED');
+  if (error) {
+    if (String(error.message || '').includes('AUTOMATION_IDEMPOTENCY_COLLISION')) {
+      throw new Error('AUTOMATION_IDEMPOTENCY_COLLISION');
+    }
+    throw new Error('AUTOMATION_IDEMPOTENCY_WRITE_FAILED');
+  }
 }
 
 async function requireValidContext(
@@ -108,7 +120,7 @@ Deno.serve(async (request: Request) => {
       correlationId = envelope.correlation_id;
       action = envelope.action;
 
-      const cached = await idempotencyGet(admin, envelope.idempotency_key);
+      const cached = await idempotencyGet(admin, envelope.idempotency_key, null);
       if (cached) return json(request, cached, 200);
 
       const data = await listAutomationTargets(admin, envelope.payload.module, envelope.payload.limit || 100);
@@ -140,7 +152,11 @@ Deno.serve(async (request: Request) => {
       ACTION_SCOPE[envelope.action],
     );
 
-    const cached = await idempotencyGet(admin, envelope.idempotency_key);
+    const cached = await idempotencyGet(
+      admin,
+      envelope.idempotency_key,
+      envelope.user_context.context_ref,
+    );
     if (cached) return json(request, cached, 200);
 
     const data = await executeAutomationAction(
@@ -173,7 +189,7 @@ Deno.serve(async (request: Request) => {
     const status = code === 'AUTOMATION_UNAUTHORIZED' ? 401
       : code.endsWith('_NOT_CONFIGURED') ? 503
       : code.includes('TOO_LARGE') ? 413
-      : code.includes('INVALID') || code.includes('FORBIDDEN') || code.includes('REQUIRED') || code.includes('UNSUPPORTED') ? 400
+      : code.includes('INVALID') || code.includes('FORBIDDEN') || code.includes('REQUIRED') || code.includes('UNSUPPORTED') || code.includes('COLLISION') ? 400
       : 500;
 
     console.error(JSON.stringify({
