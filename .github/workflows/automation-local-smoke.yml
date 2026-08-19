@@ -1,0 +1,48 @@
+name: Automation Local Smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'supabase/functions/mf-automation-gateway/**'
+      - 'supabase/functions/_shared/mf-automation-*.ts'
+      - 'supabase/migrations/**mf_automation**.sql'
+      - 'supabase/config.toml'
+      - 'scripts/automation-local-smoke.sh'
+      - '.github/workflows/automation-local-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-local-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-gateway-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_NO_UPDATE_NOTIFIER: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Setup pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Run isolated automation smoke
+        run: bash scripts/automation-local-smoke.sh
