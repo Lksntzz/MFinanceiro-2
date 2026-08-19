@@ -8,8 +8,10 @@ on:
       - 'supabase/functions/mf-automation-gateway/**'
       - 'supabase/functions/_shared/mf-automation-*.ts'
       - 'supabase/migrations/**mf_automation**.sql'
+      - 'supabase/tests/automation_smoke_fixture.sql'
       - 'supabase/config.toml'
       - 'scripts/automation-local-smoke.sh'
+      - 'scripts/automation-local-smoke-isolated.sh'
       - '.github/workflows/automation-local-smoke.yml'
   workflow_dispatch:
 
@@ -45,4 +47,4 @@ jobs:
         run: docker version
 
       - name: Run isolated automation smoke
-        run: bash scripts/automation-local-smoke.sh
+        run: bash scripts/automation-local-smoke-isolated.sh
