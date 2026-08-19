@@ -26,6 +26,7 @@ cp "$ROOT_DIR/supabase/functions/_shared/mf-automation-auth.ts" "$TEMP_ROOT/supa
 cp "$ROOT_DIR/supabase/functions/_shared/mf-automation-contract.ts" "$TEMP_ROOT/supabase/functions/_shared/"
 cp "$ROOT_DIR/supabase/functions/_shared/mf-automation-actions.ts" "$TEMP_ROOT/supabase/functions/_shared/"
 cp "$ROOT_DIR/supabase/functions/mf-automation-gateway/index.ts" "$TEMP_ROOT/supabase/functions/mf-automation-gateway/index.ts"
+cp "$ROOT_DIR/supabase/functions/mf-automation-gateway/deno.json" "$TEMP_ROOT/supabase/functions/mf-automation-gateway/deno.json"
 
 # Do not replay the repository's historical migration chain here. The project has
 # legacy migration-order drift that predates this gateway. This smoke isolates the
