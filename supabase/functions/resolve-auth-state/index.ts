@@ -54,26 +54,19 @@ Deno.serve(async (request) => {
   });
 
   try {
-    for (let page = 1; page <= 50; page += 1) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-      if (error) throw error;
-      const users = data?.users || [];
-      const existingUser = users.find((user) => normalizeEmail(user.email) === email);
-      if (existingUser) {
-        const confirmed = Boolean(existingUser.email_confirmed_at || existingUser.confirmed_at);
-        return json({ state: confirmed ? "account" : "confirmation_pending" satisfies AuthState });
-      }
-      if (users.length < 1000) break;
-    }
-
-    const { data, error } = await admin.rpc("check_access_request_status", { p_email: email });
+    const { data, error } = await admin.rpc("mf_resolve_access_entry", { p_email: email });
     if (error) throw error;
-    const row = Array.isArray(data) ? data[0] : data;
-    const requestStatus = normalizeRequestStatus(row?.status);
 
-    if (requestStatus === "approved") return json({ state: "approved" satisfies AuthState });
-    if (requestStatus === "pending") return json({ state: "pending" satisfies AuthState });
-    if (requestStatus === "denied") return json({ state: "denied" satisfies AuthState });
+    const row = Array.isArray(data) ? data[0] : data;
+    const rawState = String(row?.state || "").trim().toLowerCase();
+
+    if (rawState === "account") return json({ state: "account" satisfies AuthState });
+    if (rawState === "confirmation_pending") return json({ state: "confirmation_pending" satisfies AuthState });
+    if (rawState === "approved") return json({ state: "approved" satisfies AuthState });
+    if (rawState === "pending") return json({ state: "pending" satisfies AuthState });
+    if (rawState === "denied") return json({ state: "denied" satisfies AuthState });
+    if (rawState === "existing") return json({ state: "account" satisfies AuthState });
+
     return json({ state: "new" satisfies AuthState });
   } catch (error) {
     console.error("resolve-auth-state failed", error);

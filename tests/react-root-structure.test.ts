@@ -21,8 +21,8 @@ test('the application has one declarative React root and no legacy mount observe
 
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
-    if (/\bcreateRoot\s*\(/.test(content)) createRootSites.push(relative(projectRoot, file));
-    if (/\bMutationObserver\b/.test(content)) observerSites.push(relative(projectRoot, file));
+    if (/\bcreateRoot\s*\(/.test(content)) createRootSites.push(relative(projectRoot, file).replace(/\\/g, '/'));
+    if (/\bMutationObserver\b/.test(content)) observerSites.push(relative(projectRoot, file).replace(/\\/g, '/'));
   }
 
   assert.deepEqual(createRootSites, ['src/main.tsx']);

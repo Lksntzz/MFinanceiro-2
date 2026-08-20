@@ -20,9 +20,6 @@ type AccessRequestRow = {
   decision_source?: string | null;
 };
 
-const DEFAULT_ADMIN_URL = "https://lyhsttditfrxmfnnligk.supabase.co";
-const DEFAULT_ADMIN_PUBLISHABLE_KEY = "sb_publishable_WzbybFQdgY1O8-PeKrlYNw_0cv1euNa";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-mf-access-approval-control-secret",
@@ -83,8 +80,9 @@ function sanitizeText(value: unknown, maxLength: number) {
 }
 
 async function verifyAdminIdentity(token: string) {
-  const adminUrl = (Deno.env.get("MF_ADMIN_SUPABASE_URL") || DEFAULT_ADMIN_URL).replace(/\/$/, "");
-  const adminKey = Deno.env.get("MF_ADMIN_PUBLISHABLE_KEY") || DEFAULT_ADMIN_PUBLISHABLE_KEY;
+  const adminUrl = (Deno.env.get("MF_ADMIN_SUPABASE_URL") || "").replace(/\/$/, "");
+  const adminKey = Deno.env.get("MF_ADMIN_PUBLISHABLE_KEY") || "";
+  if (!adminUrl || !adminKey) return null;
 
   const userResponse = await fetch(`${adminUrl}/auth/v1/user`, {
     headers: { Authorization: `Bearer ${token}`, apikey: adminKey },
