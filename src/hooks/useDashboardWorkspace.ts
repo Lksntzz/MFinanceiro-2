@@ -23,6 +23,7 @@ import {
   writeLedgerCache,
 } from '../lib/ledger-cache';
 import { supabase } from '../lib/supabase';
+import { createOperationalCorrelationId, reportOperationalEvent } from '../lib/operational-observability';
 import type {
   CardInstallment,
   CreditCard,
@@ -65,6 +66,8 @@ export function useDashboardWorkspace(userId: string) {
 
   const hydrateAnalyticsLedger = useCallback(async (seed: LedgerPage) => {
     const requestId = ++analyticsRequestRef.current;
+    const correlationId = createOperationalCorrelationId();
+    const startedAt = performance.now();
     let rows = seed.items;
     let hasMore = seed.has_more;
     let cursor = seed.next_cursor;
@@ -73,7 +76,10 @@ export function useDashboardWorkspace(userId: string) {
 
     try {
       while (hasMore) {
-        if (!cursor) throw new Error('O histórico informou mais páginas sem fornecer cursor.');
+        if (!cursor) {
+          reportOperationalEvent('dashboard.analytics_cursor_missing', 'dashboard-analytics', 'error', { loaded_count: rows.length }, { correlationId, durationMs: performance.now() - startedAt });
+          throw new Error('O histórico informou mais páginas sem fornecer cursor.');
+        }
         const { data, error: pageError } = await supabase.rpc('mf_get_ledger_page', {
           p_page_size: 250,
           p_cursor_date: cursor.date,
@@ -91,6 +97,9 @@ export function useDashboardWorkspace(userId: string) {
         setAnalyticsComplete(true);
       }
     } catch {
+      reportOperationalEvent('dashboard.analytics_page_failed', 'dashboard-analytics', 'warning', {
+        loaded_count: rows.length, request_current: requestId === analyticsRequestRef.current,
+      }, { correlationId, durationMs: performance.now() - startedAt });
       if (requestId === analyticsRequestRef.current) {
         setAnalyticsTransactions(rows);
         setAnalyticsComplete(false);
@@ -103,6 +112,8 @@ export function useDashboardWorkspace(userId: string) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const correlationId = createOperationalCorrelationId();
+    const startedAt = performance.now();
 
     try {
       const ensured = await supabase.rpc('mf_ensure_financial_structure');
@@ -157,6 +168,9 @@ export function useDashboardWorkspace(userId: string) {
       });
       void hydrateAnalyticsLedger(page);
     } catch (refreshError: any) {
+      reportOperationalEvent('dashboard.refresh_failed', 'dashboard-workspace', 'error', { phase: 'workspace_refresh' }, {
+        correlationId, durationMs: performance.now() - startedAt,
+      });
       setError(refreshError?.message || 'Não foi possível carregar seus dados financeiros.');
     } finally {
       setLoading(false);
@@ -229,6 +243,7 @@ export function useDashboardWorkspace(userId: string) {
       setHasMoreTransactions(page.has_more);
       setLedgerCursor(page.next_cursor);
     } catch (pageError: any) {
+      reportOperationalEvent('dashboard.analytics_page_failed', 'dashboard-ledger', 'warning', { phase: 'load_more' });
       setError(pageError?.message || 'Não foi possível carregar mais lançamentos.');
     } finally {
       setLoadingMoreTransactions(false);
@@ -237,32 +252,32 @@ export function useDashboardWorkspace(userId: string) {
 
   const deleteTransaction = useCallback(async (id: string) => {
     const { error: deleteError } = await supabase.rpc('mf_delete_finance_entry', { p_entry_id: id });
-    if (deleteError) { setError(deleteError.message); return; }
+    if (deleteError) {
+      reportOperationalEvent('transaction.delete_failed', 'transaction-manual', 'error', { phase: 'rpc' });
+      setError(deleteError.message);
+      return;
+    }
     await refresh();
   }, [refresh]);
 
   const payFixedBill = useCallback(async (bill: FixedBill) => {
-    const { error: entryError } = await supabase.rpc('mf_create_finance_entry_v3', {
-      p_type: 'expense',
-      p_amount: Math.abs(Number(bill.amount || 0)),
-      p_date: format(new Date(), 'yyyy-MM-dd'),
-      p_description: `Pagamento: ${bill.name}`,
-      p_account_id: null,
-      p_category_id: null,
-      p_category: bill.category || 'Contas Fixas',
+    const correlationId = createOperationalCorrelationId();
+    const startedAt = performance.now();
+    const { error: paymentError } = await supabase.rpc('mf_pay_fixed_bill_current', {
+      p_fixed_bill_id: bill.id,
       p_payment_method: 'unspecified',
-      p_status: 'paid',
-      p_source: 'Agenda',
-      p_card_id: null,
-      p_due_date: null,
-      p_notes: null,
-      p_installment_count: 1,
     });
-    if (entryError) { setError(entryError.message); return; }
-    const { error: billError } = await supabase.from('mf_fixed_bills').update({ status: 'paid', last_paid_month: format(new Date(), 'yyyy-MM') }).eq('id', bill.id).eq('user_id', userId);
-    if (billError) { setError(billError.message); return; }
+    if (paymentError) {
+      reportOperationalEvent('fixed_bill.pay_failed', 'fixed-bill', 'error', { phase: 'atomic_payment' }, {
+        correlationId,
+        durationMs: performance.now() - startedAt,
+        impact: 'financial_risk',
+      });
+      setError(paymentError.message);
+      return;
+    }
     await refresh();
-  }, [refresh, userId]);
+  }, [refresh]);
 
   const importTransactions = useCallback(async (
     imported: ImportedTransaction[],
@@ -270,9 +285,29 @@ export function useDashboardWorkspace(userId: string) {
     options: StatementImportOptions,
   ): Promise<StatementImportRpcResult> => {
     const command = buildStatementImportCommand(imported, newBalance, options);
+    const correlationId = options.correlationId || createOperationalCorrelationId();
+    const startedAt = performance.now();
     const { data, error: rpcError } = await supabase.rpc('mf_commit_statement_import_v2', command.params);
-    if (rpcError) throw new Error(rpcError.message || 'O banco recusou a importação.');
-    const result = normalizeStatementImportResult(data);
+    if (rpcError) {
+      reportOperationalEvent('statement.import_failed', 'statement-persistence', 'error', { phase: 'rpc', requested_count: imported.length }, { correlationId, durationMs: performance.now() - startedAt, severity: 'high', impact: 'financial_risk' });
+      throw new Error(rpcError.message || 'O banco recusou a importação.');
+    }
+    let result: StatementImportRpcResult;
+    try {
+      result = normalizeStatementImportResult(data);
+    } catch (error) {
+      reportOperationalEvent('statement.import_failed', 'statement-persistence', 'error', { phase: 'normalize_result', requested_count: imported.length }, { correlationId, errorCode: 'STATEMENT_IMPORT_RESULT_INVALID', category: 'data_anomaly', severity: 'high', impact: 'financial_risk' });
+      throw error;
+    }
+    const accountedCount = result.inserted_count + result.duplicate_count + result.rejected_count + result.ignored_count;
+    if (accountedCount !== imported.length) {
+      reportOperationalEvent('statement.import_failed', 'statement-persistence', 'error', { phase: 'count_invariant', requested_count: imported.length, accounted_count: accountedCount, count_delta: accountedCount - imported.length }, { correlationId, errorCode: 'STATEMENT_IMPORT_COUNT_MISMATCH', category: 'business_rule', severity: 'critical', impact: 'financial_risk' });
+    }
+    const tolerance = 0.02;
+    const expectedBalance = result.balance_mode === 'keep' ? result.balance_before : result.balance_mode === 'statement' && typeof newBalance === 'number' ? newBalance : result.balance_before + result.net_new;
+    if (Number.isFinite(expectedBalance) && Math.abs(result.balance_after - expectedBalance) > tolerance) {
+      reportOperationalEvent('statement.import_failed', 'statement-persistence', 'error', { phase: 'balance_invariant', mode: result.balance_mode, within_tolerance: false }, { correlationId, errorCode: 'STATEMENT_IMPORT_BALANCE_INVARIANT_FAILED', category: 'business_rule', severity: 'critical', impact: 'financial_risk' });
+    }
     await refresh();
     return result;
   }, [refresh]);

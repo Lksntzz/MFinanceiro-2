@@ -20,6 +20,7 @@ import {
 import { format } from 'date-fns';
 import { CATEGORIES } from '../lib/constants';
 import { supabase } from '../lib/supabase';
+import { createOperationalCorrelationId, reportOperationalEvent } from '../lib/operational-observability';
 import { FinancialAccount, TransactionCategory } from '../types';
 
 type EntryType = 'expense' | 'income';
@@ -138,6 +139,7 @@ export default function UnifiedTransactionLauncher({
   async function loadSupportingData() {
     const ensured = await supabase.rpc('mf_ensure_financial_structure');
     if (ensured.error) {
+      reportOperationalEvent('transaction.supporting_data_failed', 'transaction-launcher', 'error', { phase: 'ensure_structure' });
       setError(ensured.error.message);
       return;
     }
@@ -159,6 +161,11 @@ export default function UnifiedTransactionLauncher({
     if (pendingResult.error) setError(pendingResult.error.message);
     if (accountResult.error) setError(accountResult.error.message);
     if (categoryResult.error) setError(categoryResult.error.message);
+    if (cardResult.error || pendingResult.error || accountResult.error || categoryResult.error) {
+      reportOperationalEvent('transaction.supporting_data_failed', 'transaction-launcher', 'warning', {
+        cards_failed: Boolean(cardResult.error), pending_failed: Boolean(pendingResult.error), accounts_failed: Boolean(accountResult.error), categories_failed: Boolean(categoryResult.error),
+      });
+    }
 
     const nextCards = (cardResult.data || []).map((card: any) => ({
       ...card,
@@ -283,12 +290,15 @@ export default function UnifiedTransactionLauncher({
     try {
       await onDataChanged?.();
     } catch (refreshError) {
+      reportOperationalEvent('transaction.refresh_after_save_failed', 'transaction-launcher', 'warning', { phase: 'refresh_dashboard' });
       console.warn('Lançamento confirmado, mas o painel não pôde ser atualizado imediatamente:', refreshError);
     }
   }
 
   async function save(keepOpen: boolean) {
     if (!userId || saving) return;
+    const correlationId = createOperationalCorrelationId();
+    const startedAt = performance.now();
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -335,6 +345,7 @@ export default function UnifiedTransactionLauncher({
         }, 550);
       }
     } catch (saveError: any) {
+      reportOperationalEvent('transaction.create_failed', 'transaction-launcher', 'error', { phase: 'save', keep_open: keepOpen }, { correlationId, durationMs: performance.now() - startedAt });
       setError(saveError?.message || 'Não foi possível registrar o lançamento.');
     } finally {
       setSaving(false);
@@ -342,6 +353,8 @@ export default function UnifiedTransactionLauncher({
   }
 
   async function markPaid(item: PendingRow) {
+    const pendingCorrelationId = createOperationalCorrelationId();
+    const pendingStartedAt = performance.now();
     setPayingId(item.id);
     setError(null);
     try {
@@ -351,6 +364,7 @@ export default function UnifiedTransactionLauncher({
       await loadSupportingData();
       await refreshDashboard();
     } catch (payError: any) {
+      reportOperationalEvent('transaction.mark_paid_failed', 'transaction-pending', 'error', { phase: 'mark_paid' }, { correlationId: pendingCorrelationId, durationMs: performance.now() - pendingStartedAt, impact: 'financial_risk' });
       setError(payError?.message || 'Não foi possível concluir a pendência.');
     } finally {
       setPayingId(null);

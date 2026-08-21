@@ -1,4 +1,6 @@
 const PLUGGY_API = 'https://api.pluggy.ai';
+const MAX_TRANSACTION_PAGES = 50;
+const MAX_TRANSACTIONS_PER_SYNC = 20_000;
 
 export type PluggyConnector = {
   id?: number | string | null;
@@ -75,8 +77,9 @@ async function pluggyFetch(path: string, apiKey: string, init?: RequestInit) {
     },
   });
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`Pluggy recusou a operação (${response.status})${text ? `: ${text.slice(0, 300)}` : ''}`);
+    // Provider response bodies can contain account/transaction details. Never
+    // propagate them into application errors, telemetry, or persisted last_error.
+    throw new Error(`Pluggy recusou a operação (${response.status}).`);
   }
   if (response.status === 204) return null;
   return await response.json();
@@ -115,23 +118,42 @@ export async function fetchAccounts(apiKey: string, itemId: string): Promise<Plu
 export async function fetchTransactions(apiKey: string, accountId: string, dateFrom?: string | null, dateTo?: string | null) {
   const transactions: PluggyTransaction[] = [];
   let after: string | null = null;
-  let safety = 0;
+  let pageCount = 0;
+
   do {
     const params = new URLSearchParams({ accountId });
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
     if (after) params.set('after', after);
-    const payload = await pluggyFetch(`/v2/transactions?${params.toString()}`, apiKey) as { results?: PluggyTransaction[]; next?: string | null };
+
+    const payload = await pluggyFetch(`/v2/transactions?${params.toString()}`, apiKey) as {
+      results?: PluggyTransaction[];
+      next?: string | null;
+    };
+    pageCount += 1;
+
     if (Array.isArray(payload?.results)) transactions.push(...payload.results);
+    if (transactions.length > MAX_TRANSACTIONS_PER_SYNC) {
+      throw new Error('Sincronização Open Finance excedeu o limite seguro de transações.');
+    }
+
     const next = String(payload?.next || '');
-    if (!next) break;
+    if (!next) {
+      after = null;
+      break;
+    }
+
     try {
       const nextUrl = new URL(next, PLUGGY_API);
       after = nextUrl.searchParams.get('after');
     } catch {
-      after = null;
+      throw new Error('Pluggy retornou paginação inválida para transações.');
     }
-    safety += 1;
-  } while (after && safety < 50);
+
+    if (after && pageCount >= MAX_TRANSACTION_PAGES) {
+      throw new Error('Sincronização Open Finance excedeu o limite seguro de páginas.');
+    }
+  } while (after);
+
   return transactions;
 }

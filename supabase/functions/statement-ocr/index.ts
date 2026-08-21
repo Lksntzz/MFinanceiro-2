@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { reportMfAdminServiceEvent } from "../_shared/mf-admin-telemetry.ts";
 import {
   BASE_REVIEW_THRESHOLD,
   buildAdaptivePatternMap,
@@ -112,9 +113,17 @@ function numericConfidenceMap(value: unknown) {
   return result;
 }
 
+function optionalFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
+  const correlationId = crypto.randomUUID();
+  const startedAt = Date.now();
 
   const authorization = request.headers.get("Authorization");
   const token = authorization?.replace(/^Bearer\s+/i, "");
@@ -129,7 +138,10 @@ Deno.serve(async (request: Request) => {
   const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || "";
   const model = Deno.env.get("GEMINI_OCR_MODEL") || "gemini-3.6-flash";
   if (!supabaseUrl || !publishableKey) return json({ error: "Supabase não configurado na função." }, 500);
-  if (!geminiApiKey) return json({ error: "OCR/IA ainda não foi habilitado pelo administrador." }, 503);
+  if (!geminiApiKey) {
+    reportMfAdminServiceEvent({ module: 'statement_import.ocr', operation: 'provider_config', errorCode: 'STATEMENT_OCR_PROVIDER_DISABLED', message: 'Provedor OCR/IA não configurado', category: 'infrastructure', severity: 'high', correlationId });
+    return json({ error: "OCR/IA ainda não foi habilitado pelo administrador." }, 503);
+  }
 
   const supabase = createClient(supabaseUrl, publishableKey, {
     global: { headers: { Authorization: authorization } },
@@ -192,14 +204,24 @@ Deno.serve(async (request: Request) => {
       }),
     });
     if (!aiResponse.ok) {
+      reportMfAdminServiceEvent({ module: 'statement_import.ocr', operation: 'provider_request', errorCode: 'STATEMENT_OCR_PROVIDER_ERROR', message: 'Provedor OCR/IA retornou erro', category: 'integration', severity: 'high', correlationId, userId: userData.user.id, durationMs: Date.now() - startedAt, context: { provider_status: aiResponse.status } });
       const providerMessage = (await aiResponse.text()).slice(0, 500);
       throw new Error(`Falha no OCR/IA (${aiResponse.status}): ${providerMessage}`);
     }
 
     const interaction = await aiResponse.json() as Record<string, unknown>;
-    const parsed = JSON.parse(interactionText(interaction)) as Record<string, unknown>;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(interactionText(interaction)) as Record<string, unknown>;
+    } catch (error) {
+      reportMfAdminServiceEvent({ module: 'statement_import.ocr', operation: 'parse_provider_response', errorCode: 'STATEMENT_OCR_RESPONSE_INVALID', message: 'Resposta do OCR/IA não respeitou o contrato JSON', category: 'data_anomaly', severity: 'high', impact: 'financial_risk', correlationId, userId: userData.user.id });
+      throw error;
+    }
     const transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
-    if (transactions.length > 2000) throw new Error("O documento excedeu o limite de 2.000 lançamentos.");
+    if (transactions.length > 2000) {
+      reportMfAdminServiceEvent({ module: 'statement_import.ocr', operation: 'validate_row_limit', errorCode: 'STATEMENT_OCR_TOO_MANY_ROWS', message: 'OCR/IA retornou quantidade de linhas acima do limite', category: 'data_anomaly', severity: 'high', correlationId, userId: userData.user.id, context: { row_count: transactions.length } });
+      throw new Error("O documento excedeu o limite de 2.000 lançamentos.");
+    }
 
     const institutionKey = normalizeLearningKey(parsed.institution_name || "desconhecida") || "desconhecida";
     const [qualityResult, patternResult] = await Promise.all([
@@ -254,7 +276,7 @@ Deno.serve(async (request: Request) => {
         transaction_type: type,
         source_name: String(item.source || parsed.institution_name || "OCR/IA").trim().slice(0, 120),
         external_id: String(item.external_id || "").trim().slice(0, 240) || null,
-        running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : null,
+        running_balance: optionalFiniteNumber(item.running_balance),
         category_id: adaptivePattern?.category_id || null,
         category_name: categoryName,
         overall_confidence: valid ? calibratedConfidence : Math.min(calibratedConfidence, 0.4),
@@ -308,7 +330,7 @@ Deno.serve(async (request: Request) => {
       institution_key: institutionKey,
       period_start: isoDate(parsed.period_start),
       period_end: isoDate(parsed.period_end),
-      statement_balance: Number.isFinite(Number(parsed.statement_balance)) ? Number(parsed.statement_balance) : null,
+      statement_balance: optionalFiniteNumber(parsed.statement_balance),
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20) : [],
       item_count: items.length,
       requires_human_review: true,
@@ -336,11 +358,13 @@ Deno.serve(async (request: Request) => {
       reviewThreshold,
       qualityProfileSampleSize,
       adaptiveCategoryMatches,
+      statementBalance: metadata.statement_balance,
       warnings: metadata.warnings,
       items: storedItems,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha inesperada no OCR/IA.";
+    reportMfAdminServiceEvent({ module: 'statement_import.ocr', operation: 'extract', errorCode: 'STATEMENT_OCR_FUNCTION_FAILED', message: 'Processamento OCR/IA falhou', category: 'integration', severity: 'high', impact: 'partial_operation', correlationId, userId: userData.user.id, durationMs: Date.now() - startedAt, context: { extraction_started: Boolean(extractionId) } });
     if (extractionId) {
       await supabase
         .from("mf_document_extractions")
