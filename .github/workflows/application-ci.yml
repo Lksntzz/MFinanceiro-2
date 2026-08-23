@@ -18,7 +18,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -30,20 +30,43 @@ jobs:
           node-version: '24'
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Semgrep
+        run: python -m pip install --disable-pip-version-check semgrep
 
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
 
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Biome safe check
+        run: npm run lint:style
+
+      - name: Unit and module tests
+        run: npm test
+
       - name: Security policy checks
         run: npm run security:check
+
+      - name: Semgrep rule contracts
+        run: npm run security:semgrep:test
+
+      - name: Semgrep application scan
+        run: npm run security:scan
 
       - name: Product maturity checks
         run: npm run product:check
 
-      - name: TypeScript check
-        run: npm run lint
+      - name: Mobile contract checks
+        run: npm run mobile:check
 
       - name: Production build
         run: npm run build
