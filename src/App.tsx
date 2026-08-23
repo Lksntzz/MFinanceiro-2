@@ -1,6 +1,5 @@
-import React, { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
-import { Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
+import type { Session } from '@supabase/supabase-js';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import Auth from './components/Auth';
 import ConfigRequired from './components/ConfigRequired';
 import {
@@ -8,10 +7,13 @@ import {
   isMaintenanceAdmin,
   MAINTENANCE_BROADCAST_EVENT,
   MAINTENANCE_CHANNEL,
-  MaintenanceConfig,
+  type MaintenanceConfig,
 } from './lib/maintenance';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
 
-const DashboardBootstrap = lazy(() => import('./components/DashboardBootstrap'));
+const DashboardBootstrap = lazy(
+  () => import('./components/DashboardBootstrap'),
+);
 const MaintenanceScreen = lazy(() => import('./components/MaintenanceScreen'));
 
 const ADMIN_LOGIN_PATH = '/admin-login';
@@ -38,16 +40,22 @@ function clearAdminOAuthIntent() {
 }
 
 function normalizeEmail(value: unknown) {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function isEmailConfirmationReturn() {
-  return new URLSearchParams(window.location.search).get('email_confirmed') === '1';
+  return (
+    new URLSearchParams(window.location.search).get('email_confirmed') === '1'
+  );
 }
 
 function getAwaitingConfirmationEmail() {
   try {
-    return normalizeEmail(window.localStorage.getItem(AWAITING_CONFIRMATION_EMAIL));
+    return normalizeEmail(
+      window.localStorage.getItem(AWAITING_CONFIRMATION_EMAIL),
+    );
   } catch {
     return '';
   }
@@ -56,7 +64,11 @@ function getAwaitingConfirmationEmail() {
 function shouldHandleEmailConfirmation(session: Session | null) {
   if (isEmailConfirmationReturn()) return true;
   const awaiting = getAwaitingConfirmationEmail();
-  return Boolean(awaiting && session?.user?.email && awaiting === normalizeEmail(session.user.email));
+  return Boolean(
+    awaiting &&
+      session?.user?.email &&
+      awaiting === normalizeEmail(session.user.email),
+  );
 }
 
 function rememberConfirmedEmail(email: string | null | undefined) {
@@ -76,14 +88,28 @@ function rememberConfirmedEmail(email: string | null | undefined) {
     // The e-mail can still be typed manually if session storage is unavailable.
   }
 
-  window.dispatchEvent(new CustomEvent('mf:confirmed-email', { detail: normalized }));
+  window.dispatchEvent(
+    new CustomEvent('mf:confirmed-email', { detail: normalized }),
+  );
 }
 
-function LoadingScreen({ label = 'Carregando MF Financeiro' }: { label?: string }) {
+function LoadingScreen({
+  label = 'Carregando MF Financeiro',
+}: {
+  label?: string;
+}) {
   return (
-    <div className="flex h-screen items-center justify-center bg-[#050505]" role="status" aria-live="polite" aria-label={label}>
+    <div
+      className="flex h-screen items-center justify-center bg-[#050505]"
+      role="status"
+      aria-live="polite"
+      aria-label={label}
+    >
       <div className="text-center">
-        <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" aria-hidden="true" />
+        <div
+          className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent"
+          aria-hidden="true"
+        />
         <span className="sr-only">{label}</span>
       </div>
     </div>
@@ -93,7 +119,9 @@ function LoadingScreen({ label = 'Carregando MF Financeiro' }: { label?: string 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [maintenance, setMaintenance] = useState<MaintenanceConfig | null>(null);
+  const [maintenance, setMaintenance] = useState<MaintenanceConfig | null>(
+    null,
+  );
   const [validatingAdminEntry, setValidatingAdminEntry] = useState(false);
 
   useLayoutEffect(() => {
@@ -139,12 +167,18 @@ export default function App() {
 
     let active = true;
 
-    const finishEmailConfirmation = async (candidateSession: Session | null) => {
+    const finishEmailConfirmation = async (
+      candidateSession: Session | null,
+    ) => {
       rememberConfirmedEmail(candidateSession?.user?.email);
 
       if (candidateSession) {
         const { error } = await supabase.auth.signOut({ scope: 'local' });
-        if (error) console.warn('Falha ao encerrar sessão temporária de confirmação:', error);
+        if (error)
+          console.warn(
+            'Falha ao encerrar sessão temporária de confirmação:',
+            error,
+          );
       }
 
       if (active) setSession(null);
@@ -152,13 +186,14 @@ export default function App() {
 
     const initialize = async () => {
       try {
-        const [{ data: sessionData, error: sessionError }, maintenanceConfig] = await Promise.all([
-          supabase.auth.getSession(),
-          fetchMaintenanceConfig(supabase).catch((err) => {
-            console.warn('Falha na verificação de manutenção:', err);
-            return null;
-          }),
-        ]);
+        const [{ data: sessionData, error: sessionError }, maintenanceConfig] =
+          await Promise.all([
+            supabase.auth.getSession(),
+            fetchMaintenanceConfig(supabase).catch((err) => {
+              console.warn('Falha na verificação de manutenção:', err);
+              return null;
+            }),
+          ]);
 
         if (sessionError) throw sessionError;
         if (!active) return;
@@ -167,8 +202,10 @@ export default function App() {
 
         let currentSession = sessionData.session;
         if (currentSession) {
-          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-          if (!refreshError && refreshed.session) currentSession = refreshed.session;
+          const { data: refreshed, error: refreshError } =
+            await supabase.auth.refreshSession();
+          if (!refreshError && refreshed.session)
+            currentSession = refreshed.session;
         }
 
         if (shouldHandleEmailConfirmation(currentSession)) {
@@ -197,7 +234,10 @@ export default function App() {
         setSession(null);
         window.setTimeout(() => {
           void supabase.auth.signOut({ scope: 'local' }).catch((err) => {
-            console.warn('Falha ao encerrar sessão temporária de confirmação:', err);
+            console.warn(
+              'Falha ao encerrar sessão temporária de confirmação:',
+              err,
+            );
           });
         }, 0);
         return;
@@ -220,7 +260,8 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
 
-    const adminRoute = window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
+    const adminRoute =
+      window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
     const oauthIntent = hasAdminOAuthIntent();
     if (!adminRoute && !oauthIntent) return;
 
@@ -273,14 +314,17 @@ export default function App() {
           schema: 'public',
           table: 'mf_global_settings',
         },
-        () => { void refreshMaintenance(); },
+        () => {
+          void refreshMaintenance();
+        },
       )
       .on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, () => {
         void refreshMaintenance();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') void refreshMaintenance();
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') void refreshMaintenance();
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
+          void refreshMaintenance();
       });
 
     const onFocus = () => void refreshMaintenance();
@@ -299,7 +343,10 @@ export default function App() {
 
     window.addEventListener('focus', onFocus);
     window.addEventListener('online', onOnline);
-    window.addEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
+    window.addEventListener(
+      'mf:maintenance-changed',
+      onMaintenanceChanged as EventListener,
+    );
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
@@ -307,7 +354,10 @@ export default function App() {
       window.clearInterval(fallbackPollId);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
-      window.removeEventListener('mf:maintenance-changed', onMaintenanceChanged as EventListener);
+      window.removeEventListener(
+        'mf:maintenance-changed',
+        onMaintenanceChanged as EventListener,
+      );
       document.removeEventListener('visibilitychange', onVisibilityChange);
       void supabase.removeChannel(realtimeChannel);
     };
@@ -318,16 +368,29 @@ export default function App() {
   if (!isSupabaseConfigured()) return <ConfigRequired />;
 
   const isAdmin = isMaintenanceAdmin(session);
-  const adminRoute = window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
+  const adminRoute =
+    window.location.pathname.replace(/\/+$/, '') === ADMIN_LOGIN_PATH;
   const adminIntent = hasAdminOAuthIntent();
   const maintenanceEnabled = Boolean(maintenance?.maintenance_mode);
 
-  if (validatingAdminEntry || (session && (adminRoute || adminIntent) && !isAdmin)) {
+  if (
+    validatingAdminEntry ||
+    (session && (adminRoute || adminIntent) && !isAdmin)
+  ) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#050505]" role="status" aria-live="polite">
+      <div
+        className="flex h-screen items-center justify-center bg-[#050505]"
+        role="status"
+        aria-live="polite"
+      >
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent" aria-hidden="true" />
-          <p className="mt-4 text-xs font-bold uppercase tracking-widest text-white/35">Validando acesso administrativo</p>
+          <div
+            className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#00f2ff] border-t-transparent"
+            aria-hidden="true"
+          />
+          <p className="mt-4 text-xs font-bold uppercase tracking-widest text-white/35">
+            Validando acesso administrativo
+          </p>
         </div>
       </div>
     );
@@ -347,7 +410,9 @@ export default function App() {
   if (!session) return <Auth />;
 
   return (
-    <Suspense fallback={<LoadingScreen label="Carregando sua área financeira" />}>
+    <Suspense
+      fallback={<LoadingScreen label="Carregando sua área financeira" />}
+    >
       <DashboardBootstrap user={session.user} />
     </Suspense>
   );

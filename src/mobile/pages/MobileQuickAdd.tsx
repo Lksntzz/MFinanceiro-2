@@ -1,10 +1,23 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Loader2, Mic, Repeat2, ScanLine, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  ArrowLeft,
+  Check,
+  Loader2,
+  Mic,
+  Repeat2,
+  ScanLine,
+  Sparkles,
+} from 'lucide-react';
+import type React from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
-import type { FinancialAccount, Transaction, TransactionCategory } from '../../types';
+import type {
+  FinancialAccount,
+  Transaction,
+  TransactionCategory,
+} from '../../types';
 import { inferAdaptiveCategory } from '../lib/adaptive-category';
 import { MOBILE_ROUTES } from '../routes';
 import './mobile-voice.css';
@@ -22,16 +35,25 @@ type MobileQuickAddProps = {
 function parseMoneyInput(value: string) {
   const clean = value.trim().replace(/\s/g, '');
   if (!clean) return Number.NaN;
-  if (clean.includes(',')) return Number(clean.replace(/\./g, '').replace(',', '.'));
+  if (clean.includes(','))
+    return Number(clean.replace(/\./g, '').replace(',', '.'));
   return Number(clean);
 }
 
-export default function MobileQuickAdd({ userId, accounts, categories, history = [], onSaved }: MobileQuickAddProps) {
+export default function MobileQuickAdd({
+  userId,
+  accounts,
+  categories,
+  history = [],
+  onSaved,
+}: MobileQuickAddProps) {
   const navigate = useNavigate();
   const [type, setType] = useState<EntryType>('expense');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [accountId, setAccountId] = useState(() => accounts.find((item) => item.is_default)?.id || accounts[0]?.id || '');
+  const [accountId, setAccountId] = useState(
+    () => accounts.find((item) => item.is_default)?.id || accounts[0]?.id || '',
+  );
   const [categoryId, setCategoryId] = useState('');
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,21 +61,35 @@ export default function MobileQuickAdd({ userId, accounts, categories, history =
   const [error, setError] = useState<string | null>(null);
 
   const compatibleCategories = useMemo(
-    () => categories.filter((item) => item.is_active && (item.category_type === 'both' || item.category_type === type)),
+    () =>
+      categories.filter(
+        (item) =>
+          item.is_active &&
+          (item.category_type === 'both' || item.category_type === type),
+      ),
     [categories, type],
   );
 
   const adaptiveSuggestion = useMemo(() => {
     if (!description.trim()) return null;
-    return inferAdaptiveCategory({ merchantText: description, type, history, categories });
+    return inferAdaptiveCategory({
+      merchantText: description,
+      type,
+      history,
+      categories,
+    });
   }, [description, type, history, categories]);
 
-  const adaptiveCategory = adaptiveSuggestion?.confidence === 'high'
-    ? compatibleCategories.find((item) => item.id === adaptiveSuggestion.categoryId)
-    : null;
-  const selectedCategory = compatibleCategories.find((item) => item.id === categoryId)
-    || (!categoryTouched ? adaptiveCategory : null)
-    || compatibleCategories[0];
+  const adaptiveCategory =
+    adaptiveSuggestion?.confidence === 'high'
+      ? compatibleCategories.find(
+          (item) => item.id === adaptiveSuggestion.categoryId,
+        )
+      : null;
+  const selectedCategory =
+    compatibleCategories.find((item) => item.id === categoryId) ||
+    (!categoryTouched ? adaptiveCategory : null) ||
+    compatibleCategories[0];
   const effectiveCategoryId = selectedCategory?.id || '';
   const parsedAmount = parseMoneyInput(amount);
 
@@ -78,24 +114,28 @@ export default function MobileQuickAdd({ userId, accounts, categories, history =
 
     setSaving(true);
     try {
-      const { error: rpcError } = await supabase.rpc('mf_create_finance_entry_v3', {
-        p_type: type,
-        p_amount: parsedAmount,
-        p_date: format(new Date(), 'yyyy-MM-dd'),
-        p_description: description.trim() || selectedCategory.name,
-        p_account_id: accountId,
-        p_category_id: effectiveCategoryId,
-        p_category: selectedCategory.name,
-        p_payment_method: 'unspecified',
-        p_status: 'paid',
-        p_card_id: null,
-        p_installment_count: 1,
-        p_due_date: null,
-        p_notes: adaptiveSuggestion?.confidence === 'high' && !categoryTouched
-          ? `Categoria sugerida pelo histórico do usuário (${adaptiveSuggestion.matchCount} correspondências).`
-          : null,
-        p_source: 'MF Quick Mobile',
-      });
+      const { error: rpcError } = await supabase.rpc(
+        'mf_create_finance_entry_v3',
+        {
+          p_type: type,
+          p_amount: parsedAmount,
+          p_date: format(new Date(), 'yyyy-MM-dd'),
+          p_description: description.trim() || selectedCategory.name,
+          p_account_id: accountId,
+          p_category_id: effectiveCategoryId,
+          p_category: selectedCategory.name,
+          p_payment_method: 'unspecified',
+          p_status: 'paid',
+          p_card_id: null,
+          p_installment_count: 1,
+          p_due_date: null,
+          p_notes:
+            adaptiveSuggestion?.confidence === 'high' && !categoryTouched
+              ? `Categoria sugerida pelo histórico do usuário (${adaptiveSuggestion.matchCount} correspondências).`
+              : null,
+          p_source: 'MF Quick Mobile',
+        },
+      );
       if (rpcError) throw rpcError;
 
       setAmount('');
@@ -114,48 +154,122 @@ export default function MobileQuickAdd({ userId, accounts, categories, history =
   return (
     <div className="mf-mobile-focus-page">
       <header className="mf-mobile-focus-header">
-        <button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.home)} aria-label="Voltar para a Home">
+        <button
+          type="button"
+          className="mf-mobile-icon-button"
+          onClick={() => navigate(MOBILE_ROUTES.home)}
+          aria-label="Voltar para a Home"
+        >
           <ArrowLeft size={21} />
         </button>
         <div>
           <span className="mf-mobile-eyebrow">MF Quick</span>
           <h1>Novo lançamento</h1>
         </div>
-        <button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.scan)} aria-label="Abrir MF Scan">
+        <button
+          type="button"
+          className="mf-mobile-icon-button"
+          onClick={() => navigate(MOBILE_ROUTES.scan)}
+          aria-label="Abrir MF Scan"
+        >
           <ScanLine size={20} />
         </button>
       </header>
 
       <form className="mf-mobile-quick-form" onSubmit={saveEntry}>
-        <button type="button" className="mf-mobile-voice-quick-entry" onClick={() => navigate(MOBILE_ROUTES.voice)}>
-          <span><Mic size={21} /></span>
-          <div><strong>Falar lançamento</strong><small>Ex.: “Gastei 48 reais de gasolina”</small></div>
+        <button
+          type="button"
+          className="mf-mobile-voice-quick-entry"
+          onClick={() => navigate(MOBILE_ROUTES.voice)}
+        >
+          <span>
+            <Mic size={21} />
+          </span>
+          <div>
+            <strong>Falar lançamento</strong>
+            <small>Ex.: “Gastei 48 reais de gasolina”</small>
+          </div>
         </button>
 
-        <button type="button" className="mf-mobile-voice-quick-entry" onClick={() => navigate(MOBILE_ROUTES.recurrences)}>
-          <span><Repeat2 size={21} /></span>
-          <div><strong>Detectar recorrências</strong><small>Encontrar padrões mensais no seu histórico</small></div>
+        <button
+          type="button"
+          className="mf-mobile-voice-quick-entry"
+          onClick={() => navigate(MOBILE_ROUTES.recurrences)}
+        >
+          <span>
+            <Repeat2 size={21} />
+          </span>
+          <div>
+            <strong>Detectar recorrências</strong>
+            <small>Encontrar padrões mensais no seu histórico</small>
+          </div>
         </button>
 
-        <div className="mf-mobile-segmented" role="group" aria-label="Tipo do lançamento">
-          <button type="button" data-active={type === 'expense'} onClick={() => { setType('expense'); setCategoryId(''); setCategoryTouched(false); }}>Despesa</button>
-          <button type="button" data-active={type === 'income'} onClick={() => { setType('income'); setCategoryId(''); setCategoryTouched(false); }}>Receita</button>
+        <div
+          className="mf-mobile-segmented"
+          role="group"
+          aria-label="Tipo do lançamento"
+        >
+          <button
+            type="button"
+            data-active={type === 'expense'}
+            onClick={() => {
+              setType('expense');
+              setCategoryId('');
+              setCategoryTouched(false);
+            }}
+          >
+            Despesa
+          </button>
+          <button
+            type="button"
+            data-active={type === 'income'}
+            onClick={() => {
+              setType('income');
+              setCategoryId('');
+              setCategoryTouched(false);
+            }}
+          >
+            Receita
+          </button>
         </div>
 
         <label className="mf-mobile-amount-field">
           <span>Valor</span>
-          <div><small>R$</small><input inputMode="decimal" autoFocus value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))} placeholder="0,00" /></div>
+          <div>
+            <small>R$</small>
+            <input
+              inputMode="decimal"
+              value={amount}
+              onChange={(event) =>
+                setAmount(event.target.value.replace(/[^0-9,.]/g, ''))
+              }
+              placeholder="0,00"
+            />
+          </div>
         </label>
 
         <label className="mf-mobile-field">
           <span>Categoria</span>
-          <select value={effectiveCategoryId} onChange={(event) => { setCategoryTouched(true); setCategoryId(event.target.value); }}>
-            {compatibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          <select
+            value={effectiveCategoryId}
+            onChange={(event) => {
+              setCategoryTouched(true);
+              setCategoryId(event.target.value);
+            }}
+          >
+            {compatibleCategories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
           </select>
         </label>
 
         {adaptiveSuggestion ? (
-          <div className={`mf-mobile-feedback ${adaptiveSuggestion.confidence === 'high' ? 'success' : 'warning'}`}>
+          <div
+            className={`mf-mobile-feedback ${adaptiveSuggestion.confidence === 'high' ? 'success' : 'warning'}`}
+          >
             <Sparkles size={16} />
             <span>
               {adaptiveSuggestion.confidence === 'high'
@@ -163,7 +277,15 @@ export default function MobileQuickAdd({ userId, accounts, categories, history =
                 : `Padrão provável: ${adaptiveSuggestion.categoryName}. Confirme antes de salvar.`}
             </span>
             {adaptiveSuggestion.confidence === 'medium' ? (
-              <button type="button" onClick={() => { setCategoryId(adaptiveSuggestion.categoryId); setCategoryTouched(true); }}>Usar</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryId(adaptiveSuggestion.categoryId);
+                  setCategoryTouched(true);
+                }}
+              >
+                Usar
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -171,22 +293,51 @@ export default function MobileQuickAdd({ userId, accounts, categories, history =
         {accounts.length > 1 ? (
           <label className="mf-mobile-field">
             <span>Conta</span>
-            <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            <select
+              value={accountId}
+              onChange={(event) => setAccountId(event.target.value)}
+            >
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
             </select>
           </label>
         ) : null}
 
         <label className="mf-mobile-field">
-          <span>Descrição <em>opcional</em></span>
-          <input value={description} onChange={(event) => { setDescription(event.target.value); if (!categoryTouched) setCategoryId(''); }} placeholder={selectedCategory?.name || 'Ex.: almoço'} />
+          <span>
+            Descrição <em>opcional</em>
+          </span>
+          <input
+            value={description}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              if (!categoryTouched) setCategoryId('');
+            }}
+            placeholder={selectedCategory?.name || 'Ex.: almoço'}
+          />
         </label>
 
         {error ? <div className="mf-mobile-feedback error">{error}</div> : null}
-        {message ? <div className="mf-mobile-feedback success"><Check size={16} />{message}</div> : null}
+        {message ? (
+          <div className="mf-mobile-feedback success">
+            <Check size={16} />
+            {message}
+          </div>
+        ) : null}
 
-        <button className="mf-mobile-primary-button" type="submit" disabled={saving || !userId}>
-          {saving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+        <button
+          className="mf-mobile-primary-button"
+          type="submit"
+          disabled={saving || !userId}
+        >
+          {saving ? (
+            <Loader2 className="animate-spin" size={18} />
+          ) : (
+            <Check size={18} />
+          )}
           Salvar lançamento
         </button>
       </form>

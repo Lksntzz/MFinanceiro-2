@@ -1,7 +1,10 @@
 /**
  * Utilitário para formatar valores sensíveis baseado na configuração de privacidade.
  */
-export function formatCurrency(value: number, isPrivate: boolean = false): string {
+export function formatCurrency(
+  value: number,
+  isPrivate: boolean = false,
+): string {
   if (isPrivate) return '••••••';
   return value.toLocaleString('pt-BR', {
     style: 'currency',
@@ -11,12 +14,18 @@ export function formatCurrency(value: number, isPrivate: boolean = false): strin
   });
 }
 
-export function formatPercent(value: number, isPrivate: boolean = false): string {
+export function formatPercent(
+  value: number,
+  isPrivate: boolean = false,
+): string {
   if (isPrivate) return '•••%';
   return `${value.toFixed(2)}%`;
 }
 
-export function formatCompact(value: number, isPrivate: boolean = false): string {
+export function formatCompact(
+  value: number,
+  isPrivate: boolean = false,
+): string {
   if (isPrivate) return '•••';
   return value.toLocaleString('pt-BR');
 }

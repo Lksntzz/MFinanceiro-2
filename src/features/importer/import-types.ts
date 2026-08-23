@@ -1,4 +1,11 @@
-export type FileFormat = 'csv' | 'ofx' | 'pdf' | 'xls' | 'xlsx' | 'image' | 'unknown';
+export type FileFormat =
+  | 'csv'
+  | 'ofx'
+  | 'pdf'
+  | 'xls'
+  | 'xlsx'
+  | 'image'
+  | 'unknown';
 
 export interface FormatDetectionResult {
   format: FileFormat;

@@ -1,17 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
 import { FileImage, FileText, Loader2, Share2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
 import type { FinancialAccount, TransactionCategory } from '../../types';
-import { MOBILE_ROUTES } from '../routes';
 import {
   getMobileSharedPayload,
   keepOnlyUnreviewedSharedFiles,
+  type MobileSharedPayload,
   removeMobileSharedPayload,
   sharedFileToFile,
-  type MobileSharedPayload,
 } from '../lib/mobile-share-store';
+import { MOBILE_ROUTES } from '../routes';
 import MobileScan from './MobileScan';
 import './mobile-share.css';
 
@@ -19,7 +19,9 @@ type MobileShareReceiverProps = {
   userId: string;
 };
 
-export default function MobileShareReceiver({ userId }: MobileShareReceiverProps) {
+export default function MobileShareReceiver({
+  userId,
+}: MobileShareReceiverProps) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const shareId = params.get('id') || '';
@@ -38,9 +40,11 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
     async function load() {
       if (shareError) {
         if (active) {
-          setError(shareError === 'too-large'
-            ? 'O conteúdo compartilhado ultrapassa o limite de 20 MB.'
-            : 'O compartilhamento chegou sem conteúdo utilizável.');
+          setError(
+            shareError === 'too-large'
+              ? 'O conteúdo compartilhado ultrapassa o limite de 20 MB.'
+              : 'O compartilhamento chegou sem conteúdo utilizável.',
+          );
           setLoading(false);
         }
         return;
@@ -48,7 +52,9 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
 
       if (!shareId) {
         if (active) {
-          setError('Não foi encontrado um conteúdo compartilhado para revisar.');
+          setError(
+            'Não foi encontrado um conteúdo compartilhado para revisar.',
+          );
           setLoading(false);
         }
         return;
@@ -57,11 +63,26 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
       try {
         const [shared, accountsResult, categoriesResult] = await Promise.all([
           getMobileSharedPayload(shareId),
-          supabase.from('mf_account_balances').select('*').eq('user_id', userId).eq('is_active', true).order('is_default', { ascending: false }).order('created_at'),
-          supabase.from('mf_transaction_categories').select('*').eq('user_id', userId).eq('is_active', true).order('sort_order').order('name'),
+          supabase
+            .from('mf_account_balances')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .order('is_default', { ascending: false })
+            .order('created_at'),
+          supabase
+            .from('mf_transaction_categories')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .order('sort_order')
+            .order('name'),
         ]);
 
-        if (!shared) throw new Error('O compartilhamento expirou ou já foi removido deste aparelho.');
+        if (!shared)
+          throw new Error(
+            'O compartilhamento expirou ou já foi removido deste aparelho.',
+          );
         if (accountsResult.error) throw accountsResult.error;
         if (categoriesResult.error) throw categoriesResult.error;
 
@@ -70,23 +91,34 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
         setAccounts((accountsResult.data || []) as FinancialAccount[]);
         setCategories((categoriesResult.data || []) as TransactionCategory[]);
       } catch (loadError: any) {
-        if (active) setError(loadError?.message || 'Não foi possível preparar o conteúdo compartilhado.');
+        if (active)
+          setError(
+            loadError?.message ||
+              'Não foi possível preparar o conteúdo compartilhado.',
+          );
       } finally {
         if (active) setLoading(false);
       }
     }
 
     void load();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [shareError, shareId, userId]);
 
   const sharedText = useMemo(() => {
     if (!payload) return '';
-    return [payload.title, payload.text, payload.url].map((value) => value.trim()).filter(Boolean).join('\n');
+    return [payload.title, payload.text, payload.url]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join('\n');
   }, [payload]);
 
   const selectedSharedFile = payload?.files[selectedFileIndex] || null;
-  const selectedFile = selectedSharedFile ? sharedFileToFile(selectedSharedFile) : null;
+  const selectedFile = selectedSharedFile
+    ? sharedFileToFile(selectedSharedFile)
+    : null;
   const scanKey = selectedSharedFile
     ? `${payload?.id || shareId}:${selectedSharedFile.name}:${selectedSharedFile.size}:${selectedSharedFile.lastModified}`
     : `${payload?.id || shareId}:text`;
@@ -96,14 +128,23 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
       try {
         await removeMobileSharedPayload(shareId);
       } catch (cleanupError) {
-        console.warn('MF Share could not clear the local payload on cancel:', cleanupError);
+        console.warn(
+          'MF Share could not clear the local payload on cancel:',
+          cleanupError,
+        );
       }
     }
     navigate(MOBILE_ROUTES.home);
   }
 
   if (loading) {
-    return <div className="mf-mobile-share-state"><Loader2 className="animate-spin" size={30} /><strong>Recebendo no MF</strong><span>Preparando o conteúdo compartilhado com segurança.</span></div>;
+    return (
+      <div className="mf-mobile-share-state">
+        <Loader2 className="animate-spin" size={30} />
+        <strong>Recebendo no MF</strong>
+        <span>Preparando o conteúdo compartilhado com segurança.</span>
+      </div>
+    );
   }
 
   if (error || !payload) {
@@ -111,8 +152,16 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
       <div className="mf-mobile-share-state">
         <Share2 size={32} />
         <strong>Não foi possível abrir o compartilhamento</strong>
-        <span>{error || 'Tente compartilhar novamente para o MF Financeiro.'}</span>
-        <button type="button" className="mf-mobile-primary-button" onClick={() => navigate(MOBILE_ROUTES.home)}>Abrir o MF</button>
+        <span>
+          {error || 'Tente compartilhar novamente para o MF Financeiro.'}
+        </span>
+        <button
+          type="button"
+          className="mf-mobile-primary-button"
+          onClick={() => navigate(MOBILE_ROUTES.home)}
+        >
+          Abrir o MF
+        </button>
       </div>
     );
   }
@@ -123,18 +172,45 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
         <header>
           <span className="mf-mobile-eyebrow">Compartilhar para o MF</span>
           <h1>Qual documento revisar?</h1>
-          <p>O MF processa um documento por vez para evitar misturar valores e vencimentos.</p>
+          <p>
+            O MF processa um documento por vez para evitar misturar valores e
+            vencimentos.
+          </p>
         </header>
         <div className="mf-mobile-share-files">
           {payload.files.map((file, index) => (
-            <button key={`${file.name}-${file.size}-${file.lastModified}-${index}`} type="button" data-active={selectedFileIndex === index} onClick={() => setSelectedFileIndex(index)}>
-              {file.type.startsWith('image/') ? <FileImage size={20} /> : <FileText size={20} />}
-              <span><strong>{file.name || `Documento ${index + 1}`}</strong><small>{Math.max(1, Math.round(file.size / 1024))} KB</small></span>
+            <button
+              key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+              type="button"
+              data-active={selectedFileIndex === index}
+              onClick={() => setSelectedFileIndex(index)}
+            >
+              {file.type.startsWith('image/') ? (
+                <FileImage size={20} />
+              ) : (
+                <FileText size={20} />
+              )}
+              <span>
+                <strong>{file.name || `Documento ${index + 1}`}</strong>
+                <small>{Math.max(1, Math.round(file.size / 1024))} KB</small>
+              </span>
             </button>
           ))}
         </div>
-        <button type="button" className="mf-mobile-primary-button" onClick={() => setFileConfirmed(true)}>Revisar selecionado</button>
-        <button type="button" className="mf-mobile-secondary-button" onClick={() => void cancelShare()}>Cancelar</button>
+        <button
+          type="button"
+          className="mf-mobile-primary-button"
+          onClick={() => setFileConfirmed(true)}
+        >
+          Revisar selecionado
+        </button>
+        <button
+          type="button"
+          className="mf-mobile-secondary-button"
+          onClick={() => void cancelShare()}
+        >
+          Cancelar
+        </button>
       </div>
     );
   }
@@ -149,7 +225,10 @@ export default function MobileShareReceiver({ userId }: MobileShareReceiverProps
         if (!shareId || !payload) return;
 
         if (selectedFile) {
-          const nextPayload = await keepOnlyUnreviewedSharedFiles(payload, selectedFileIndex);
+          const nextPayload = await keepOnlyUnreviewedSharedFiles(
+            payload,
+            selectedFileIndex,
+          );
           if (nextPayload) {
             setPayload(nextPayload);
             setSelectedFileIndex(0);

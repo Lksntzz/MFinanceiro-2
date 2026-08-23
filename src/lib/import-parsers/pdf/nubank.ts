@@ -1,5 +1,5 @@
-import { PdfBankParser } from './types';
-import { parseByDateAndCurrencyLines, parseByBlockRegex } from './utils';
+import type { PdfBankParser } from './types';
+import { parseByBlockRegex, parseByDateAndCurrencyLines } from './utils';
 
 export const parseNubankPdf: PdfBankParser = (context) => {
   const fromLines = parseByDateAndCurrencyLines(context);

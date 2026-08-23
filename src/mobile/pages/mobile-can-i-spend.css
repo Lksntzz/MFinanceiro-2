@@ -58,17 +58,17 @@
   padding: 17px;
 }
 
-.mf-mobile-can-spend__result[data-tone='success'] {
+.mf-mobile-can-spend__result[data-tone="success"] {
   border-color: rgba(73, 218, 168, 0.18);
   background: rgba(73, 218, 168, 0.045);
 }
 
-.mf-mobile-can-spend__result[data-tone='warning'] {
+.mf-mobile-can-spend__result[data-tone="warning"] {
   border-color: rgba(255, 196, 92, 0.18);
   background: rgba(255, 196, 92, 0.045);
 }
 
-.mf-mobile-can-spend__result[data-tone='danger'] {
+.mf-mobile-can-spend__result[data-tone="danger"] {
   border-color: rgba(248, 113, 113, 0.2);
   background: rgba(248, 113, 113, 0.05);
 }
@@ -90,15 +90,18 @@
   background: rgba(255, 255, 255, 0.055);
 }
 
-.mf-mobile-can-spend__result[data-tone='success'] .mf-mobile-can-spend__result-icon {
+.mf-mobile-can-spend__result[data-tone="success"]
+  .mf-mobile-can-spend__result-icon {
   color: #5cf1bd;
 }
 
-.mf-mobile-can-spend__result[data-tone='warning'] .mf-mobile-can-spend__result-icon {
+.mf-mobile-can-spend__result[data-tone="warning"]
+  .mf-mobile-can-spend__result-icon {
   color: #ffd080;
 }
 
-.mf-mobile-can-spend__result[data-tone='danger'] .mf-mobile-can-spend__result-icon {
+.mf-mobile-can-spend__result[data-tone="danger"]
+  .mf-mobile-can-spend__result-icon {
   color: #fca5a5;
 }
 

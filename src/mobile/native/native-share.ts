@@ -1,7 +1,10 @@
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-import { saveMobileSharedPayload, type MobileSharedFile } from '../lib/mobile-share-store';
+import {
+  type MobileSharedFile,
+  saveMobileSharedPayload,
+} from '../lib/mobile-share-store';
 
 type NativeSharePayload = {
   pending: boolean;
@@ -21,7 +24,9 @@ type NativeShareReceiverPlugin = {
   clearPendingShare(): Promise<void>;
 };
 
-const NativeShareReceiver = registerPlugin<NativeShareReceiverPlugin>('NativeShareReceiver');
+const NativeShareReceiver = registerPlugin<NativeShareReceiverPlugin>(
+  'NativeShareReceiver',
+);
 
 let bridgeInstalled = false;
 let processingShare = false;
@@ -34,17 +39,24 @@ function navigateToShareRoute(path: string) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
-async function sharedFileFromNativeUri(payload: NativeSharePayload): Promise<MobileSharedFile | null> {
+async function sharedFileFromNativeUri(
+  payload: NativeSharePayload,
+): Promise<MobileSharedFile | null> {
   const fileUri = String(payload.fileUri || '').trim();
   if (!fileUri) return null;
 
   const localUrl = Capacitor.convertFileSrc(fileUri);
   const response = await fetch(localUrl, { cache: 'no-store' });
-  if (!response.ok) throw new Error('O arquivo compartilhado não pôde ser aberto pelo app.');
+  if (!response.ok)
+    throw new Error('O arquivo compartilhado não pôde ser aberto pelo app.');
 
   const blob = await response.blob();
-  const name = String(payload.fileName || '').trim() || 'documento-compartilhado';
-  const type = String(payload.mimeType || '').trim() || blob.type || 'application/octet-stream';
+  const name =
+    String(payload.fileName || '').trim() || 'documento-compartilhado';
+  const type =
+    String(payload.mimeType || '').trim() ||
+    blob.type ||
+    'application/octet-stream';
   return {
     name,
     type,
@@ -55,7 +67,9 @@ async function sharedFileFromNativeUri(payload: NativeSharePayload): Promise<Mob
 }
 
 function nativeErrorRoute(message: string) {
-  return message.includes('20 MB') ? '/share?error=too-large' : '/share?error=native';
+  return message.includes('20 MB')
+    ? '/share?error=too-large'
+    : '/share?error=native';
 }
 
 async function clearNativePayload() {
@@ -114,7 +128,12 @@ async function checkPendingNativeShare() {
 }
 
 export async function installNativeShareBridge() {
-  if (bridgeInstalled || !Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') return;
+  if (
+    bridgeInstalled ||
+    !Capacitor.isNativePlatform() ||
+    Capacitor.getPlatform() !== 'android'
+  )
+    return;
   bridgeInstalled = true;
 
   await checkPendingNativeShare();

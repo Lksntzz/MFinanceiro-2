@@ -26,18 +26,25 @@ function clamp(value: number, min: number, max: number): number {
 
 function transactionKind(transaction: TransactionLike): 'income' | 'expense' {
   const raw = String(transaction.type || '').toLowerCase();
-  if (raw === 'income' || raw === 'entrada' || raw === 'receita') return 'income';
+  if (raw === 'income' || raw === 'entrada' || raw === 'receita')
+    return 'income';
   return Number(transaction.amount || 0) >= 0 ? 'income' : 'expense';
 }
 
-function validTransactions(transactions: TransactionLike[]): Array<TransactionLike & { parsedDate: Date; numericAmount: number }> {
+function validTransactions(
+  transactions: TransactionLike[],
+): Array<TransactionLike & { parsedDate: Date; numericAmount: number }> {
   return transactions
     .map((transaction) => ({
       ...transaction,
       parsedDate: new Date(String(transaction.date || '')),
       numericAmount: Number(transaction.amount || 0),
     }))
-    .filter((transaction) => !Number.isNaN(transaction.parsedDate.getTime()) && Number.isFinite(transaction.numericAmount));
+    .filter(
+      (transaction) =>
+        !Number.isNaN(transaction.parsedDate.getTime()) &&
+        Number.isFinite(transaction.numericAmount),
+    );
 }
 
 export interface MarketInsight {
@@ -62,7 +69,11 @@ export async function getMarketIntelligence(): Promise<MarketInsight> {
     summary:
       'Análise local ativada: o aplicativo não consulta o mercado em tempo real. A prioridade é preservar liquidez, diversificar e registrar preços reais manualmente antes de tomar decisões.',
     tendency: 'neutral',
-    topAssetTypes: ['Reserva com liquidez', 'Renda fixa', 'Carteira diversificada'],
+    topAssetTypes: [
+      'Reserva com liquidez',
+      'Renda fixa',
+      'Carteira diversificada',
+    ],
     tips: [
       'Mantenha uma reserva de emergência antes de aumentar o risco',
       'Evite concentrar a carteira em um único ativo ou instituição',
@@ -88,7 +99,9 @@ export async function getPredictiveAnalysis(
   const windowStart = new Date(latestDate);
   windowStart.setDate(windowStart.getDate() - 29);
 
-  const recent = rows.filter((row) => row.parsedDate >= windowStart && row.parsedDate <= latestDate);
+  const recent = rows.filter(
+    (row) => row.parsedDate >= windowStart && row.parsedDate <= latestDate,
+  );
   const income = recent
     .filter((row) => transactionKind(row) === 'income')
     .reduce((sum, row) => sum + Math.abs(row.numericAmount), 0);
@@ -104,13 +117,21 @@ export async function getPredictiveAnalysis(
     .filter((row) => transactionKind(row) === 'expense')
     .forEach((row) => {
       const category = String(row.category || 'Geral');
-      expenseByCategory.set(category, (expenseByCategory.get(category) || 0) + Math.abs(row.numericAmount));
+      expenseByCategory.set(
+        category,
+        (expenseByCategory.get(category) || 0) + Math.abs(row.numericAmount),
+      );
     });
 
-  const dominant = [...expenseByCategory.entries()].sort((a, b) => b[1] - a[1])[0];
+  const dominant = [...expenseByCategory.entries()].sort(
+    (a, b) => b[1] - a[1],
+  )[0];
   const averageDailyExpense = expense / 30;
   const averageDailyIncome = income / 30;
-  const projectedThirtyDays = Number(currentBalance || 0) + (averageDailyIncome - averageDailyExpense) * 30 - pendingFixed;
+  const projectedThirtyDays =
+    Number(currentBalance || 0) +
+    (averageDailyIncome - averageDailyExpense) * 30 -
+    pendingFixed;
   const resultLabel = projectedThirtyDays >= 0 ? 'positivo' : 'negativo';
 
   const lines = [
@@ -120,15 +141,23 @@ export async function getPredictiveAnalysis(
 
   if (dominant && expense > 0) {
     const share = (dominant[1] / expense) * 100;
-    lines.push(`Maior concentração de gastos: **${dominant[0]}**, com ${share.toFixed(0)}% das saídas do período.`);
+    lines.push(
+      `Maior concentração de gastos: **${dominant[0]}**, com ${share.toFixed(0)}% das saídas do período.`,
+    );
   }
 
   if (projectedThirtyDays < 0) {
-    lines.push(`Para equilibrar a projeção, reduza em média **${money(Math.abs(projectedThirtyDays) / 30)} por dia** ou registre receitas ainda não incluídas.`);
+    lines.push(
+      `Para equilibrar a projeção, reduza em média **${money(Math.abs(projectedThirtyDays) / 30)} por dia** ou registre receitas ainda não incluídas.`,
+    );
   } else if (expense > income && income > 0) {
-    lines.push('O saldo projetado ainda é positivo, mas as saídas do período superaram as entradas. Acompanhe os próximos lançamentos.');
+    lines.push(
+      'O saldo projetado ainda é positivo, mas as saídas do período superaram as entradas. Acompanhe os próximos lançamentos.',
+    );
   } else {
-    lines.push('O fluxo analisado está sustentável. Preserve margem para despesas inesperadas.');
+    lines.push(
+      'O fluxo analisado está sustentável. Preserve margem para despesas inesperadas.',
+    );
   }
 
   return lines.join('\n\n');
@@ -144,20 +173,26 @@ export async function getInvestmentAdvice(
   const safeBalance = Math.max(0, Number(balance || 0));
   const commitments = Math.max(0, Number(fixedOutflow || 0));
   const budgetBase = (budgets || []).reduce(
-    (sum: number, budget: any) => sum + Math.max(0, Number(budget?.limit_amount || 0)),
+    (sum: number, budget: any) =>
+      sum + Math.max(0, Number(budget?.limit_amount || 0)),
     0,
   );
   const monthlyBase = Math.max(commitments, budgetBase);
   const reserveTarget = monthlyBase > 0 ? monthlyBase * 3 : 0;
-  const reserveGap = Math.max(0, reserveTarget - Math.max(0, Number(totalInvested || 0)));
+  const reserveGap = Math.max(
+    0,
+    reserveTarget - Math.max(0, Number(totalInvested || 0)),
+  );
   const liquidAfterCommitments = Math.max(0, safeBalance - commitments);
 
   let recommendedAmount = 0;
   let strategy = 'Preservar liquidez';
-  let reasoning = 'O saldo disponível deve permanecer líquido até que os compromissos estejam cobertos.';
+  let reasoning =
+    'O saldo disponível deve permanecer líquido até que os compromissos estejam cobertos.';
 
   if (safeBalance <= commitments) {
-    reasoning = 'O saldo atual não supera as obrigações informadas; não há margem segura para um novo aporte.';
+    reasoning =
+      'O saldo atual não supera as obrigações informadas; não há margem segura para um novo aporte.';
   } else if (reserveGap > 0) {
     recommendedAmount = Math.min(liquidAfterCommitments * 0.2, reserveGap);
     strategy = 'Formar reserva de emergência';
@@ -165,19 +200,29 @@ export async function getInvestmentAdvice(
   } else {
     recommendedAmount = liquidAfterCommitments * 0.25;
     strategy = 'Aporte diversificado e gradual';
-    reasoning = 'As obrigações e a reserva estimada estão cobertas. Um aporte parcial preserva liquidez para imprevistos.';
+    reasoning =
+      'As obrigações e a reserva estimada estão cobertas. Um aporte parcial preserva liquidez para imprevistos.';
   }
 
   const openGoals = (activeGoals || [])
     .map((goal: any) => ({
       name: String(goal?.name || 'Meta'),
-      gap: Math.max(0, Number(goal?.target_amount || 0) - Number(goal?.current_amount || 0)),
+      gap: Math.max(
+        0,
+        Number(goal?.target_amount || 0) - Number(goal?.current_amount || 0),
+      ),
       deadline: goal?.deadline ? new Date(goal.deadline) : null,
     }))
     .filter((goal: any) => goal.gap > 0)
     .sort((a: any, b: any) => {
-      const aTime = a.deadline && !Number.isNaN(a.deadline.getTime()) ? a.deadline.getTime() : Number.MAX_SAFE_INTEGER;
-      const bTime = b.deadline && !Number.isNaN(b.deadline.getTime()) ? b.deadline.getTime() : Number.MAX_SAFE_INTEGER;
+      const aTime =
+        a.deadline && !Number.isNaN(a.deadline.getTime())
+          ? a.deadline.getTime()
+          : Number.MAX_SAFE_INTEGER;
+      const bTime =
+        b.deadline && !Number.isNaN(b.deadline.getTime())
+          ? b.deadline.getTime()
+          : Number.MAX_SAFE_INTEGER;
       return aTime - bTime;
     });
 
@@ -203,7 +248,13 @@ export interface FundamentalistAnalysis {
 
 export async function getFundamentalistAnalysis(
   name: string,
-  metrics: { pl?: number; roe?: number; ebitda?: number; liquid_debt?: number; dy?: number },
+  metrics: {
+    pl?: number;
+    roe?: number;
+    ebitda?: number;
+    liquid_debt?: number;
+    dy?: number;
+  },
 ): Promise<FundamentalistAnalysis> {
   let score = 5;
   const pros: string[] = [];
@@ -266,10 +317,15 @@ export async function getFundamentalistAnalysis(
   }
 
   score = Number(clamp(score, 0, 10).toFixed(1));
-  const verdict: FundamentalistAnalysis['verdict'] = score >= 7.5 ? 'Manter' : score >= 5 ? 'Aguardar' : 'Aguardar';
+  const verdict: FundamentalistAnalysis['verdict'] =
+    score >= 7.5 ? 'Manter' : score >= 5 ? 'Aguardar' : 'Aguardar';
 
-  if (pros.length === 0) pros.push('Preencha os indicadores para uma avaliação mais completa');
-  if (cons.length === 0) cons.push('A avaliação não inclui preço de mercado, setor, governança ou demonstrações completas');
+  if (pros.length === 0)
+    pros.push('Preencha os indicadores para uma avaliação mais completa');
+  if (cons.length === 0)
+    cons.push(
+      'A avaliação não inclui preço de mercado, setor, governança ou demonstrações completas',
+    );
 
   return {
     score,

@@ -1,6 +1,9 @@
 import writeXlsxFile from 'write-excel-file/node';
 import { parseCsvTransactions } from '../src/features/importer/csv-parser';
-import { detectFileFormat, normalizeImportedTransactions } from '../src/features/importer/import-file';
+import {
+  detectFileFormat,
+  normalizeImportedTransactions,
+} from '../src/features/importer/import-file';
 import { parseOfxTransactions } from '../src/features/importer/ofx-parser';
 import { parseSpreadsheetTransactions } from '../src/features/importer/spreadsheet-parser';
 
@@ -19,12 +22,17 @@ const bank = 'auto';
 
 function summarize(
   file: File,
-  parsed: Awaited<ReturnType<typeof parseSpreadsheetTransactions>> | ReturnType<typeof parseCsvTransactions>
+  parsed:
+    | Awaited<ReturnType<typeof parseSpreadsheetTransactions>>
+    | ReturnType<typeof parseCsvTransactions>,
 ): SimulationResult {
   const detection = detectFileFormat(file);
   const normalized = normalizeImportedTransactions(parsed);
   const validos = normalized.filter(
-    (item) => item.status === 'ready' && item.amount > 0 && item.description !== 'Sem descricao'
+    (item) =>
+      item.status === 'ready' &&
+      item.amount > 0 &&
+      item.description !== 'Sem descricao',
   ).length;
   return {
     arquivo: file.name,
@@ -47,7 +55,9 @@ async function run(): Promise<void> {
     '21/04/2026;Salario Empresa XYZ;3500,00;credito',
     '22/04/2026;Uber Viagem;-27,90;debito',
   ].join('\n');
-  const csvFile = new File([csvContent], 'extrato-teste.csv', { type: 'text/csv' });
+  const csvFile = new File([csvContent], 'extrato-teste.csv', {
+    type: 'text/csv',
+  });
   results.push(summarize(csvFile, parseCsvTransactions(csvContent, bank)));
 
   const ofxContent = `
@@ -76,7 +86,9 @@ async function run(): Promise<void> {
 </BANKMSGSRSV1>
 </OFX>
   `.trim();
-  const ofxFile = new File([ofxContent], 'extrato-teste.ofx', { type: 'application/ofx' });
+  const ofxFile = new File([ofxContent], 'extrato-teste.ofx', {
+    type: 'application/ofx',
+  });
   results.push(summarize(ofxFile, parseOfxTransactions(ofxContent, bank)));
 
   const sheetRows = [
@@ -85,13 +97,25 @@ async function run(): Promise<void> {
     ['24/04/2026', 'Freelance Projeto', 800.0, 'credito'],
     ['25/04/2026', 'Farmacia', -56.45, 'debito'],
   ];
-  const xlsxBuffer = await writeXlsxFile(sheetRows, { sheet: 'Extrato' }).toBuffer();
-  const xlsxFile = new File([new Uint8Array(xlsxBuffer)], 'extrato-teste.xlsx', {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  results.push(summarize(xlsxFile, await parseSpreadsheetTransactions(xlsxFile, bank)));
+  const xlsxBuffer = await writeXlsxFile(sheetRows, {
+    sheet: 'Extrato',
+  }).toBuffer();
+  const xlsxFile = new File(
+    [new Uint8Array(xlsxBuffer)],
+    'extrato-teste.xlsx',
+    {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  );
+  results.push(
+    summarize(xlsxFile, await parseSpreadsheetTransactions(xlsxFile, bank)),
+  );
 
-  const imageFile = new File([new Uint8Array([1, 2, 3, 4])], 'extrato-foto.png', { type: 'image/png' });
+  const imageFile = new File(
+    [new Uint8Array([1, 2, 3, 4])],
+    'extrato-foto.png',
+    { type: 'image/png' },
+  );
   const imageDetection = detectFileFormat(imageFile);
   results.push({
     arquivo: imageFile.name,
@@ -104,7 +128,9 @@ async function run(): Promise<void> {
     motivo: imageDetection.reason,
   });
 
-  const unknownFile = new File(['abc'], 'extrato-teste.txt', { type: 'text/plain' });
+  const unknownFile = new File(['abc'], 'extrato-teste.txt', {
+    type: 'text/plain',
+  });
   const unknownDetection = detectFileFormat(unknownFile);
   results.push({
     arquivo: unknownFile.name,

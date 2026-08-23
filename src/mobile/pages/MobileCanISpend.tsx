@@ -1,5 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Gauge, ShieldAlert, ShieldCheck, WalletCards } from 'lucide-react';
+import {
+  ArrowLeft,
+  Gauge,
+  ShieldAlert,
+  ShieldCheck,
+  WalletCards,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { formatCurrency } from '../../lib/formatters';
@@ -10,7 +16,8 @@ import './mobile-can-i-spend.css';
 function parseMoneyInput(value: string) {
   const clean = value.trim().replace(/\s/g, '');
   if (!clean) return Number.NaN;
-  if (clean.includes(',')) return Number(clean.replace(/\./g, '').replace(',', '.'));
+  if (clean.includes(','))
+    return Number(clean.replace(/\./g, '').replace(',', '.'));
   return Number(clean);
 }
 
@@ -25,7 +32,10 @@ type Impact = {
   newDailyLimit: number;
 };
 
-function calculateImpact(summary: FinanceSummary, amount: number): Impact | null {
+function calculateImpact(
+  summary: FinanceSummary,
+  amount: number,
+): Impact | null {
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
   const available = summary.projectedBalance;
@@ -37,7 +47,8 @@ function calculateImpact(summary: FinanceSummary, amount: number): Impact | null
     return {
       tone: 'danger',
       title: 'Ultrapassa seu valor livre',
-      message: 'Esse valor é maior que o saldo livre depois dos compromissos cadastrados neste ciclo.',
+      message:
+        'Esse valor é maior que o saldo livre depois dos compromissos cadastrados neste ciclo.',
       amount,
       after,
       newDailyLimit,
@@ -48,7 +59,8 @@ function calculateImpact(summary: FinanceSummary, amount: number): Impact | null
     return {
       tone: 'success',
       title: 'Impacto baixo no ciclo',
-      message: 'Pelos dados cadastrados hoje, essa compra cabe dentro da sua margem diária atual.',
+      message:
+        'Pelos dados cadastrados hoje, essa compra cabe dentro da sua margem diária atual.',
       amount,
       after,
       newDailyLimit,
@@ -60,7 +72,8 @@ function calculateImpact(summary: FinanceSummary, amount: number): Impact | null
     return {
       tone: 'warning',
       title: 'Cabe, mas consome sua margem de hoje',
-      message: 'A compra ainda deixa uma boa parte do valor livre, mas fica acima do limite diário calculado.',
+      message:
+        'A compra ainda deixa uma boa parte do valor livre, mas fica acima do limite diário calculado.',
       amount,
       after,
       newDailyLimit,
@@ -70,30 +83,48 @@ function calculateImpact(summary: FinanceSummary, amount: number): Impact | null
   return {
     tone: 'warning',
     title: 'Vai apertar o restante do ciclo',
-    message: 'A compra cabe no valor livre, mas reduz bastante a margem disponível até o próximo recebimento.',
+    message:
+      'A compra cabe no valor livre, mas reduz bastante a margem disponível até o próximo recebimento.',
     amount,
     after,
     newDailyLimit,
   };
 }
 
-export default function MobileCanISpend({ summary }: { summary: FinanceSummary }) {
+export default function MobileCanISpend({
+  summary,
+}: {
+  summary: FinanceSummary;
+}) {
   const navigate = useNavigate();
   const [amount, setAmount] = useState('');
   const parsedAmount = parseMoneyInput(amount);
-  const impact = useMemo(() => calculateImpact(summary, parsedAmount), [parsedAmount, summary]);
+  const impact = useMemo(
+    () => calculateImpact(summary, parsedAmount),
+    [parsedAmount, summary],
+  );
 
   return (
     <div className="mf-mobile-focus-page">
       <header className="mf-mobile-focus-header">
-        <button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.home)} aria-label="Voltar para a Home">
+        <button
+          type="button"
+          className="mf-mobile-icon-button"
+          onClick={() => navigate(MOBILE_ROUTES.home)}
+          aria-label="Voltar para a Home"
+        >
           <ArrowLeft size={21} />
         </button>
         <div>
           <span className="mf-mobile-eyebrow">MF Decisão</span>
           <h1>Posso gastar?</h1>
         </div>
-        <span className="mf-mobile-icon-button mf-mobile-can-spend__header-icon" aria-hidden="true"><WalletCards size={20} /></span>
+        <span
+          className="mf-mobile-icon-button mf-mobile-can-spend__header-icon"
+          aria-hidden="true"
+        >
+          <WalletCards size={20} />
+        </span>
       </header>
 
       <main className="mf-mobile-can-spend">
@@ -109,19 +140,27 @@ export default function MobileCanISpend({ summary }: { summary: FinanceSummary }
             <small>R$</small>
             <input
               inputMode="decimal"
-              autoFocus
               value={amount}
-              onChange={(event) => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))}
+              onChange={(event) =>
+                setAmount(event.target.value.replace(/[^0-9,.]/g, ''))
+              }
               placeholder="0,00"
             />
           </div>
         </label>
 
         {impact ? (
-          <section className="mf-mobile-can-spend__result" data-tone={impact.tone}>
+          <section
+            className="mf-mobile-can-spend__result"
+            data-tone={impact.tone}
+          >
             <div className="mf-mobile-can-spend__result-head">
               <span className="mf-mobile-can-spend__result-icon">
-                {impact.tone === 'success' ? <ShieldCheck size={23} /> : <ShieldAlert size={23} />}
+                {impact.tone === 'success' ? (
+                  <ShieldCheck size={23} />
+                ) : (
+                  <ShieldAlert size={23} />
+                )}
               </span>
               <div>
                 <strong>{impact.title}</strong>
@@ -142,19 +181,26 @@ export default function MobileCanISpend({ summary }: { summary: FinanceSummary }
 
             <div className="mf-mobile-can-spend__comparison">
               <Gauge size={17} />
-              <span>Margem diária atual: <b>{formatCurrency(summary.dailyLimit)}</b></span>
+              <span>
+                Margem diária atual: <b>{formatCurrency(summary.dailyLimit)}</b>
+              </span>
             </div>
           </section>
         ) : (
           <section className="mf-mobile-can-spend__placeholder">
             <Gauge size={25} />
             <strong>Digite um valor para simular</strong>
-            <p>O MF não bloqueia nem recomenda uma compra. Ele mostra o impacto usando os dados que você já cadastrou.</p>
+            <p>
+              O MF não bloqueia nem recomenda uma compra. Ele mostra o impacto
+              usando os dados que você já cadastrou.
+            </p>
           </section>
         )}
 
         <div className="mf-mobile-can-spend__disclaimer">
-          Essa simulação depende da qualidade das contas, cartões, parcelas e recebimentos cadastrados no MF. Ela é uma visão de planejamento, não uma garantia de saldo futuro.
+          Essa simulação depende da qualidade das contas, cartões, parcelas e
+          recebimentos cadastrados no MF. Ela é uma visão de planejamento, não
+          uma garantia de saldo futuro.
         </div>
       </main>
     </div>

@@ -6,8 +6,8 @@ import { parseSpreadsheetTransactions } from '../src/features/importer/spreadshe
 import {
   normalizeHeader,
   parseAmount,
-  parseByDateAndCurrencyLines,
   parseByBlockRegex,
+  parseByDateAndCurrencyLines,
 } from '../src/lib/import-parsers/pdf/utils';
 
 type FileReport = {
@@ -16,13 +16,20 @@ type FileReport = {
   parser: string;
   total: number;
   valid: number;
-  sample?: Array<{ date?: string; description: string; amount: number; type?: string }>;
+  sample?: Array<{
+    date?: string;
+    description: string;
+    amount: number;
+    type?: string;
+  }>;
   notes?: string[];
 };
 
 async function runCsv(path: string): Promise<FileReport> {
   const raw = await readFile(path, 'utf-8');
-  const file = new File([raw], path.split('\\').pop() || 'statement.csv', { type: 'text/csv' });
+  const file = new File([raw], path.split('\\').pop() || 'statement.csv', {
+    type: 'text/csv',
+  });
   const detect = detectFileFormat(file);
   const parsed = parseCsvTransactions(raw, 'auto');
   const valid = parsed.filter((t) => t.status === 'ready').length;
@@ -68,9 +75,14 @@ async function runXlsx(path: string): Promise<FileReport> {
 
 async function runPdf(path: string): Promise<FileReport> {
   const raw = await readFile(path);
-  const file = new File([raw], path.split('\\').pop() || 'statement.pdf', { type: 'application/pdf' });
+  const file = new File([raw], path.split('\\').pop() || 'statement.pdf', {
+    type: 'application/pdf',
+  });
   const detect = detectFileFormat(file);
-  const pdfDoc = await getDocument({ data: new Uint8Array(raw), disableWorker: true } as any).promise;
+  const pdfDoc = await getDocument({
+    data: new Uint8Array(raw),
+    disableWorker: true,
+  } as any).promise;
 
   const lines: string[] = [];
   let text = '';
@@ -78,17 +90,20 @@ async function runPdf(path: string): Promise<FileReport> {
     const page = await pdfDoc.getPage(pageNum);
     const content = await page.getTextContent();
     const rows = new Map<number, { x: number; text: string }[]>();
-    for (const item of content.items as Array<{ str: string; transform: number[] }>) {
+    for (const item of content.items as Array<{
+      str: string;
+      transform: number[];
+    }>) {
       const y = Math.round(item.transform[5]);
       if (!rows.has(y)) rows.set(y, []);
-      rows.get(y)!.push({ x: item.transform[4], text: item.str });
+      rows.get(y)?.push({ x: item.transform[4], text: item.str });
       text += ` ${item.str}`;
     }
     const ys = [...rows.keys()].sort((a, b) => b - a);
     for (const y of ys) {
       const line = rows
-        .get(y)!
-        .sort((a, b) => a.x - b.x)
+        .get(y)
+        ?.sort((a, b) => a.x - b.x)
         .map((p) => p.text)
         .join(' ')
         .replace(/\s+/g, ' ')
@@ -97,12 +112,19 @@ async function runPdf(path: string): Promise<FileReport> {
     }
   }
 
-  const context = { lines, fullText: text, normalize: normalizeHeader, parseAmount };
+  const context = {
+    lines,
+    fullText: text,
+    normalize: normalizeHeader,
+    parseAmount,
+  };
   const byLines = parseByDateAndCurrencyLines(context);
   const byBlock = byLines.length > 0 ? [] : parseByBlockRegex(context);
   const extracted = byLines.length > 0 ? byLines : byBlock;
 
-  const valid = extracted.filter((e) => Math.abs(e.signedAmount) > 0 && e.description).length;
+  const valid = extracted.filter(
+    (e) => Math.abs(e.signedAmount) > 0 && e.description,
+  ).length;
   return {
     file: file.name,
     format: detect.formatLabel,
@@ -119,15 +141,19 @@ async function runPdf(path: string): Promise<FileReport> {
       `Paginas: ${pdfDoc.numPages}`,
       `Linhas extraidas: ${lines.length}`,
       `Texto bruto (amostra): ${text.replace(/\s+/g, ' ').trim().slice(0, 220)}`,
-      byLines.length > 0 ? 'Parser PDF: date+currency lines' : 'Parser PDF: block regex fallback',
+      byLines.length > 0
+        ? 'Parser PDF: date+currency lines'
+        : 'Parser PDF: block regex fallback',
       ...(valid === 0 ? ['Nenhuma linha validada no parser PDF'] : []),
     ],
   };
 }
 
 async function main() {
-  const csvPath = 'C:\\Users\\Lukas\\Downloads\\account_statement_5e9bdcaf-9cc5-42d0-9101-767288194621.csv';
-  const xlsxPath = 'C:\\Users\\Lukas\\Downloads\\account_statement_5e9bdcaf-9cc5-42d0-9101-767288194621.xlsx';
+  const csvPath =
+    'C:\\Users\\Lukas\\Downloads\\account_statement_5e9bdcaf-9cc5-42d0-9101-767288194621.csv';
+  const xlsxPath =
+    'C:\\Users\\Lukas\\Downloads\\account_statement_5e9bdcaf-9cc5-42d0-9101-767288194621.xlsx';
   const pdfPath = 'C:\\Users\\Lukas\\Downloads\\MercadoPago.pdf';
 
   const reports: FileReport[] = [];
@@ -138,7 +164,12 @@ async function main() {
   for (const report of reports) {
     console.log('\n==============================');
     console.log(report.file);
-    console.log({ format: report.format, parser: report.parser, total: report.total, valid: report.valid });
+    console.log({
+      format: report.format,
+      parser: report.parser,
+      total: report.total,
+      valid: report.valid,
+    });
     if (report.sample?.length) {
       console.log('Amostra:');
       for (const s of report.sample) console.log(s);

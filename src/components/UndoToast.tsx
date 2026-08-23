@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { UndoAction } from '../lib/undo-actions';
 
@@ -44,10 +44,18 @@ export default function UndoToast() {
   return (
     <aside className="mf-undo-toast" role="status" aria-live="polite">
       <span>{action.label}</span>
-      <button type="button" onClick={() => void undo()} disabled={running} className="mf-undo-action">
-        <RotateCcw size={14} />{running ? 'Restaurando...' : 'Desfazer'}
+      <button
+        type="button"
+        onClick={() => void undo()}
+        disabled={running}
+        className="mf-undo-action"
+      >
+        <RotateCcw size={14} />
+        {running ? 'Restaurando...' : 'Desfazer'}
       </button>
-      <button type="button" onClick={() => setAction(null)} aria-label="Fechar"><X size={14} /></button>
+      <button type="button" onClick={() => setAction(null)} aria-label="Fechar">
+        <X size={14} />
+      </button>
     </aside>
   );
 }

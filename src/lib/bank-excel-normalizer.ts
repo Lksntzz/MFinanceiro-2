@@ -4,7 +4,14 @@ type Row = SpreadsheetRow;
 type Direction = 'income' | 'expense' | 'unknown';
 
 interface BankProfile {
-  id: 'nubank' | 'inter' | 'santander' | 'bradesco' | 'mercadopago' | 'c6bank' | 'generic';
+  id:
+    | 'nubank'
+    | 'inter'
+    | 'santander'
+    | 'bradesco'
+    | 'mercadopago'
+    | 'c6bank'
+    | 'generic';
   label: string;
   hints: string[];
   date: string[];
@@ -33,7 +40,14 @@ interface HeaderMatch {
 
 const MAX_TRANSACTION_VALUE = 100_000_000;
 
-const COMMON_DATE = ['data', 'date', 'datalancamento', 'datamovimento', 'datatransacao', 'releasedate'];
+const COMMON_DATE = [
+  'data',
+  'date',
+  'datalancamento',
+  'datamovimento',
+  'datatransacao',
+  'releasedate',
+];
 const COMMON_DESCRIPTION = [
   'descricao',
   'historico',
@@ -47,9 +61,31 @@ const COMMON_DESCRIPTION = [
   'transactiontype',
   'memo',
 ];
-const COMMON_DOCUMENT = ['documento', 'docto', 'doc', 'identificador', 'referenceid', 'idtransacao', 'id'];
-const COMMON_CREDIT = ['credito', 'creditos', 'entrada', 'entradas', 'credit', 'receivedamount'];
-const COMMON_DEBIT = ['debito', 'debitos', 'saida', 'saidas', 'debit', 'paidamount'];
+const COMMON_DOCUMENT = [
+  'documento',
+  'docto',
+  'doc',
+  'identificador',
+  'referenceid',
+  'idtransacao',
+  'id',
+];
+const COMMON_CREDIT = [
+  'credito',
+  'creditos',
+  'entrada',
+  'entradas',
+  'credit',
+  'receivedamount',
+];
+const COMMON_DEBIT = [
+  'debito',
+  'debitos',
+  'saida',
+  'saidas',
+  'debit',
+  'paidamount',
+];
 const COMMON_AMOUNT = [
   'valor',
   'valorrs',
@@ -60,7 +96,14 @@ const COMMON_AMOUNT = [
   'transactionnetamount',
   'netamount',
 ];
-const COMMON_BALANCE = ['saldo', 'saldors', 'saldoparcial', 'partialbalance', 'currentbalance', 'finalbalance'];
+const COMMON_BALANCE = [
+  'saldo',
+  'saldors',
+  'saldoparcial',
+  'partialbalance',
+  'currentbalance',
+  'finalbalance',
+];
 const COMMON_TYPE = ['tipo', 'natureza', 'type', 'transactiontype', 'operacao'];
 
 const BANK_PROFILES: BankProfile[] = [
@@ -69,7 +112,12 @@ const BANK_PROFILES: BankProfile[] = [
     label: 'Nubank',
     hints: ['nubank', 'nu pagamentos', 'identificador', 'descricaodatransacao'],
     date: ['data', 'date'],
-    description: ['descricao', 'descricaodatransacao', 'estabelecimento', 'titulo'],
+    description: [
+      'descricao',
+      'descricaodatransacao',
+      'estabelecimento',
+      'titulo',
+    ],
     document: ['identificador', 'id'],
     credit: ['credito', 'entrada'],
     debit: ['debito', 'saida'],
@@ -119,9 +167,21 @@ const BANK_PROFILES: BankProfile[] = [
   {
     id: 'mercadopago',
     label: 'Mercado Pago',
-    hints: ['mercadopago', 'mercadolivre', 'releasedate', 'referenceid', 'transactionnetamount'],
+    hints: [
+      'mercadopago',
+      'mercadolivre',
+      'releasedate',
+      'referenceid',
+      'transactionnetamount',
+    ],
     date: ['releasedate', 'data', 'date'],
-    description: ['transactiondescription', 'transactiondetails', 'description', 'transactiontype', 'descricao'],
+    description: [
+      'transactiondescription',
+      'transactiondetails',
+      'description',
+      'transactiontype',
+      'descricao',
+    ],
     document: ['referenceid', 'identificador', 'id'],
     credit: ['credito', 'receivedamount', 'entrada'],
     debit: ['debito', 'paidamount', 'saida'],
@@ -169,17 +229,25 @@ function displayCell(value: Cell): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return `${String(value.getDate()).padStart(2, '0')}/${String(value.getMonth() + 1).padStart(2, '0')}/${value.getFullYear()}`;
   }
-  return String(value ?? '').replace(/\s+/g, ' ').trim();
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function headerMatches(header: string, alias: string): boolean {
   const normalizedAlias = normalize(alias);
   if (!header || !normalizedAlias) return false;
-  return header === normalizedAlias || header.startsWith(normalizedAlias) || normalizedAlias.startsWith(header);
+  return (
+    header === normalizedAlias ||
+    header.startsWith(normalizedAlias) ||
+    normalizedAlias.startsWith(header)
+  );
 }
 
 function findColumn(headers: string[], aliases: string[]): number {
-  return headers.findIndex((header) => aliases.some((alias) => headerMatches(header, alias)));
+  return headers.findIndex((header) =>
+    aliases.some((alias) => headerMatches(header, alias)),
+  );
 }
 
 function parseExcelDate(value: Cell): string | null {
@@ -232,7 +300,7 @@ function parseMoney(value: Cell): number {
     /(?:^|\s)d(?:\s|$)/i.test(raw) ||
     normalizedText.endsWith('debito');
 
-  let cleaned = raw
+  const cleaned = raw
     .replace(/R\$/gi, '')
     .replace(/\s+/g, '')
     .replace(/[A-Za-z]/g, '')
@@ -243,9 +311,10 @@ function parseMoney(value: Cell): number {
 
   let numberText = cleaned;
   if (cleaned.includes(',') && cleaned.includes('.')) {
-    numberText = cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')
-      ? cleaned.replace(/\./g, '').replace(',', '.')
-      : cleaned.replace(/,/g, '');
+    numberText =
+      cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')
+        ? cleaned.replace(/\./g, '').replace(',', '.')
+        : cleaned.replace(/,/g, '');
   } else if (cleaned.includes(',')) {
     numberText = cleaned.replace(/\./g, '').replace(',', '.');
   }
@@ -260,13 +329,17 @@ function inferDirection(value: Cell): Direction {
   if (!text) return 'unknown';
 
   if (
-    /(credito|credit|entrada|recebido|recebimento|deposito|cashin|income|pixrecebido|rendimento)/.test(text)
+    /(credito|credit|entrada|recebido|recebimento|deposito|cashin|income|pixrecebido|rendimento)/.test(
+      text,
+    )
   ) {
     return 'income';
   }
 
   if (
-    /(debito|debit|saida|enviado|pagamento|compra|cashout|expense|pixenviado|saque|tarifa)/.test(text)
+    /(debito|debit|saida|enviado|pagamento|compra|cashout|expense|pixenviado|saque|tarifa)/.test(
+      text,
+    )
   ) {
     return 'expense';
   }
@@ -280,7 +353,11 @@ function nearbyText(rows: Row[], rowIndex: number): string {
   return normalize(rows.slice(start, end).flat().map(displayCell).join(' '));
 }
 
-function scoreProfile(rows: Row[], rowIndex: number, profile: BankProfile): HeaderMatch | null {
+function scoreProfile(
+  rows: Row[],
+  rowIndex: number,
+  profile: BankProfile,
+): HeaderMatch | null {
   const headers = rows[rowIndex].map((cell) => normalize(displayCell(cell)));
   const date = findColumn(headers, profile.date);
   const description = findColumn(headers, profile.description);
@@ -291,7 +368,8 @@ function scoreProfile(rows: Row[], rowIndex: number, profile: BankProfile): Head
   const balance = findColumn(headers, profile.balance);
   const type = findColumn(headers, profile.type);
 
-  if (date < 0 || description < 0 || (credit < 0 && debit < 0 && amount < 0)) return null;
+  if (date < 0 || description < 0 || (credit < 0 && debit < 0 && amount < 0))
+    return null;
 
   let score = 20;
   if (credit >= 0) score += 4;
@@ -343,7 +421,9 @@ function isNonTransactionDescription(description: string): boolean {
   if (!text) return true;
 
   return (
-    /^(saldo|total|subtotal|data|historico|descricao|lancamento|movimento|documento|credito|debito|valor)$/.test(text) ||
+    /^(saldo|total|subtotal|data|historico|descricao|lancamento|movimento|documento|credito|debito|valor)$/.test(
+      text,
+    ) ||
     text.includes('saldoanterior') ||
     text.includes('saldodisponivel') ||
     text.includes('saldofinal') ||
@@ -368,13 +448,18 @@ function csvField(value: unknown): string {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-function movementForRow(row: Row, header: HeaderMatch): { credit: number; debit: number } {
-  let credit = header.credit >= 0 ? Math.abs(parseMoney(row[header.credit])) : 0;
+function movementForRow(
+  row: Row,
+  header: HeaderMatch,
+): { credit: number; debit: number } {
+  let credit =
+    header.credit >= 0 ? Math.abs(parseMoney(row[header.credit])) : 0;
   let debit = header.debit >= 0 ? Math.abs(parseMoney(row[header.debit])) : 0;
 
   if (credit === 0 && debit === 0 && header.amount >= 0) {
     const signedAmount = parseMoney(row[header.amount]);
-    const direction = header.type >= 0 ? inferDirection(row[header.type]) : 'unknown';
+    const direction =
+      header.type >= 0 ? inferDirection(row[header.type]) : 'unknown';
 
     if (direction === 'income') credit = Math.abs(signedAmount);
     else if (direction === 'expense') debit = Math.abs(signedAmount);
@@ -390,7 +475,9 @@ export function standardizeBankSheet(rows: SpreadsheetRow[]): string | null {
   const header = findBestHeader(rows);
   if (!header) return null;
 
-  const output: string[] = ['Data;Descricao;Documento;Credito;Debito;Saldo;Tipo;Banco'];
+  const output: string[] = [
+    'Data;Descricao;Documento;Credito;Debito;Saldo;Tipo;Banco',
+  ];
   const seen = new Set<string>();
   let lastDate: string | null = null;
 
@@ -398,7 +485,8 @@ export function standardizeBankSheet(rows: SpreadsheetRow[]): string | null {
     const row = rows[index];
     const parsedDate = parseExcelDate(row[header.date]);
     const description = displayCell(row[header.description]);
-    const document = header.document >= 0 ? displayCell(row[header.document]) : '';
+    const document =
+      header.document >= 0 ? displayCell(row[header.document]) : '';
     const rawType = header.type >= 0 ? displayCell(row[header.type]) : '';
 
     if (parsedDate) lastDate = parsedDate;
@@ -407,24 +495,37 @@ export function standardizeBankSheet(rows: SpreadsheetRow[]): string | null {
 
     const { credit, debit } = movementForRow(row, header);
     const movement = Math.max(credit, debit);
-    if (!Number.isFinite(movement) || movement <= 0 || movement > MAX_TRANSACTION_VALUE) continue;
+    if (
+      !Number.isFinite(movement) ||
+      movement <= 0 ||
+      movement > MAX_TRANSACTION_VALUE
+    )
+      continue;
     if (credit > 0 && debit > 0) continue;
 
     const balance = header.balance >= 0 ? parseMoney(row[header.balance]) : 0;
-    const fingerprint = [date, normalize(description), document, credit.toFixed(2), debit.toFixed(2)].join('|');
+    const fingerprint = [
+      date,
+      normalize(description),
+      document,
+      credit.toFixed(2),
+      debit.toFixed(2),
+    ].join('|');
     if (seen.has(fingerprint)) continue;
     seen.add(fingerprint);
 
-    output.push([
-      csvField(date),
-      csvField(description),
-      csvField(document),
-      credit ? credit.toFixed(2) : '',
-      debit ? debit.toFixed(2) : '',
-      Number.isFinite(balance) && balance !== 0 ? balance.toFixed(2) : '',
-      csvField(rawType),
-      csvField(header.profile.label),
-    ].join(';'));
+    output.push(
+      [
+        csvField(date),
+        csvField(description),
+        csvField(document),
+        credit ? credit.toFixed(2) : '',
+        debit ? debit.toFixed(2) : '',
+        Number.isFinite(balance) && balance !== 0 ? balance.toFixed(2) : '',
+        csvField(rawType),
+        csvField(header.profile.label),
+      ].join(';'),
+    );
   }
 
   return output.length > 1 ? output.join('\n') : null;

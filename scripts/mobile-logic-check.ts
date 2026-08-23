@@ -2,18 +2,32 @@ import assert from 'node:assert/strict';
 
 import { inferAdaptiveCategory } from '../src/mobile/lib/adaptive-category';
 import { parseFinancialCode } from '../src/mobile/lib/financial-code-parser';
+import {
+  type MobileSharedFile,
+  unreviewedSharedFiles,
+} from '../src/mobile/lib/mobile-share-store';
 import { projectInvoiceForPurchase } from '../src/mobile/lib/purchase-impact';
-import { detectRecurringExpenses, type RecurrenceHistoryItem } from '../src/mobile/lib/recurrence-detector';
-import { unreviewedSharedFiles, type MobileSharedFile } from '../src/mobile/lib/mobile-share-store';
+import {
+  detectRecurringExpenses,
+  type RecurrenceHistoryItem,
+} from '../src/mobile/lib/recurrence-detector';
 import { parseVoiceEntry } from '../src/mobile/lib/voice-entry-parser';
 import { nativeUrlToPath } from '../src/mobile/native/native-deep-links';
-import type { FinancialAccount, Transaction, TransactionCategory } from '../src/types';
+import type {
+  FinancialAccount,
+  Transaction,
+  TransactionCategory,
+} from '../src/types';
 
 function tlv(id: string, value: string) {
   return `${id}${String(value.length).padStart(2, '0')}${value}`;
 }
 
-function category(id: string, name: string, categoryType: 'expense' | 'income' | 'both'): TransactionCategory {
+function category(
+  id: string,
+  name: string,
+  categoryType: 'expense' | 'income' | 'both',
+): TransactionCategory {
   return {
     id,
     user_id: 'user-test',
@@ -28,7 +42,12 @@ function category(id: string, name: string, categoryType: 'expense' | 'income' |
   } as TransactionCategory;
 }
 
-function account(id: string, name: string, institutionName: string, isDefault = false): FinancialAccount {
+function account(
+  id: string,
+  name: string,
+  institutionName: string,
+  isDefault = false,
+): FinancialAccount {
   return {
     id,
     user_id: 'user-test',
@@ -42,7 +61,13 @@ function account(id: string, name: string, institutionName: string, isDefault = 
   } as FinancialAccount;
 }
 
-function ledger(id: string, description: string, categoryId: string, categoryName: string, type: 'expense' | 'income' = 'expense'): Transaction {
+function ledger(
+  id: string,
+  description: string,
+  categoryId: string,
+  categoryName: string,
+  type: 'expense' | 'income' = 'expense',
+): Transaction {
   return {
     id,
     user_id: 'user-test',
@@ -75,7 +100,11 @@ function history(
   };
 }
 
-function sharedFile(name: string, size: number, lastModified: number): MobileSharedFile {
+function sharedFile(
+  name: string,
+  size: number,
+  lastModified: number,
+): MobileSharedFile {
   return {
     name,
     type: 'application/pdf',
@@ -103,7 +132,11 @@ const accounts = [
 
 // MF Voice: expense, amount, semantic category and account detection.
 {
-  const parsed = parseVoiceEntry('Gastei 48 reais de gasolina no Nubank', categories, accounts);
+  const parsed = parseVoiceEntry(
+    'Gastei 48 reais de gasolina no Nubank',
+    categories,
+    accounts,
+  );
   assert.equal(parsed.type, 'expense');
   assert.equal(parsed.amount, 48);
   assert.equal(parsed.categoryId, 'fuel');
@@ -113,7 +146,11 @@ const accounts = [
 
 // MF Voice: income should not reuse an expense category.
 {
-  const parsed = parseVoiceEntry('Recebi 3.500,50 reais de salário', categories, accounts);
+  const parsed = parseVoiceEntry(
+    'Recebi 3.500,50 reais de salário',
+    categories,
+    accounts,
+  );
   assert.equal(parsed.type, 'income');
   assert.equal(parsed.amount, 3500.5);
   assert.equal(parsed.categoryId, 'salary');
@@ -186,14 +223,23 @@ const accounts = [
   assert.equal(nativeUrlToPath('mfinanceiro://quick'), '/quick');
   assert.equal(nativeUrlToPath('mfinanceiro://scan'), '/scan');
   assert.equal(nativeUrlToPath('mfinanceiro://pulse'), '/app/mobile/pulse');
-  assert.equal(nativeUrlToPath('mfinanceiro://inbox'), '/app/mobile/inbox/documentos');
+  assert.equal(
+    nativeUrlToPath('mfinanceiro://inbox'),
+    '/app/mobile/inbox/documentos',
+  );
   assert.equal(nativeUrlToPath('mfinanceiro://unknown'), null);
 }
 
 // Native bridge: universal links are accepted only for the production MF domain.
 {
-  assert.equal(nativeUrlToPath('https://mfinanceiro.com.br/quick?source=siri'), '/quick?source=siri');
-  assert.equal(nativeUrlToPath('https://mfinanceiro.com.br/app/mobile/pulse'), '/app/mobile/pulse');
+  assert.equal(
+    nativeUrlToPath('https://mfinanceiro.com.br/quick?source=siri'),
+    '/quick?source=siri',
+  );
+  assert.equal(
+    nativeUrlToPath('https://mfinanceiro.com.br/app/mobile/pulse'),
+    '/app/mobile/pulse',
+  );
   assert.equal(nativeUrlToPath('https://example.com/quick'), null);
 }
 
@@ -204,7 +250,12 @@ const accounts = [
     ledger('s2', 'SHELL POSTO AV PAULISTA', 'fuel', 'Combustível'),
     ledger('s3', 'SHELL POSTO', 'fuel', 'Combustível'),
   ];
-  const suggestion = inferAdaptiveCategory({ merchantText: 'Shell', type: 'expense', history: rows, categories });
+  const suggestion = inferAdaptiveCategory({
+    merchantText: 'Shell',
+    type: 'expense',
+    history: rows,
+    categories,
+  });
   assert.equal(suggestion?.categoryId, 'fuel');
   assert.equal(suggestion?.confidence, 'high');
   assert.equal(suggestion?.matchCount, 3);
@@ -216,7 +267,12 @@ const accounts = [
     ledger('a1', 'AMAZON BR', 'food', 'Alimentação'),
     ledger('a2', 'AMAZON COMPRA ONLINE', 'food', 'Alimentação'),
   ];
-  const suggestion = inferAdaptiveCategory({ merchantText: 'Amazon', type: 'expense', history: rows, categories });
+  const suggestion = inferAdaptiveCategory({
+    merchantText: 'Amazon',
+    type: 'expense',
+    history: rows,
+    categories,
+  });
   assert.equal(suggestion?.categoryId, 'food');
   assert.equal(suggestion?.confidence, 'medium');
 }
@@ -228,7 +284,12 @@ const accounts = [
     ledger('m2', 'MERCADO CENTRAL LOJA 2', 'market', 'Supermercado'),
     ledger('m3', 'MERCADO CENTRAL', 'market', 'Supermercado'),
   ];
-  const suggestion = inferAdaptiveCategory({ merchantText: 'Mercado Pago', type: 'expense', history: rows, categories });
+  const suggestion = inferAdaptiveCategory({
+    merchantText: 'Mercado Pago',
+    type: 'expense',
+    history: rows,
+    categories,
+  });
   assert.equal(suggestion, null);
 }
 
@@ -254,7 +315,15 @@ const accounts = [
   for (const month of ['02', '03', '04', '05']) {
     for (const day of ['03', '10', '17']) {
       counter += 1;
-      rows.push(history(`m${counter}`, `2026-${month}-${day}`, 'SUPERMERCADO CENTRAL', 80 + counter, 'Supermercado'));
+      rows.push(
+        history(
+          `m${counter}`,
+          `2026-${month}-${day}`,
+          'SUPERMERCADO CENTRAL',
+          80 + counter,
+          'Supermercado',
+        ),
+      );
     }
   }
   assert.equal(detectRecurringExpenses(rows, []).length, 0);
@@ -267,7 +336,10 @@ const accounts = [
     history('i2', '2026-03-15', 'INTERNET FIBRA', 119.9),
     history('i3', '2026-04-15', 'INTERNET FIBRA', 119.9),
   ];
-  assert.equal(detectRecurringExpenses(rows, [{ name: 'Internet Fibra' }]).length, 0);
+  assert.equal(
+    detectRecurringExpenses(rows, [{ name: 'Internet Fibra' }]).length,
+    0,
+  );
 }
 
 // Share Target: reviewing one file must preserve every other file, even with duplicate names.
@@ -278,9 +350,14 @@ const accounts = [
     sharedFile('recibo.pdf', 300, 3),
   ];
   const remaining = unreviewedSharedFiles(files, 1);
-  assert.deepEqual(remaining.map((file) => file.lastModified), [1, 3]);
+  assert.deepEqual(
+    remaining.map((file) => file.lastModified),
+    [1, 3],
+  );
   assert.equal(unreviewedSharedFiles(files, 99).length, 3);
   assert.equal(unreviewedSharedFiles([files[0]], 0).length, 0);
 }
 
-console.log('Mobile logic checks passed: voice, financial codes, purchase impact, native deep links, adaptive categorization, recurrence detection and shared-document queue.');
+console.log(
+  'Mobile logic checks passed: voice, financial codes, purchase impact, native deep links, adaptive categorization, recurrence detection and shared-document queue.',
+);

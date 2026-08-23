@@ -9,9 +9,15 @@ import {
 class MemoryStorage {
   private values = new Map<string, string>();
 
-  getItem(key: string) { return this.values.get(key) ?? null; }
-  setItem(key: string, value: string) { this.values.set(key, value); }
-  removeItem(key: string) { this.values.delete(key); }
+  getItem(key: string) {
+    return this.values.get(key) ?? null;
+  }
+  setItem(key: string, value: string) {
+    this.values.set(key, value);
+  }
+  removeItem(key: string) {
+    this.values.delete(key);
+  }
 }
 
 test('dashboard workspace cache restores the last valid desktop snapshot', () => {
@@ -21,8 +27,14 @@ test('dashboard workspace cache restores the last valid desktop snapshot', () =>
 
   try {
     writeDashboardWorkspaceCache('user-1', {
-      settings: { id: 'settings-1', user_id: 'user-1', current_balance: 6975.36 } as any,
-      accounts: [{ id: 'account-1', user_id: 'user-1', current_balance: 6975.36 }] as any,
+      settings: {
+        id: 'settings-1',
+        user_id: 'user-1',
+        current_balance: 6975.36,
+      } as any,
+      accounts: [
+        { id: 'account-1', user_id: 'user-1', current_balance: 6975.36 },
+      ] as any,
       categories: [],
       fixedBills: [],
       cards: [],

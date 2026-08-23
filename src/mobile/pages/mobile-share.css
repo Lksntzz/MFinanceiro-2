@@ -1,5 +1,5 @@
-@import '../mobile.css';
-@import '../mobile-hardening.css';
+@import "../mobile.css";
+@import "../mobile-hardening.css";
 
 .mf-mobile-share-state,
 .mf-mobile-share-picker {
@@ -83,7 +83,7 @@
   touch-action: manipulation;
 }
 
-.mf-mobile-share-files button[data-active='true'] {
+.mf-mobile-share-files button[data-active="true"] {
   border-color: rgba(0, 242, 255, 0.55);
   background: rgba(0, 242, 255, 0.08);
 }

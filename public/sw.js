@@ -12,20 +12,31 @@ const NETWORK_ONLY_PATHS = new Set([
   '/brand.css',
   '/manifest.json',
 ]);
-const STATIC_DESTINATIONS = new Set(['script', 'style', 'image', 'font', 'manifest', 'worker']);
+const STATIC_DESTINATIONS = new Set([
+  'script',
+  'style',
+  'image',
+  'font',
+  'manifest',
+  'worker',
+]);
 
 function isCacheableStaticRequest(request) {
   if (request.method !== 'GET') return false;
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || url.search) return false;
-  if (request.headers.has('authorization') || request.headers.has('apikey')) return false;
+  if (request.headers.has('authorization') || request.headers.has('apikey'))
+    return false;
 
-  return url.pathname.startsWith('/assets/') && STATIC_DESTINATIONS.has(request.destination);
+  return (
+    url.pathname.startsWith('/assets/') &&
+    STATIC_DESTINATIONS.has(request.destination)
+  );
 }
 
 function isCacheableStaticResponse(response) {
-  if (!response || !response.ok || response.type !== 'basic') return false;
+  if (!response?.ok || response.type !== 'basic') return false;
 
   const cacheControl = response.headers.get('cache-control') || '';
   return !/\b(?:private|no-store)\b/i.test(cacheControl);
@@ -36,10 +47,12 @@ function openShareDb() {
     const request = indexedDB.open(SHARE_DB_NAME, SHARE_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(SHARE_STORE_NAME)) db.createObjectStore(SHARE_STORE_NAME, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(SHARE_STORE_NAME))
+        db.createObjectStore(SHARE_STORE_NAME, { keyPath: 'id' });
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('share-db-open-failed'));
+    request.onerror = () =>
+      reject(request.error || new Error('share-db-open-failed'));
   });
 }
 
@@ -61,8 +74,10 @@ async function storeSharedPayload(payload) {
 
       store.put(payload);
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error || new Error('share-db-write-failed'));
-      transaction.onabort = () => reject(transaction.error || new Error('share-db-write-aborted'));
+      transaction.onerror = () =>
+        reject(transaction.error || new Error('share-db-write-failed'));
+      transaction.onabort = () =>
+        reject(transaction.error || new Error('share-db-write-aborted'));
     });
   } finally {
     db.close();
@@ -72,7 +87,11 @@ async function storeSharedPayload(payload) {
 function isAcceptedSharedFile(file) {
   if (!(file instanceof File)) return false;
   if (file.type === 'application/pdf') return true;
-  return file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
+  return (
+    file.type === 'image/jpeg' ||
+    file.type === 'image/png' ||
+    file.type === 'image/webp'
+  );
 }
 
 async function handleShareTarget(request) {
@@ -81,15 +100,32 @@ async function handleShareTarget(request) {
     const title = String(formData.get('title') || '').slice(0, 500);
     const text = String(formData.get('text') || '').slice(0, 12000);
     const url = String(formData.get('url') || '').slice(0, 4000);
-    const incomingFiles = formData.getAll('files').filter(isAcceptedSharedFile).slice(0, SHARE_MAX_FILES);
-    const totalBytes = incomingFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    const incomingFiles = formData
+      .getAll('files')
+      .filter(isAcceptedSharedFile)
+      .slice(0, SHARE_MAX_FILES);
+    const totalBytes = incomingFiles.reduce(
+      (sum, file) => sum + Number(file.size || 0),
+      0,
+    );
 
     if (totalBytes > SHARE_MAX_BYTES) {
-      return Response.redirect(new URL('/share?error=too-large', self.location.origin).href, 303);
+      return Response.redirect(
+        new URL('/share?error=too-large', self.location.origin).href,
+        303,
+      );
     }
 
-    if (!title.trim() && !text.trim() && !url.trim() && incomingFiles.length === 0) {
-      return Response.redirect(new URL('/share?error=empty', self.location.origin).href, 303);
+    if (
+      !title.trim() &&
+      !text.trim() &&
+      !url.trim() &&
+      incomingFiles.length === 0
+    ) {
+      return Response.redirect(
+        new URL('/share?error=empty', self.location.origin).href,
+        303,
+      );
     }
 
     const id = crypto.randomUUID();
@@ -108,10 +144,16 @@ async function handleShareTarget(request) {
       })),
     });
 
-    return Response.redirect(new URL(`/share?id=${encodeURIComponent(id)}`, self.location.origin).href, 303);
+    return Response.redirect(
+      new URL(`/share?id=${encodeURIComponent(id)}`, self.location.origin).href,
+      303,
+    );
   } catch (error) {
     console.error('MF share target error:', error);
-    return Response.redirect(new URL('/share?error=invalid', self.location.origin).href, 303);
+    return Response.redirect(
+      new URL('/share?error=invalid', self.location.origin).href,
+      303,
+    );
   }
 }
 
@@ -121,12 +163,15 @@ self.addEventListener('install', () => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys
-          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
-          .map((key) => caches.delete(key)),
-      ))
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -160,7 +205,8 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
 
         const response = await fetch(request);
-        if (isCacheableStaticResponse(response)) await cache.put(request, response.clone());
+        if (isCacheableStaticResponse(response))
+          await cache.put(request, response.clone());
         return response;
       }),
     );

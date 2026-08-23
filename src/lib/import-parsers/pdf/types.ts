@@ -14,4 +14,6 @@ export interface PdfParserContext {
   parseAmount: (value: string | undefined) => number;
 }
 
-export type PdfBankParser = (context: PdfParserContext) => ExtractedPdfTransaction[];
+export type PdfBankParser = (
+  context: PdfParserContext,
+) => ExtractedPdfTransaction[];

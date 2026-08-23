@@ -52,29 +52,59 @@ export function detectDelimiter(line: string): string {
 
 function scoreHeader(cells: string[]): number {
   const keys = [
-    'data', 'date', 'dtposted', 'descricao', 'historico', 'memo', 'description',
-    'transactiondescription', 'transactiondetails', 'valor', 'amount', 'transactionamount',
-    'transactionnetamount', 'debito', 'credito', 'categoria', 'category', 'type', 'tipo',
+    'data',
+    'date',
+    'dtposted',
+    'descricao',
+    'historico',
+    'memo',
+    'description',
+    'transactiondescription',
+    'transactiondetails',
+    'valor',
+    'amount',
+    'transactionamount',
+    'transactionnetamount',
+    'debito',
+    'credito',
+    'categoria',
+    'category',
+    'type',
+    'tipo',
   ];
   return cells.reduce(
-    (sum, cell) => sum + (keys.some((key) => cell.includes(normalizeStatementHeader(key))) ? 1 : 0),
+    (sum, cell) =>
+      sum +
+      (keys.some((key) => cell.includes(normalizeStatementHeader(key)))
+        ? 1
+        : 0),
     0,
   );
 }
 
-export function findKnownTransactionHeader(lines: string[]): { index: number; delimiter: string } | null {
+export function findKnownTransactionHeader(
+  lines: string[],
+): { index: number; delimiter: string } | null {
   for (let index = 0; index < lines.length; index++) {
     const delimiter = detectDelimiter(lines[index]);
-    const columns = parseDelimitedLine(lines[index], delimiter).map(normalizeStatementHeader);
+    const columns = parseDelimitedLine(lines[index], delimiter).map(
+      normalizeStatementHeader,
+    );
     const hasReleaseDate = columns.includes('releasedate');
     const hasType = columns.includes('transactiontype');
-    const hasNetAmount = columns.includes('transactionnetamount') || columns.includes('transactionamount');
+    const hasNetAmount =
+      columns.includes('transactionnetamount') ||
+      columns.includes('transactionamount');
     if (hasReleaseDate && hasType && hasNetAmount) return { index, delimiter };
   }
   return null;
 }
 
-export function findBestHeader(lines: string[]): { index: number; delimiter: string; score: number } {
+export function findBestHeader(lines: string[]): {
+  index: number;
+  delimiter: string;
+  score: number;
+} {
   const known = findKnownTransactionHeader(lines);
   if (known) return { ...known, score: 99 };
 
@@ -128,7 +158,10 @@ export function parseStatementAmount(raw: string | undefined): number {
   return isNegative ? -Math.abs(value) : value;
 }
 
-export function parseStatementDate(raw: string | undefined, fallback = new Date()): string {
+export function parseStatementDate(
+  raw: string | undefined,
+  fallback = new Date(),
+): string {
   if (!raw) return fallback.toISOString();
   const value = raw.trim();
   const stableIso = (year: number, month: number, day: number) =>
@@ -141,16 +174,26 @@ export function parseStatementDate(raw: string | undefined, fallback = new Date(
   }
 
   const isoDateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoDateOnly) return stableIso(Number(isoDateOnly[1]), Number(isoDateOnly[2]), Number(isoDateOnly[3]));
+  if (isoDateOnly)
+    return stableIso(
+      Number(isoDateOnly[1]),
+      Number(isoDateOnly[2]),
+      Number(isoDateOnly[3]),
+    );
 
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? fallback.toISOString() : parsed.toISOString();
+  return Number.isNaN(parsed.getTime())
+    ? fallback.toISOString()
+    : parsed.toISOString();
 }
 
 export function looksLikeDate(value: string | undefined): boolean {
   if (!value) return false;
   const normalized = value.trim();
-  return /^\d{2}[/-]\d{2}[/-]\d{2,4}$/.test(normalized) || /^\d{4}-\d{2}-\d{2}/.test(normalized);
+  return (
+    /^\d{2}[/-]\d{2}[/-]\d{2,4}$/.test(normalized) ||
+    /^\d{4}-\d{2}-\d{2}/.test(normalized)
+  );
 }
 
 export function looksLikeAmount(value: string | undefined): boolean {
@@ -160,16 +203,28 @@ export function looksLikeAmount(value: string | undefined): boolean {
 export function looksLikeText(value: string | undefined): boolean {
   if (!value) return false;
   const normalized = value.trim();
-  return Boolean(normalized && !looksLikeDate(normalized) && !looksLikeAmount(normalized) && /[a-zA-Z]/.test(normalized));
+  return Boolean(
+    normalized &&
+      !looksLikeDate(normalized) &&
+      !looksLikeAmount(normalized) &&
+      /[a-zA-Z]/.test(normalized),
+  );
 }
 
-export function pickStatementDescription(columns: string[], descriptionIndex: number): string {
-  const direct = (descriptionIndex >= 0 ? columns[descriptionIndex] : '').trim();
+export function pickStatementDescription(
+  columns: string[],
+  descriptionIndex: number,
+): string {
+  const direct = (
+    descriptionIndex >= 0 ? columns[descriptionIndex] : ''
+  ).trim();
   if (direct) return direct;
-  return columns
-    .map((value) => value?.trim() || '')
-    .filter(looksLikeText)
-    .sort((a, b) => b.length - a.length)[0] || 'Sem descricao';
+  return (
+    columns
+      .map((value) => value?.trim() || '')
+      .filter(looksLikeText)
+      .sort((a, b) => b.length - a.length)[0] || 'Sem descricao'
+  );
 }
 
 export function pickStatementAmount(
@@ -178,19 +233,31 @@ export function pickStatementAmount(
   debitIndex: number,
   creditIndex: number,
 ): number {
-  const debit = debitIndex >= 0 ? Math.abs(parseStatementAmount(columns[debitIndex])) : 0;
-  const credit = creditIndex >= 0 ? Math.abs(parseStatementAmount(columns[creditIndex])) : 0;
+  const debit =
+    debitIndex >= 0 ? Math.abs(parseStatementAmount(columns[debitIndex])) : 0;
+  const credit =
+    creditIndex >= 0 ? Math.abs(parseStatementAmount(columns[creditIndex])) : 0;
   if (debit > 0 || credit > 0) return credit - debit;
 
-  const explicitAmount = amountIndex >= 0 ? parseStatementAmount(columns[amountIndex]) : 0;
+  const explicitAmount =
+    amountIndex >= 0 ? parseStatementAmount(columns[amountIndex]) : 0;
   const maxReasonableTransaction = 1_000_000;
-  if (Math.abs(explicitAmount) > 0 && Math.abs(explicitAmount) <= maxReasonableTransaction) return explicitAmount;
+  if (
+    Math.abs(explicitAmount) > 0 &&
+    Math.abs(explicitAmount) <= maxReasonableTransaction
+  )
+    return explicitAmount;
   if (amountIndex >= 0) return 0;
 
-  return columns
-    .map(parseStatementAmount)
-    .filter((value) => Math.abs(value) > 0 && Math.abs(value) <= maxReasonableTransaction)
-    .sort((a, b) => Math.abs(a) - Math.abs(b))[0] || 0;
+  return (
+    columns
+      .map(parseStatementAmount)
+      .filter(
+        (value) =>
+          Math.abs(value) > 0 && Math.abs(value) <= maxReasonableTransaction,
+      )
+      .sort((a, b) => Math.abs(a) - Math.abs(b))[0] || 0
+  );
 }
 
 export function inferColumnByRatio(
@@ -219,36 +286,71 @@ export function inferColumnByRatio(
   return bestRatio >= minRatio ? bestIndex : -1;
 }
 
-export function inferStatementCategory(description: string, type: 'income' | 'expense'): string {
+export function inferStatementCategory(
+  description: string,
+  type: 'income' | 'expense',
+): string {
   const identified = identifyCompany(description);
   if (identified) {
     const categories: Record<string, string> = {
-      internet_telefonia: 'Contas Fixas', agua_saneamento: 'Contas Fixas', energia_eletrica: 'Contas Fixas',
-      bancos_financeiras: 'Geral', emprestimos_acordos: 'Geral', alimentacao: 'Alimentação',
-      transporte: 'Transporte', saude: 'Saúde', lazer: 'Lazer', educacao: 'Educação',
+      internet_telefonia: 'Contas Fixas',
+      agua_saneamento: 'Contas Fixas',
+      energia_eletrica: 'Contas Fixas',
+      bancos_financeiras: 'Geral',
+      emprestimos_acordos: 'Geral',
+      alimentacao: 'Alimentação',
+      transporte: 'Transporte',
+      saude: 'Saúde',
+      lazer: 'Lazer',
+      educacao: 'Educação',
     };
     return categories[identified.category] || 'Geral';
   }
 
   const text = normalizeStatementHeader(description);
   if (type === 'income') {
-    if (/(salario|pagamento|folha|remunera|provento|vencimento)/.test(text)) return 'Salário';
-    if (/(vr|va|ticket|alimentacao|refeicao|beneficio|auxilio)/.test(text)) return 'Benefícios';
-    if (/(rendimento|juros|aplicacao|poupanca|cdb|selic|resgate)/.test(text)) return 'Rendimentos';
-    if (/(pix|ted|doc|transferencia|recebido|enviado)/.test(text)) return 'Transferência';
+    if (/(salario|pagamento|folha|remunera|provento|vencimento)/.test(text))
+      return 'Salário';
+    if (/(vr|va|ticket|alimentacao|refeicao|beneficio|auxilio)/.test(text))
+      return 'Benefícios';
+    if (/(rendimento|juros|aplicacao|poupanca|cdb|selic|resgate)/.test(text))
+      return 'Rendimentos';
+    if (/(pix|ted|doc|transferencia|recebido|enviado)/.test(text))
+      return 'Transferência';
     return 'Geral';
   }
 
-  if (/(uber|99|taxi|combustivel|posto|ipiranga|shell|estacionamento|shellbox)/.test(text)) return 'Transporte';
-  if (/(mercado|supermercado|ifood|restaurante|padaria|food|acougue|fast|pizza|burger)/.test(text)) return 'Alimentação';
-  if (/(farmacia|hospital|clinica|medic|droga|saude)/.test(text)) return 'Saúde';
-  if (/(netflix|spotify|cinema|stream|show|lazer|ingresso|tour|viagem)/.test(text)) return 'Lazer';
-  if (/(aluguel|condominio|energia|agua|internet|telefone|vivo|claro|tim|oito|luz|cpfl|enel)/.test(text)) return 'Contas Fixas';
-  if (/(escola|faculdade|curso|livros|estudo|educa)/.test(text)) return 'Educação';
+  if (
+    /(uber|99|taxi|combustivel|posto|ipiranga|shell|estacionamento|shellbox)/.test(
+      text,
+    )
+  )
+    return 'Transporte';
+  if (
+    /(mercado|supermercado|ifood|restaurante|padaria|food|acougue|fast|pizza|burger)/.test(
+      text,
+    )
+  )
+    return 'Alimentação';
+  if (/(farmacia|hospital|clinica|medic|droga|saude)/.test(text))
+    return 'Saúde';
+  if (
+    /(netflix|spotify|cinema|stream|show|lazer|ingresso|tour|viagem)/.test(text)
+  )
+    return 'Lazer';
+  if (
+    /(aluguel|condominio|energia|agua|internet|telefone|vivo|claro|tim|oito|luz|cpfl|enel)/.test(
+      text,
+    )
+  )
+    return 'Contas Fixas';
+  if (/(escola|faculdade|curso|livros|estudo|educa)/.test(text))
+    return 'Educação';
   return 'Geral';
 }
 
 export function generateTransactionId(prefix: string, index: number): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    return crypto.randomUUID();
   return `${prefix}-${Date.now()}-${index}`;
 }

@@ -68,7 +68,10 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function calculateProgressive(baseValue: number, brackets: ProgressiveBracket[]): number {
+function calculateProgressive(
+  baseValue: number,
+  brackets: ProgressiveBracket[],
+): number {
   if (baseValue <= 0) return 0;
 
   const cappedBase = Math.min(baseValue, brackets[brackets.length - 1].upTo);
@@ -88,7 +91,8 @@ function calculateProgressive(baseValue: number, brackets: ProgressiveBracket[])
 
 function calculateIrrfFromBase(baseValue: number, bands: IrrfBand[]): number {
   if (baseValue <= 0) return 0;
-  const band = bands.find((item) => baseValue <= item.upTo) || bands[bands.length - 1];
+  const band =
+    bands.find((item) => baseValue <= item.upTo) || bands[bands.length - 1];
   return roundMoney(Math.max(0, baseValue * band.rate - band.deduction));
 }
 
@@ -102,7 +106,8 @@ function resolvePayrollTable(referenceDate: Date): PayrollTable {
       inssBrackets: INSS_2026_BRACKETS,
       irrfBands: IRRF_FROM_MAY_2025,
       simplifiedDeduction: 607.2,
-      irrfRuleLabel: 'IRRF 2026: tabela progressiva mensal com redução até R$ 7.350,00.',
+      irrfRuleLabel:
+        'IRRF 2026: tabela progressiva mensal com redução até R$ 7.350,00.',
     };
   }
 
@@ -112,7 +117,8 @@ function resolvePayrollTable(referenceDate: Date): PayrollTable {
       inssBrackets: INSS_2025_BRACKETS,
       irrfBands: IRRF_JAN_TO_APR_2025,
       simplifiedDeduction: 564.8,
-      irrfRuleLabel: 'IRRF conforme tabela vigente entre janeiro e abril de 2025.',
+      irrfRuleLabel:
+        'IRRF conforme tabela vigente entre janeiro e abril de 2025.',
     };
   }
 
@@ -125,9 +131,13 @@ function resolvePayrollTable(referenceDate: Date): PayrollTable {
   };
 }
 
-function calculate2026IrrfReduction(grossSalary: number, taxBeforeReduction: number): number {
+function calculate2026IrrfReduction(
+  grossSalary: number,
+  taxBeforeReduction: number,
+): number {
   if (taxBeforeReduction <= 0) return 0;
-  if (grossSalary <= 5000) return roundMoney(Math.min(taxBeforeReduction, 312.89));
+  if (grossSalary <= 5000)
+    return roundMoney(Math.min(taxBeforeReduction, 312.89));
   if (grossSalary <= 7350) {
     const reduction = Math.max(0, 978.62 - 0.133145 * grossSalary);
     return roundMoney(Math.min(taxBeforeReduction, reduction));
@@ -135,7 +145,10 @@ function calculate2026IrrfReduction(grossSalary: number, taxBeforeReduction: num
   return 0;
 }
 
-export function calculatePayrollFromGross(grossSalary: number, referenceDate: Date): PayrollComputation {
+export function calculatePayrollFromGross(
+  grossSalary: number,
+  referenceDate: Date,
+): PayrollComputation {
   const gross = Math.max(0, Number(grossSalary) || 0);
   const table = resolvePayrollTable(referenceDate);
   const inss = calculateProgressive(gross, table.inssBrackets);
@@ -146,17 +159,19 @@ export function calculatePayrollFromGross(grossSalary: number, referenceDate: Da
   const usedSimplifiedDeduction = table.simplifiedDeduction >= inss;
   const irrfBase = roundMoney(Math.max(0, gross - deductionUsedForIrrf));
   const irrfBeforeReduction = calculateIrrfFromBase(irrfBase, table.irrfBands);
-  const irrfReduction = table.year >= 2026
-    ? calculate2026IrrfReduction(gross, irrfBeforeReduction)
-    : 0;
+  const irrfReduction =
+    table.year >= 2026
+      ? calculate2026IrrfReduction(gross, irrfBeforeReduction)
+      : 0;
   const irrf = roundMoney(Math.max(0, irrfBeforeReduction - irrfReduction));
 
   const totalDeductions = roundMoney(inss + irrf);
   const netSalary = roundMoney(Math.max(0, gross - totalDeductions));
   const referenceYear = referenceDate.getFullYear();
-  const tableReferenceLabel = table.year === referenceYear
-    ? `Tabela aplicada: ${table.year}`
-    : `Tabela aplicada: ${table.year} (referência disponível para ${referenceYear})`;
+  const tableReferenceLabel =
+    table.year === referenceYear
+      ? `Tabela aplicada: ${table.year}`
+      : `Tabela aplicada: ${table.year} (referência disponível para ${referenceYear})`;
 
   return {
     inss,

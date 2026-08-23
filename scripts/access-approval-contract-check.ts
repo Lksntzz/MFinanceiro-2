@@ -34,13 +34,18 @@ assert.match(
 
 assert.match(edgeFunction, /MF_ACCESS_APPROVAL_CONTROL_SECRET/);
 assert.match(edgeFunction, /x-mf-access-approval-control-secret/);
-assert.match(edgeFunction, /identity\.role !== "admin"/);
-assert.match(edgeFunction, /identity\.aal !== "aal2"/);
+assert.match(edgeFunction, /identity\.role !== ['"]admin['"]/);
+assert.match(edgeFunction, /identity\.aal !== ['"]aal2['"]/);
 assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
-assert.match(edgeFunction, /decision_source: "mf_administracao"/);
+assert.match(edgeFunction, /decision_source:\s*['"]mf_administracao['"]/);
 assert.match(edgeFunction, /status=in\.\(pending,pendente\)/);
 
-assert.match(accessControl, /supabase\.rpc\("submit_access_request"/);
-assert.match(accessControl, /supabase\.functions\.invoke\("resolve-auth-state"/);
+assert.match(accessControl, /supabase\.rpc\(['"]submit_access_request['"]/);
+assert.match(
+  accessControl,
+  /supabase\.functions\.invoke\(\s*['"]resolve-auth-state['"]/,
+);
 
-console.log('User approval boundary: MF Financeiro accepts requests and enforces decisions; MF Administração owns approval control.');
+console.log(
+  'User approval boundary: MF Financeiro accepts requests and enforces decisions; MF Administração owns approval control.',
+);

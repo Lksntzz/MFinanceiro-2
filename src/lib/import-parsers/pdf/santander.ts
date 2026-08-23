@@ -1,10 +1,15 @@
-import { ExtractedPdfTransaction, PdfBankParser } from './types';
-import { looksLikeNoiseLine, parseByDateAndCurrencyLines, parseByBlockRegex } from './utils';
+import type { ExtractedPdfTransaction, PdfBankParser } from './types';
+import {
+  looksLikeNoiseLine,
+  parseByBlockRegex,
+  parseByDateAndCurrencyLines,
+} from './utils';
 
 const DATE_AT_START = /^(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
 // Santander PDF text extraction places document/NSU and amount in adjacent cells.
 // Do not allow whitespace inside a monetary token or those cells can be concatenated.
-const AMOUNT_REGEX = /(?:R\$\s*)?(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
+const AMOUNT_REGEX =
+  /(?:R\$\s*)?(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
 
 function cleanDescription(value: string): string {
   return value
@@ -15,7 +20,10 @@ function cleanDescription(value: string): string {
     .trim();
 }
 
-function looksLikeSantanderCheckingHeader(line: string, normalize: (value: string) => string): boolean {
+function looksLikeSantanderCheckingHeader(
+  line: string,
+  normalize: (value: string) => string,
+): boolean {
   const normalized = normalize(line);
   return (
     normalized.includes('datadescricao') &&
@@ -25,7 +33,10 @@ function looksLikeSantanderCheckingHeader(line: string, normalize: (value: strin
   );
 }
 
-function isSantanderSectionStop(line: string, normalize: (value: string) => string): boolean {
+function isSantanderSectionStop(
+  line: string,
+  normalize: (value: string) => string,
+): boolean {
   const normalized = normalize(line);
   return (
     normalized.startsWith('saldoem') ||
@@ -35,7 +46,10 @@ function isSantanderSectionStop(line: string, normalize: (value: string) => stri
   );
 }
 
-function isSantanderNonTransactionLine(line: string, normalize: (value: string) => string): boolean {
+function isSantanderNonTransactionLine(
+  line: string,
+  normalize: (value: string) => string,
+): boolean {
   const normalized = normalize(line);
   if (!normalized) return true;
   return (
@@ -52,7 +66,9 @@ function isSantanderNonTransactionLine(line: string, normalize: (value: string) 
   );
 }
 
-function parseSantanderPjChecking(context: Parameters<PdfBankParser>[0]): ExtractedPdfTransaction[] {
+function parseSantanderPjChecking(
+  context: Parameters<PdfBankParser>[0],
+): ExtractedPdfTransaction[] {
   const extracted: ExtractedPdfTransaction[] = [];
   const pendingDescription: string[] = [];
   let active = false;
@@ -78,7 +94,9 @@ function parseSantanderPjChecking(context: Parameters<PdfBankParser>[0]): Extrac
     const dateMatch = line.match(DATE_AT_START);
     if (dateMatch?.[1]) currentDate = dateMatch[1];
 
-    const amounts = [...line.matchAll(AMOUNT_REGEX)].map((match) => match[0].trim());
+    const amounts = [...line.matchAll(AMOUNT_REGEX)].map((match) =>
+      match[0].trim(),
+    );
     if (amounts.length === 0) {
       if (!isSantanderNonTransactionLine(line, context.normalize)) {
         const text = cleanDescription(line);
@@ -100,12 +118,14 @@ function parseSantanderPjChecking(context: Parameters<PdfBankParser>[0]): Extrac
 
     const inlineDescription = cleanDescription(line);
     const pieces = [...pendingDescription, inlineDescription].filter(Boolean);
-    const description = pieces.join(' ').replace(/\s+/g, ' ').trim() || 'Sem descricao';
+    const description =
+      pieces.join(' ').replace(/\s+/g, ' ').trim() || 'Sem descricao';
 
     const sourceIdMatch = line.match(/\b\d{6,}\b/);
-    const runningBalance = amounts.length > 1
-      ? Math.abs(context.parseAmount(amounts[amounts.length - 1]))
-      : undefined;
+    const runningBalance =
+      amounts.length > 1
+        ? Math.abs(context.parseAmount(amounts[amounts.length - 1]))
+        : undefined;
 
     extracted.push({
       rawDate: currentDate,

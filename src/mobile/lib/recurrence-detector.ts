@@ -36,7 +36,10 @@ function normalizeText(value: string) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('pt-BR')
-    .replace(/\b(?:pix|ted|doc|debito|deb|credito|cred|compra|pagamento|pgto|pgt|transacao)\b/g, ' ')
+    .replace(
+      /\b(?:pix|ted|doc|debito|deb|credito|cred|compra|pagamento|pgto|pgt|transacao)\b/g,
+      ' ',
+    )
     .replace(/\b\d{2,}\b/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -67,7 +70,9 @@ function median(values: number[]) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function modeText(values: Array<string | null | undefined>) {
@@ -77,11 +82,17 @@ function modeText(values: Array<string | null | undefined>) {
     if (!clean) continue;
     counts.set(clean, (counts.get(clean) || 0) + 1);
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'Contas Fixas';
+  return (
+    [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'Contas Fixas'
+  );
 }
 
 function tokenSet(value: string) {
-  return new Set(normalizeText(value).split(' ').filter((token) => token.length >= 3));
+  return new Set(
+    normalizeText(value)
+      .split(' ')
+      .filter((token) => token.length >= 3),
+  );
 }
 
 function similarity(left: string, right: string) {
@@ -107,7 +118,8 @@ function isAlreadyTracked(name: string, existing: ExistingRecurrence[]) {
   return existing.some((item) => {
     const candidate = normalizeText(item.name);
     if (!candidate) return false;
-    if (normalized.includes(candidate) || candidate.includes(normalized)) return true;
+    if (normalized.includes(candidate) || candidate.includes(normalized))
+      return true;
     return similarity(name, item.name) >= 0.6;
   });
 }
@@ -165,32 +177,51 @@ export function detectRecurringExpenses(
     // merchants such as supermarkets, fuel stations and mobility apps that can
     // appear every month but are used many times within the same month.
     const monthCounts = [...byMonth.values()].map((bucket) => bucket.length);
-    const averagePerActiveMonth = rows.length / Math.max(1, representatives.length);
-    const repeatedMonthRatio = monthCounts.filter((count) => count > 1).length / Math.max(1, monthCounts.length);
+    const averagePerActiveMonth =
+      rows.length / Math.max(1, representatives.length);
+    const repeatedMonthRatio =
+      monthCounts.filter((count) => count > 1).length /
+      Math.max(1, monthCounts.length);
     if (averagePerActiveMonth > 1.6 || repeatedMonthRatio > 0.5) continue;
 
-    const months = representatives.map((row) => monthIndex(row.date)).filter((value): value is number => value != null);
+    const months = representatives
+      .map((row) => monthIndex(row.date))
+      .filter((value): value is number => value != null);
     const firstMonth = Math.min(...months);
     const lastMonth = Math.max(...months);
     const monthSpan = lastMonth - firstMonth + 1;
     const coverage = monthSpan > 0 ? representatives.length / monthSpan : 0;
     if (coverage < 0.6) continue;
 
-    const monthGaps = months.slice(1).map((month, index) => month - months[index]);
-    const normalMonthlyGaps = monthGaps.filter((gap) => gap >= 1 && gap <= 2).length;
-    if (monthGaps.length && normalMonthlyGaps / monthGaps.length < 0.7) continue;
+    const monthGaps = months
+      .slice(1)
+      .map((month, index) => month - months[index]);
+    const normalMonthlyGaps = monthGaps.filter(
+      (gap) => gap >= 1 && gap <= 2,
+    ).length;
+    if (monthGaps.length && normalMonthlyGaps / monthGaps.length < 0.7)
+      continue;
 
-    const days = representatives.map((row) => dayOfMonth(row.date)).filter((value): value is number => value != null);
+    const days = representatives
+      .map((row) => dayOfMonth(row.date))
+      .filter((value): value is number => value != null);
     const dueDay = Math.max(1, Math.min(31, Math.round(median(days))));
-    const dayDeviation = days.length ? median(days.map((day) => Math.abs(day - dueDay))) : 31;
+    const dayDeviation = days.length
+      ? median(days.map((day) => Math.abs(day - dueDay)))
+      : 31;
     if (dayDeviation > 7) continue;
 
-    const amounts = representatives.map((row) => Math.abs(Number(row.amount || 0))).filter((value) => value > 0);
+    const amounts = representatives
+      .map((row) => Math.abs(Number(row.amount || 0)))
+      .filter((value) => value > 0);
     const estimatedAmount = Number(median(amounts).toFixed(2));
     if (!estimatedAmount) continue;
-    const medianDeviation = median(amounts.map((amount) => Math.abs(amount - estimatedAmount)));
+    const medianDeviation = median(
+      amounts.map((amount) => Math.abs(amount - estimatedAmount)),
+    );
     const relativeMedianDeviation = medianDeviation / estimatedAmount;
-    const rangeVariation = (Math.max(...amounts) - Math.min(...amounts)) / estimatedAmount;
+    const rangeVariation =
+      (Math.max(...amounts) - Math.min(...amounts)) / estimatedAmount;
     // Median deviation is robust against one odd month, while range catches
     // genuinely variable utility bills whose values move materially across cycles.
     const amountVariation = Math.max(relativeMedianDeviation, rangeVariation);
@@ -208,9 +239,10 @@ export function detectRecurringExpenses(
     if (score < 0.65) continue;
 
     const category = modeText(representatives.map((row) => row.category));
-    const variabilityText = amountBehavior === 'stable'
-      ? 'valor costuma variar pouco'
-      : 'valor varia, mas o padrão mensal é consistente';
+    const variabilityText =
+      amountBehavior === 'stable'
+        ? 'valor costuma variar pouco'
+        : 'valor varia, mas o padrão mensal é consistente';
     suggestions.push({
       key,
       name,
@@ -230,6 +262,10 @@ export function detectRecurringExpenses(
   }
 
   return suggestions
-    .sort((a, b) => b.confidenceScore - a.confidenceScore || b.distinctMonths - a.distinctMonths)
+    .sort(
+      (a, b) =>
+        b.confidenceScore - a.confidenceScore ||
+        b.distinctMonths - a.distinctMonths,
+    )
     .slice(0, 12);
 }

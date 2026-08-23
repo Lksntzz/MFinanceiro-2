@@ -12,7 +12,9 @@ export interface TickerData {
  * O aplicativo não possui uma fonte externa de cotações configurada.
  * Para não exibir preços inventados, nenhuma cotação é fabricada localmente.
  */
-export async function getRealTimeQuotes(_symbols: string[]): Promise<TickerData[]> {
+export async function getRealTimeQuotes(
+  _symbols: string[],
+): Promise<TickerData[]> {
   return [];
 }
 
@@ -20,7 +22,9 @@ export async function getRealTimeQuotes(_symbols: string[]): Promise<TickerData[
  * Recalcula o patrimônio de cada ativo usando somente dados informados pelo
  * usuário: quantidade x preço atual. Ativos sem preço atual permanecem iguais.
  */
-export async function syncInvestmentsWithMarket(userId: string): Promise<boolean> {
+export async function syncInvestmentsWithMarket(
+  userId: string,
+): Promise<boolean> {
   try {
     const { data: investments, error } = await supabase
       .from('mf_investments')
@@ -36,7 +40,12 @@ export async function syncInvestmentsWithMarket(userId: string): Promise<boolean
         const currentPrice = Number(investment.current_price || 0);
         const currentAmount = Number(investment.amount || 0);
 
-        if (!Number.isFinite(quantity) || !Number.isFinite(currentPrice) || quantity <= 0 || currentPrice <= 0) {
+        if (
+          !Number.isFinite(quantity) ||
+          !Number.isFinite(currentPrice) ||
+          quantity <= 0 ||
+          currentPrice <= 0
+        ) {
           return null;
         }
 

@@ -1,29 +1,159 @@
-.mf-command-results button.active { border-color:rgba(0,242,255,.22); background:rgba(0,242,255,.07); outline:none; }
+.mf-command-results button.active {
+  border-color: rgba(0, 242, 255, 0.22);
+  background: rgba(0, 242, 255, 0.07);
+  outline: none;
+}
 
-.mf-onboarding-checklist { margin-bottom: 14px; border-color: rgba(0,232,244,.14); background: linear-gradient(135deg, rgba(0,232,244,.055), rgba(139,92,246,.035)); }
-.mf-onboarding-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:12px; }
-.mf-onboarding-heading p { margin:0 0 4px; color:#67e8f9; font-size:8px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; }
-.mf-onboarding-heading h2 { margin:0; color:#fff; font-size:14px; }
-.mf-onboarding-heading span { display:block; margin-top:3px; color:rgba(255,255,255,.35); font-size:9px; }
-.mf-onboarding-heading button { border:0; border-radius:8px; padding:5px; background:transparent; color:rgba(255,255,255,.3); }
-.mf-onboarding-steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
-.mf-onboarding-steps button { display:grid; grid-template-columns:18px minmax(0,1fr) 16px; align-items:center; gap:7px; min-height:40px; border:1px solid rgba(255,255,255,.08); border-radius:11px; padding:8px 9px; text-align:left; background:rgba(0,0,0,.13); color:rgba(255,255,255,.66); font-size:10px; }
-.mf-onboarding-steps button:not(:disabled):hover { border-color:rgba(0,232,244,.2); background:rgba(0,232,244,.05); }
-.mf-onboarding-steps button.done { opacity:.52; color:#86efac; }
+.mf-onboarding-checklist {
+  margin-bottom: 14px;
+  border-color: rgba(0, 232, 244, 0.14);
+  background: linear-gradient(
+    135deg,
+    rgba(0, 232, 244, 0.055),
+    rgba(139, 92, 246, 0.035)
+  );
+}
+.mf-onboarding-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.mf-onboarding-heading p {
+  margin: 0 0 4px;
+  color: #67e8f9;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.mf-onboarding-heading h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+}
+.mf-onboarding-heading span {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+}
+.mf-onboarding-heading button {
+  border: 0;
+  border-radius: 8px;
+  padding: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+}
+.mf-onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.mf-onboarding-steps button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  padding: 8px 9px;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.13);
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 10px;
+}
+.mf-onboarding-steps button:not(:disabled):hover {
+  border-color: rgba(0, 232, 244, 0.2);
+  background: rgba(0, 232, 244, 0.05);
+}
+.mf-onboarding-steps button.done {
+  opacity: 0.52;
+  color: #86efac;
+}
 
-.mf-automation-disclosure { overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:rgba(255,255,255,.018); }
-.mf-automation-disclosure > summary { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; cursor:pointer; list-style:none; }
-.mf-automation-disclosure > summary::-webkit-details-marker { display:none; }
-.mf-automation-disclosure > summary strong { display:block; color:rgba(255,255,255,.82); font-size:12px; }
-.mf-automation-disclosure > summary small { display:block; margin-top:3px; color:rgba(255,255,255,.35); font-size:9px; }
-.mf-automation-disclosure[open] > summary svg { transform:rotate(180deg); }
-.mf-automation-content { border-top:1px solid rgba(255,255,255,.07); padding:12px; }
+.mf-automation-disclosure {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.mf-automation-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.mf-automation-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.mf-automation-disclosure > summary strong {
+  display: block;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+}
+.mf-automation-disclosure > summary small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+}
+.mf-automation-disclosure[open] > summary svg {
+  transform: rotate(180deg);
+}
+.mf-automation-content {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 12px;
+}
 
-.mf-open-finance-coming-soon { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; border:1px solid rgba(0,242,255,.16); border-radius:16px; padding:14px 16px; background:linear-gradient(135deg,rgba(0,242,255,.055),rgba(139,92,246,.035)); }
-.mf-open-finance-coming-soon strong { display:block; color:rgba(255,255,255,.86); font-size:12px; }
-.mf-open-finance-coming-soon p { margin:4px 0 0; max-width:720px; color:rgba(255,255,255,.42); font-size:10px; line-height:1.5; }
-.mf-open-finance-coming-soon span { flex:none; border:1px solid rgba(0,242,255,.2); border-radius:999px; padding:5px 9px; background:rgba(0,242,255,.08); color:#67e8f9; font-size:8px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
-.mf-automation-content [role="tablist"][aria-label="Automação e Open Finance"] > button:last-child { display:none; }
+.mf-open-finance-coming-soon {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgba(0, 242, 255, 0.16);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 242, 255, 0.055),
+    rgba(139, 92, 246, 0.035)
+  );
+}
+.mf-open-finance-coming-soon strong {
+  display: block;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+}
+.mf-open-finance-coming-soon p {
+  margin: 4px 0 0;
+  max-width: 720px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.mf-open-finance-coming-soon span {
+  flex: none;
+  border: 1px solid rgba(0, 242, 255, 0.2);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(0, 242, 255, 0.08);
+  color: #67e8f9;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.mf-automation-content
+  [role="tablist"][aria-label="Automação e Open Finance"]
+  > button:last-child {
+  display:none;
+}
 
 /*
  * Desktop/web spacing and typography contract.
@@ -37,14 +167,22 @@
   .mf-onboarding-checklist,
   .mf-data-quality,
   .mf-financial-timeline {
-    padding: clamp(11px, .85vh, 14px) clamp(12px, .85vw, 16px);
+    padding: clamp(11px, 0.85vh, 14px) clamp(12px, 0.85vw, 16px);
   }
 
   .mf-tool-surface,
   .mf-card[aria-label="Progresso do planejamento"],
   .mf-routed-app .mf-tab-shell > .space-y-4 > form.mf-card,
-  .mf-routed-app .mf-tab-shell > .space-y-4 > .grid[class~="xl:grid-cols-3"] > .mf-card,
-  .mf-routed-app .mf-content > .space-y-4 > section.grid[class~="xl:grid-cols-[360px_1fr]"] > .mf-card {
+  .mf-routed-app
+    .mf-tab-shell
+    > .space-y-4
+    > .grid[class~="xl:grid-cols-3"]
+    > .mf-card,
+  .mf-routed-app
+    .mf-content
+    > .space-y-4
+    > section.grid[class~="xl:grid-cols-[360px_1fr]"]
+    > .mf-card {
     padding: clamp(12px, 1vh, 16px) clamp(14px, 1vw, 18px);
   }
 
@@ -55,36 +193,63 @@
   }
 
   /* Legacy Tailwind micro-sizes: preserve hierarchy, but remove unreadable desktop text. */
-  .mf-routed-app .text-\[8px\] { font-size: 10px; line-height: 1.35; }
-  .mf-routed-app .text-\[9px\] { font-size: 10.5px; line-height: 1.4; }
-  .mf-routed-app .text-\[10px\] { font-size: 11.5px; line-height: 1.45; }
-  .mf-routed-app .text-\[11px\] { font-size: 12px; line-height: 1.45; }
+  .mf-routed-app .text-\[8px\] {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .mf-routed-app .text-\[9px\] {
+    font-size: 10.5px;
+    line-height: 1.4;
+  }
+  .mf-routed-app .text-\[10px\] {
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .mf-routed-app .text-\[11px\] {
+    font-size: 12px;
+    line-height: 1.45;
+  }
 
   /* Shared desktop chrome and utility copy. */
-  .mf-routed-app .mf-brand span { font-size: 10.5px; line-height: 1.3; letter-spacing: .15em; }
-  .mf-routed-app .mf-loading { font-size: 10.5px; }
-  .mf-routed-app .mf-modal label { font-size: 12px; line-height: 1.35; }
+  .mf-routed-app .mf-brand span {
+    font-size: 10.5px;
+    line-height: 1.3;
+    letter-spacing: 0.15em;
+  }
+  .mf-routed-app .mf-loading {
+    font-size: 10.5px;
+  }
+  .mf-routed-app .mf-modal label {
+    font-size: 12px;
+    line-height: 1.35;
+  }
   .mf-routed-app .mf-subnav button,
-  .mf-routed-app .mf-segmented button { font-size: 11.5px; }
+  .mf-routed-app .mf-segmented button {
+    font-size: 11.5px;
+  }
 
   /* Inicial and planning KPIs: prevent compact desktop rules from dropping below readable sizes. */
   .mf-routed-app .mf-kpi span {
-    font-size: clamp(10.5px, .62vw, 12px);
+    font-size: clamp(10.5px, 0.62vw, 12px);
     line-height: 1.25;
-    letter-spacing: .11em;
+    letter-spacing: 0.11em;
   }
   .mf-routed-app .mf-kpi > small {
     font-size: 11px;
     line-height: 1.35;
   }
-  .mf-routed-app .mf-alert strong { font-size: clamp(11.5px, .68vw, 13px); }
+  .mf-routed-app .mf-alert strong {
+    font-size: clamp(11.5px, 0.68vw, 13px);
+  }
   .mf-routed-app .mf-alert p {
-    font-size: clamp(10.5px, .62vw, 12px);
+    font-size: clamp(10.5px, 0.62vw, 12px);
     line-height: 1.4;
-    color: rgba(255,255,255,.5);
+    color: rgba(255, 255, 255, 0.5);
   }
   .mf-routed-app .mf-chart-card h3,
-  .mf-routed-app .mf-mini-card h3 { font-size: clamp(11.5px, .72vw, 14px); }
+  .mf-routed-app .mf-mini-card h3 {
+    font-size: clamp(11.5px, 0.72vw, 14px);
+  }
   .mf-routed-app .mf-category-item span,
   .mf-routed-app .mf-usage-row span,
   .mf-routed-app .mf-usage-footer span,
@@ -92,66 +257,173 @@
   .mf-routed-app .mf-usage-row strong,
   .mf-routed-app .mf-latest-list strong,
   .mf-routed-app .mf-latest-list b {
-    font-size: clamp(10.5px, .62vw, 12px);
+    font-size: clamp(10.5px, 0.62vw, 12px);
     line-height: 1.3;
   }
   .mf-routed-app .mf-latest-list small {
     font-size: 10.5px;
     line-height: 1.3;
-    color: rgba(255,255,255,.38);
+    color: rgba(255, 255, 255, 0.38);
   }
-  .mf-routed-app .mf-empty { font-size: 11.5px; }
+  .mf-routed-app .mf-empty {
+    font-size: 11.5px;
+  }
 
   /* Search, preferences and global account utilities can render in portals outside `.mf-routed-app`. */
   .mf-command-search kbd,
-  .mf-command-palette footer kbd { font-size: 10.5px; }
-  .mf-command-results strong { font-size: 13px; line-height: 1.35; }
-  .mf-command-results small { font-size: 11.5px; line-height: 1.4; color: rgba(255,255,255,.46); }
-  .mf-command-palette footer { font-size: 10.5px; color: rgba(255,255,255,.38); }
+  .mf-command-palette footer kbd {
+    font-size: 10.5px;
+  }
+  .mf-command-results strong {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .mf-command-results small {
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.46);
+  }
+  .mf-command-palette footer {
+    font-size: 10.5px;
+    color: rgba(255, 255, 255, 0.38);
+  }
 
-  .mf-preferences-panel > header p { font-size: 10.5px; line-height: 1.3; letter-spacing: .14em; }
-  .mf-preferences-panel > header span { font-size: 12px; line-height: 1.45; color: rgba(255,255,255,.46); }
-  .mf-preferences-message { font-size: 12px; line-height: 1.45; }
-  .mf-preference-title strong { font-size: 13px; }
-  .mf-preference-title small { font-size: 11px; line-height: 1.4; color: rgba(255,255,255,.44); }
+  .mf-preferences-panel > header p {
+    font-size: 10.5px;
+    line-height: 1.3;
+    letter-spacing: 0.14em;
+  }
+  .mf-preferences-panel > header span {
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.46);
+  }
+  .mf-preferences-message {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .mf-preference-title strong {
+    font-size: 13px;
+  }
+  .mf-preference-title small {
+    font-size: 11px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.44);
+  }
   .mf-home-widget-options strong,
-  .mf-setting-row strong { font-size: 12px; }
+  .mf-setting-row strong {
+    font-size: 12px;
+  }
   .mf-home-widget-options small,
-  .mf-setting-row small { font-size: 11px; line-height: 1.45; color: rgba(255,255,255,.43); }
+  .mf-setting-row small {
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.43);
+  }
   .mf-preference-primary,
-  .mf-preference-secondary { font-size: 11.5px; }
-  .mf-activity-list strong { font-size: 11.5px; }
+  .mf-preference-secondary {
+    font-size: 11.5px;
+  }
+  .mf-activity-list strong {
+    font-size: 11.5px;
+  }
   .mf-activity-list small,
-  .mf-activity-list > p { font-size: 10.5px; line-height: 1.4; color: rgba(255,255,255,.42); }
+  .mf-activity-list > p {
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.42);
+  }
 
   /* Data quality and Agenda timeline use legacy explicit px values rather than Tailwind utilities. */
-  .mf-data-quality-heading strong { font-size: 12.5px; }
-  .mf-data-quality-heading small { font-size: 10.5px; color: rgba(255,255,255,.42); }
-  .mf-data-quality-list strong { font-size: 11.5px; }
-  .mf-data-quality-list small { font-size: 10.5px; line-height: 1.4; color: rgba(255,255,255,.43); }
-  .mf-data-quality-action { font-size: 10.5px; }
+  .mf-data-quality-heading strong {
+    font-size: 12.5px;
+  }
+  .mf-data-quality-heading small {
+    font-size: 10.5px;
+    color: rgba(255, 255, 255, 0.42);
+  }
+  .mf-data-quality-list strong {
+    font-size: 11.5px;
+  }
+  .mf-data-quality-list small {
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.43);
+  }
+  .mf-data-quality-action {
+    font-size: 10.5px;
+  }
 
-  .mf-timeline-heading small { font-size: 10.5px; color: rgba(255,255,255,.42); }
-  .mf-timeline-list time { font-size: 10.5px; color: rgba(255,255,255,.42); }
-  .mf-timeline-copy strong { font-size: 11.5px; }
-  .mf-timeline-copy small { font-size: 10.5px; line-height: 1.4; color: rgba(255,255,255,.42); }
-  .mf-timeline-amount { font-size: 11.5px; }
-  .mf-timeline-amount small { font-size: 10px; color: rgba(255,255,255,.4); }
+  .mf-timeline-heading small {
+    font-size: 10.5px;
+    color: rgba(255, 255, 255, 0.42);
+  }
+  .mf-timeline-list time {
+    font-size: 10.5px;
+    color: rgba(255, 255, 255, 0.42);
+  }
+  .mf-timeline-copy strong {
+    font-size: 11.5px;
+  }
+  .mf-timeline-copy small {
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.42);
+  }
+  .mf-timeline-amount {
+    font-size: 11.5px;
+  }
+  .mf-timeline-amount small {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+  }
 
-  .mf-undo-toast { font-size: 12px; }
-  .mf-undo-toast button { font-size: 11px; }
+  .mf-undo-toast {
+    font-size: 12px;
+  }
+  .mf-undo-toast button {
+    font-size: 11px;
+  }
 
   /* Product maturity surfaces still used explicit 8–10px values. */
-  .mf-onboarding-heading p { font-size: 10px; line-height: 1.35; letter-spacing: .12em; }
-  .mf-onboarding-heading span { font-size: 11px; line-height: 1.45; color: rgba(255,255,255,.44); }
-  .mf-onboarding-steps button { font-size: 11.5px; line-height: 1.4; }
-  .mf-automation-disclosure > summary strong { font-size: 13px; }
-  .mf-automation-disclosure > summary small { font-size: 11px; line-height: 1.45; color: rgba(255,255,255,.44); }
-  .mf-open-finance-coming-soon strong { font-size: 13px; }
-  .mf-open-finance-coming-soon p { font-size: 11.5px; line-height: 1.55; color: rgba(255,255,255,.5); }
-  .mf-open-finance-coming-soon span { font-size: 10px; line-height: 1.25; }
+  .mf-onboarding-heading p {
+    font-size: 10px;
+    line-height: 1.35;
+    letter-spacing: 0.12em;
+  }
+  .mf-onboarding-heading span {
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.44);
+  }
+  .mf-onboarding-steps button {
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .mf-automation-disclosure > summary strong {
+    font-size: 13px;
+  }
+  .mf-automation-disclosure > summary small {
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.44);
+  }
+  .mf-open-finance-coming-soon strong {
+    font-size: 13px;
+  }
+  .mf-open-finance-coming-soon p {
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .mf-open-finance-coming-soon span {
+    font-size: 10px;
+    line-height: 1.25;
+  }
 }
 
 @media (max-width: 820px) {
-  .mf-onboarding-steps { grid-template-columns:1fr; }
+  .mf-onboarding-steps {
+    grid-template-columns: 1fr;
+  }
 }

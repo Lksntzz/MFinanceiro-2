@@ -6,8 +6,12 @@ export interface WorkbookSheet {
   columnWidths?: number[];
 }
 
-export async function downloadXlsx(fileName: string, sheets: WorkbookSheet[]): Promise<void> {
-  if (sheets.length === 0) throw new Error('Nenhuma planilha foi informada para exportação.');
+export async function downloadXlsx(
+  fileName: string,
+  sheets: WorkbookSheet[],
+): Promise<void> {
+  if (sheets.length === 0)
+    throw new Error('Nenhuma planilha foi informada para exportação.');
 
   const { default: writeXlsxFile } = await import('write-excel-file/browser');
   const workbook = sheets.map((sheet) => ({

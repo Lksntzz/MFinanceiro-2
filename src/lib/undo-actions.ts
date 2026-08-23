@@ -5,7 +5,11 @@ export type UndoAction = {
   run: () => void | Promise<void>;
 };
 
-export function offerUndo(label: string, run: UndoAction['run'], timeoutMs = 8_000) {
+export function offerUndo(
+  label: string,
+  run: UndoAction['run'],
+  timeoutMs = 8_000,
+) {
   if (typeof window === 'undefined') return;
   const action: UndoAction = {
     id: crypto.randomUUID(),
@@ -13,5 +17,7 @@ export function offerUndo(label: string, run: UndoAction['run'], timeoutMs = 8_0
     expiresAt: Date.now() + timeoutMs,
     run,
   };
-  window.dispatchEvent(new CustomEvent<UndoAction>('mf:offer-undo', { detail: action }));
+  window.dispatchEvent(
+    new CustomEvent<UndoAction>('mf:offer-undo', { detail: action }),
+  );
 }

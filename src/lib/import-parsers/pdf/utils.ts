@@ -1,10 +1,12 @@
-import { ExtractedPdfTransaction, PdfParserContext } from './types';
+import type { ExtractedPdfTransaction, PdfParserContext } from './types';
 
 const DATE_TOKEN_REGEX = /\b(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
 // Monetary tokens must be contiguous. Allowing arbitrary spaces inside the numeric body
 // can concatenate a document/NSU column with the actual amount in PDF table extraction.
-const AMOUNT_TOKEN_REGEX = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
-const AMOUNT_TOKEN_TEST_REGEX = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/;
+const AMOUNT_TOKEN_REGEX =
+  /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
+const AMOUNT_TOKEN_TEST_REGEX =
+  /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/;
 
 export function normalizeHeader(value: string): string {
   return value
@@ -70,8 +72,8 @@ export function looksLikeNoiseLine(line: string): boolean {
     'cpfcnpj',
     'encontrenossoscanais',
     'valor',
-    'saldo'
-  ].some(token => normalized.includes(token));
+    'saldo',
+  ].some((token) => normalized.includes(token));
 }
 
 export function parsePdfDateToIso(rawDate: string): string {
@@ -103,20 +105,26 @@ export function detectBankFromText(text: string): string {
   const normalized = normalizeHeader(text);
   if (normalized.includes('mercadopago')) return 'mercadopago';
   if (normalized.includes('nubank')) return 'nubank';
-  if (normalized.includes('bancointer') || normalized.includes('inter')) return 'inter';
+  if (normalized.includes('bancointer') || normalized.includes('inter'))
+    return 'inter';
   if (normalized.includes('bradesco')) return 'bradesco';
   if (normalized.includes('santander')) return 'santander';
-  if (normalized.includes('c6bank') || normalized.includes('c6')) return 'c6bank';
+  if (normalized.includes('c6bank') || normalized.includes('c6'))
+    return 'c6bank';
   return 'generic';
 }
 
-export function parseByDateAndCurrencyLines(context: PdfParserContext): ExtractedPdfTransaction[] {
+export function parseByDateAndCurrencyLines(
+  context: PdfParserContext,
+): ExtractedPdfTransaction[] {
   const pendingDescription: string[] = [];
   const extracted: ExtractedPdfTransaction[] = [];
 
   for (const line of context.lines) {
     const dateMatch = line.match(DATE_TOKEN_REGEX);
-    const amountMatches = [...line.matchAll(AMOUNT_TOKEN_REGEX)].map(match => match[0]);
+    const amountMatches = [...line.matchAll(AMOUNT_TOKEN_REGEX)].map(
+      (match) => match[0],
+    );
 
     if (!dateMatch || amountMatches.length === 0) {
       const hasDate = DATE_TOKEN_REGEX.test(line);
@@ -148,7 +156,7 @@ export function parseByDateAndCurrencyLines(context: PdfParserContext): Extracte
       rawDate,
       description,
       signedAmount,
-      confidence: description === 'Sem descricao' ? 0.35 : 0.9
+      confidence: description === 'Sem descricao' ? 0.35 : 0.9,
     });
 
     pendingDescription.length = 0;
@@ -157,26 +165,30 @@ export function parseByDateAndCurrencyLines(context: PdfParserContext): Extracte
   return extracted;
 }
 
-export function parseByBlockRegex(context: PdfParserContext): ExtractedPdfTransaction[] {
+export function parseByBlockRegex(
+  context: PdfParserContext,
+): ExtractedPdfTransaction[] {
   const normalizedText = context.fullText.replace(/\s+/g, ' ').trim();
   const extracted: ExtractedPdfTransaction[] = [];
-  const blockRegex = /(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\s+(.+?)\s+((?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?)(?:\s+(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?)?/g;
+  const blockRegex =
+    /(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\s+(.+?)\s+((?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?)(?:\s+(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?)?/g;
   let match: RegExpExecArray | null;
 
   while ((match = blockRegex.exec(normalizedText)) !== null) {
     const signedAmount = context.parseAmount(match[3]);
     if (Math.abs(signedAmount) <= 0) continue;
 
-    const description = (match[2] || '')
-      .replace(/\b\d{9,}\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim() || 'Sem descricao';
+    const description =
+      (match[2] || '')
+        .replace(/\b\d{9,}\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || 'Sem descricao';
 
     extracted.push({
       rawDate: match[1],
       description,
       signedAmount,
-      confidence: description === 'Sem descricao' ? 0.35 : 0.82
+      confidence: description === 'Sem descricao' ? 0.35 : 0.82,
     });
   }
 

@@ -4,14 +4,16 @@ import test from 'node:test';
 import {
   calculateRebalancingPlan,
   deriveInvestmentPositions,
+  type InvestmentBetaIncomeEvent,
+  type InvestmentBetaOperation,
   operationGrossAmount,
   projectInvestmentIncomeEvents,
   quantityHeldOnDate,
-  type InvestmentBetaIncomeEvent,
-  type InvestmentBetaOperation,
 } from '../src/features/investments-beta/investment-beta-domain';
 
-function operation(overrides: Partial<InvestmentBetaOperation>): InvestmentBetaOperation {
+function operation(
+  overrides: Partial<InvestmentBetaOperation>,
+): InvestmentBetaOperation {
   return {
     id: overrides.id || crypto.randomUUID(),
     userId: 'user-1',
@@ -31,7 +33,14 @@ function operation(overrides: Partial<InvestmentBetaOperation>): InvestmentBetaO
 test('derives weighted average price from purchases', () => {
   const positions = deriveInvestmentPositions([
     operation({ quantity: 10, unitPrice: 20, fees: 2 }),
-    operation({ id: 'second', date: '2026-08-02', createdAt: '2026-08-02T10:00:00.000Z', quantity: 10, unitPrice: 30, fees: 2 }),
+    operation({
+      id: 'second',
+      date: '2026-08-02',
+      createdAt: '2026-08-02T10:00:00.000Z',
+      quantity: 10,
+      unitPrice: 30,
+      fees: 2,
+    }),
   ]);
 
   assert.equal(positions.length, 1);
@@ -43,7 +52,14 @@ test('derives weighted average price from purchases', () => {
 test('sale reduces position at existing average cost', () => {
   const positions = deriveInvestmentPositions([
     operation({ quantity: 10, unitPrice: 20 }),
-    operation({ id: 'sell', type: 'sell', date: '2026-08-03', createdAt: '2026-08-03T10:00:00.000Z', quantity: 4, unitPrice: 25 }),
+    operation({
+      id: 'sell',
+      type: 'sell',
+      date: '2026-08-03',
+      createdAt: '2026-08-03T10:00:00.000Z',
+      quantity: 4,
+      unitPrice: 25,
+    }),
   ]);
 
   assert.equal(positions[0].quantity, 6);
@@ -53,14 +69,36 @@ test('sale reduces position at existing average cost', () => {
 });
 
 test('gross amount includes fees on buys and subtracts them on sells', () => {
-  assert.equal(operationGrossAmount({ type: 'buy', quantity: 2, unitPrice: 100, fees: 3 }), 203);
-  assert.equal(operationGrossAmount({ type: 'sell', quantity: 2, unitPrice: 100, fees: 3 }), 197);
+  assert.equal(
+    operationGrossAmount({ type: 'buy', quantity: 2, unitPrice: 100, fees: 3 }),
+    203,
+  );
+  assert.equal(
+    operationGrossAmount({
+      type: 'sell',
+      quantity: 2,
+      unitPrice: 100,
+      fees: 3,
+    }),
+    197,
+  );
 });
 
 test('rebalancing plan directs contribution toward allocation deficits', () => {
   const positions = deriveInvestmentPositions([
-    operation({ assetClass: 'stock', symbol: 'PETR4', quantity: 10, unitPrice: 100 }),
-    operation({ id: 'fii', assetClass: 'fii', symbol: 'MXRF11', quantity: 20, unitPrice: 25 }),
+    operation({
+      assetClass: 'stock',
+      symbol: 'PETR4',
+      quantity: 10,
+      unitPrice: 100,
+    }),
+    operation({
+      id: 'fii',
+      assetClass: 'fii',
+      symbol: 'MXRF11',
+      quantity: 20,
+      unitPrice: 25,
+    }),
   ]);
   const plan = calculateRebalancingPlan(positions, { stock: 50, fii: 50 }, 500);
 
@@ -72,12 +110,29 @@ test('rebalancing plan directs contribution toward allocation deficits', () => {
 test('quantity held on record date ignores trades made after the record date', () => {
   const operations = [
     operation({ quantity: 10, date: '2026-08-01' }),
-    operation({ id: 'sell-before', type: 'sell', quantity: 4, date: '2026-08-05', createdAt: '2026-08-05T10:00:00.000Z' }),
-    operation({ id: 'buy-after', quantity: 20, date: '2026-08-12', createdAt: '2026-08-12T10:00:00.000Z' }),
+    operation({
+      id: 'sell-before',
+      type: 'sell',
+      quantity: 4,
+      date: '2026-08-05',
+      createdAt: '2026-08-05T10:00:00.000Z',
+    }),
+    operation({
+      id: 'buy-after',
+      quantity: 20,
+      date: '2026-08-12',
+      createdAt: '2026-08-12T10:00:00.000Z',
+    }),
   ];
 
-  assert.equal(quantityHeldOnDate(operations, 'stock', 'PETR4', '2026-08-10'), 6);
-  assert.equal(quantityHeldOnDate(operations, 'stock', 'PETR4', '2026-08-15'), 26);
+  assert.equal(
+    quantityHeldOnDate(operations, 'stock', 'PETR4', '2026-08-10'),
+    6,
+  );
+  assert.equal(
+    quantityHeldOnDate(operations, 'stock', 'PETR4', '2026-08-15'),
+    26,
+  );
 });
 
 test('projects provents only when the source provides a record date', () => {

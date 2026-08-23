@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 import test from 'node:test';
 
@@ -21,14 +21,18 @@ test('the application has one declarative React root and no legacy mount observe
 
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
-    if (/\bcreateRoot\s*\(/.test(content)) createRootSites.push(relative(projectRoot, file).replace(/\\/g, '/'));
-    if (/\bMutationObserver\b/.test(content)) observerSites.push(relative(projectRoot, file).replace(/\\/g, '/'));
+    if (/\bcreateRoot\s*\(/.test(content))
+      createRootSites.push(relative(projectRoot, file).replace(/\\/g, '/'));
+    if (/\bMutationObserver\b/.test(content))
+      observerSites.push(relative(projectRoot, file).replace(/\\/g, '/'));
   }
 
   assert.deepEqual(createRootSites, ['src/main.tsx']);
   assert.deepEqual(observerSites, ['src/components/AccessibilityLayer.tsx']);
 
   const index = readFileSync(join(projectRoot, 'index.html'), 'utf8');
-  const moduleScripts = [...index.matchAll(/<script\s+type="module"\s+src="([^"]+)"/g)].map((match) => match[1]);
+  const moduleScripts = [
+    ...index.matchAll(/<script\s+type="module"\s+src="([^"]+)"/g),
+  ].map((match) => match[1]);
   assert.deepEqual(moduleScripts, ['/src/main.tsx']);
 });

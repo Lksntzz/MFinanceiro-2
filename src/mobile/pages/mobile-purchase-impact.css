@@ -19,12 +19,12 @@
   background: rgba(0, 242, 255, 0.045);
 }
 
-.mf-purchase-impact__result[data-tone='warning'] {
+.mf-purchase-impact__result[data-tone="warning"] {
   border-color: rgba(245, 190, 80, 0.26);
   background: rgba(245, 190, 80, 0.05);
 }
 
-.mf-purchase-impact__result[data-tone='danger'] {
+.mf-purchase-impact__result[data-tone="danger"] {
   border-color: rgba(248, 113, 113, 0.26);
   background: rgba(248, 113, 113, 0.05);
 }

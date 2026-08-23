@@ -1,11 +1,11 @@
-import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 import { AlertCircle, Eye, EyeOff, LogOut, Plus, Wallet } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
-import { FinancialAccount, UserSettings } from '../types';
+import type { FinancialAccount, UserSettings } from '../types';
 import AppNavigation from './AppNavigation';
 import ProfileCenter from './ProfileCenter';
 
@@ -36,7 +36,11 @@ export default function InvestmentTool({ user }: { user: User }) {
     setError(null);
     try {
       const [settingsResult, accountsResult] = await Promise.all([
-        supabase.from('mf_user_settings').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase
+          .from('mf_user_settings')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle(),
         supabase
           .from('mf_account_balances')
           .select('*')
@@ -57,12 +61,21 @@ export default function InvestmentTool({ user }: { user: User }) {
       setAccounts(nextAccounts);
       setSettings(
         settingsResult.data
-          ? ({ ...settingsResult.data, current_balance: currentBalance } as UserSettings)
+          ? ({
+              ...settingsResult.data,
+              current_balance: currentBalance,
+            } as UserSettings)
           : null,
       );
     } catch (refreshError: any) {
-      console.error('Falha ao carregar contexto de investimentos:', refreshError);
-      setError(refreshError?.message || 'Não foi possível carregar seus dados de investimentos.');
+      console.error(
+        'Falha ao carregar contexto de investimentos:',
+        refreshError,
+      );
+      setError(
+        refreshError?.message ||
+          'Não foi possível carregar seus dados de investimentos.',
+      );
     } finally {
       setLoading(false);
     }
@@ -82,10 +95,16 @@ export default function InvestmentTool({ user }: { user: User }) {
 
       <header className="mf-topbar">
         <div className="mf-brand">
-          <div className="mf-brand-icon"><Wallet size={20} /></div>
+          <div className="mf-brand-icon">
+            <Wallet size={20} />
+          </div>
           <div>
             <h1>{settings?.workspace_name || 'MF Financeiro'}</h1>
-            <span>{settings?.display_name ? `Olá, ${settings.display_name.split(/\s+/)[0]}` : 'Investimentos'}</span>
+            <span>
+              {settings?.display_name
+                ? `Olá, ${settings.display_name.split(/\s+/)[0]}`
+                : 'Investimentos'}
+            </span>
           </div>
         </div>
 
@@ -98,10 +117,21 @@ export default function InvestmentTool({ user }: { user: User }) {
             onOpenChange={setShowProfile}
             onSaved={refreshFinancialContext}
           />
-          <button type="button" onClick={() => setIsPrivate(!isPrivate)} title="Privacidade">
+          <button
+            type="button"
+            onClick={() => setIsPrivate(!isPrivate)}
+            title="Privacidade"
+          >
             {isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
-          <button type="button" className="primary" onClick={() => navigate('/app')}><Plus size={16} />Lançar</button>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => navigate('/app')}
+          >
+            <Plus size={16} />
+            Lançar
+          </button>
           <button
             type="button"
             onClick={async () => {
@@ -115,14 +145,29 @@ export default function InvestmentTool({ user }: { user: User }) {
         </div>
       </header>
 
-      {error && <div className="mf-error"><AlertCircle size={16} />{error}</div>}
+      {error && (
+        <div className="mf-error">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
 
       <section className="mf-content">
         {loading ? (
           <div className="mf-loading">Carregando investimentos...</div>
         ) : (
-          <Suspense fallback={<div className="mf-loading">Carregando módulo de investimentos...</div>}>
-            <Investments user={user} settings={settings} onRefresh={refreshFinancialContext} />
+          <Suspense
+            fallback={
+              <div className="mf-loading">
+                Carregando módulo de investimentos...
+              </div>
+            }
+          >
+            <Investments
+              user={user}
+              settings={settings}
+              onRefresh={refreshFinancialContext}
+            />
           </Suspense>
         )}
       </section>

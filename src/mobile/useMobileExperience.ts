@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react';
 import { MOBILE_BREAKPOINT_PX } from './routes';
 
 const DESKTOP_OVERRIDE_KEY = 'mf-mobile-desktop-override';
-const DIRECT_MOBILE_PATHS = new Set(['/quick', '/scan', '/voice', '/recurrences']);
+const DIRECT_MOBILE_PATHS = new Set([
+  '/quick',
+  '/scan',
+  '/voice',
+  '/recurrences',
+]);
 
 function shouldForceDesktop() {
   const params = new URLSearchParams(window.location.search);
@@ -23,11 +28,14 @@ export function isCurrentMobileExperience() {
   if (DIRECT_MOBILE_PATHS.has(path)) return true;
   if (shouldForceDesktop()) return false;
 
-  const narrowViewport = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
+  const narrowViewport = window.matchMedia(
+    `(max-width: ${MOBILE_BREAKPOINT_PX}px)`,
+  ).matches;
   if (narrowViewport) return true;
 
   const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
-  const compactPhysicalViewport = Math.min(window.innerWidth, window.innerHeight) <= MOBILE_BREAKPOINT_PX;
+  const compactPhysicalViewport =
+    Math.min(window.innerWidth, window.innerHeight) <= MOBILE_BREAKPOINT_PX;
   return coarsePointer && compactPhysicalViewport;
 }
 

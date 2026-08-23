@@ -38,10 +38,14 @@ export type StatementImportEntry = {
 };
 
 function recordOf(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
-export function normalizeDashboardTransaction(row: unknown): Transaction | null {
+export function normalizeDashboardTransaction(
+  row: unknown,
+): Transaction | null {
   const item = recordOf(row);
   const rawDate = item.date || item.data || item.created_at;
   if (!rawDate) return null;
@@ -49,7 +53,10 @@ export function normalizeDashboardTransaction(row: unknown): Transaction | null 
   const amount = Number(item.amount ?? item.valor ?? 0);
   const rawType = String(item.type || item.tipo || '').toLowerCase();
   const type: 'income' | 'expense' =
-    rawType === 'income' || rawType === 'entrada' || rawType === 'receita' || amount > 0
+    rawType === 'income' ||
+    rawType === 'entrada' ||
+    rawType === 'receita' ||
+    amount > 0
       ? 'income'
       : 'expense';
 
@@ -58,7 +65,9 @@ export function normalizeDashboardTransaction(row: unknown): Transaction | null 
     amount,
     type,
     date: String(rawDate),
-    description: String(item.description || item.descricao || 'Lançamento importado'),
+    description: String(
+      item.description || item.descricao || 'Lançamento importado',
+    ),
     category: String(item.category || item.categoria || 'Geral'),
     status: (item.status || 'paid') as Transaction['status'],
   } as unknown as Transaction;
@@ -67,20 +76,25 @@ export function normalizeDashboardTransaction(row: unknown): Transaction | null 
 export function normalizeDashboardLedgerPage(raw: unknown): LedgerPage {
   const page = recordOf(raw);
   const items = Array.isArray(page.items)
-    ? page.items.map(normalizeDashboardTransaction).filter((item): item is Transaction => Boolean(item))
+    ? page.items
+        .map(normalizeDashboardTransaction)
+        .filter((item): item is Transaction => Boolean(item))
     : [];
 
   return {
     items,
     has_more: page.has_more === true,
     total_count: Number(page.total_count || items.length),
-    next_cursor: page.next_cursor && typeof page.next_cursor === 'object'
-      ? page.next_cursor as LedgerCursor
-      : null,
+    next_cursor:
+      page.next_cursor && typeof page.next_cursor === 'object'
+        ? (page.next_cursor as LedgerCursor)
+        : null,
   };
 }
 
-export function normalizeDashboardAccounts(rows: unknown[]): FinancialAccount[] {
+export function normalizeDashboardAccounts(
+  rows: unknown[],
+): FinancialAccount[] {
   return rows.map((row) => {
     const item = recordOf(row);
     return {
@@ -92,7 +106,9 @@ export function normalizeDashboardAccounts(rows: unknown[]): FinancialAccount[] 
   });
 }
 
-export function normalizeDashboardInstallments(rows: unknown[]): CardInstallment[] {
+export function normalizeDashboardInstallments(
+  rows: unknown[],
+): CardInstallment[] {
   return rows.map((row) => {
     const item = recordOf(row);
     return {
@@ -100,26 +116,39 @@ export function normalizeDashboardInstallments(rows: unknown[]): CardInstallment
       description: String(item.description || item.descricao || 'Parcelamento'),
       total_amount: Number(item.total_amount ?? item.valor_total ?? 0),
       monthly_amount: Number(item.monthly_amount ?? item.valor_mensal ?? 0),
-      current_installment: Number(item.current_installment ?? item.parcela_atual ?? 1),
-      total_installments: Number(item.total_installments ?? item.total_parcelas ?? 1),
+      current_installment: Number(
+        item.current_installment ?? item.parcela_atual ?? 1,
+      ),
+      total_installments: Number(
+        item.total_installments ?? item.total_parcelas ?? 1,
+      ),
       due_day: Number(item.due_day ?? 1),
     } as unknown as CardInstallment;
   });
 }
 
-export function calculateDashboardBalance(accounts: FinancialAccount[], fallbackBalance = 0): number {
+export function calculateDashboardBalance(
+  accounts: FinancialAccount[],
+  fallbackBalance = 0,
+): number {
   if (!accounts.length) return Number(fallbackBalance || 0);
-  return accounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
+  return accounts.reduce(
+    (sum, account) => sum + Number(account.current_balance || 0),
+    0,
+  );
 }
 
-export function buildStatementImportEntries(imported: ImportedTransaction[]): StatementImportEntry[] {
+export function buildStatementImportEntries(
+  imported: ImportedTransaction[],
+): StatementImportEntry[] {
   return imported.map((item) => {
     const numericAmount = Number(item.amount);
     return {
-      selected: item.status === 'ready'
-        && Number.isFinite(numericAmount)
-        && numericAmount > 0
-        && item.description !== 'Sem descricao',
+      selected:
+        item.status === 'ready' &&
+        Number.isFinite(numericAmount) &&
+        numericAmount > 0 &&
+        item.description !== 'Sem descricao',
       status: item.status,
       date: item.date || '',
       description: item.description || '',
@@ -144,11 +173,16 @@ export function buildStatementImportCommand(
 ) {
   const entries = buildStatementImportEntries(imported);
   if (!entries.some((entry) => entry.selected)) {
-    throw new Error('Nenhum lançamento válido foi selecionado para importação.');
+    throw new Error(
+      'Nenhum lançamento válido foi selecionado para importação.',
+    );
   }
 
-  const balanceMode: StatementBalanceMode = options.balanceMode
-    || (typeof newBalance === 'number' && Number.isFinite(newBalance) ? 'statement' : 'keep');
+  const balanceMode: StatementBalanceMode =
+    options.balanceMode ||
+    (typeof newBalance === 'number' && Number.isFinite(newBalance)
+      ? 'statement'
+      : 'keep');
 
   return {
     balanceMode,
@@ -167,7 +201,9 @@ export function buildStatementImportCommand(
   };
 }
 
-export function normalizeStatementImportResult(raw: unknown): StatementImportRpcResult {
+export function normalizeStatementImportResult(
+  raw: unknown,
+): StatementImportRpcResult {
   if (!raw || typeof raw !== 'object') {
     throw new Error('O banco não retornou o resumo da importação.');
   }

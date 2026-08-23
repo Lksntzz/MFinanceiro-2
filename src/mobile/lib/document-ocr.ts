@@ -22,12 +22,18 @@ export type DocumentOcrResult = {
   metadata: DocumentOcrMetadata;
 };
 
-const ALLOWED_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 const MAX_OCR_FILE_SIZE = 8 * 1024 * 1024;
 
 // OCR is available by default because the backend function is deployed and protected by JWT/RLS.
 // Set VITE_DOCUMENT_OCR_ENABLED=false to disable the feature in a specific build/environment.
-export const DOCUMENT_OCR_ENABLED = import.meta.env.VITE_DOCUMENT_OCR_ENABLED !== 'false';
+export const DOCUMENT_OCR_ENABLED =
+  import.meta.env.VITE_DOCUMENT_OCR_ENABLED !== 'false';
 
 function safeFileName(name: string) {
   const cleaned = name
@@ -53,8 +59,12 @@ export async function analyzeDocumentWithOcr(options: {
   if (!DOCUMENT_OCR_ENABLED) return null;
 
   const { file, userId, accountId, captureSource } = options;
-  if (!ALLOWED_MIME_TYPES.has(file.type)) throw new Error('OCR disponível apenas para PDF, JPEG, PNG ou WebP.');
-  if (file.size < 1 || file.size > MAX_OCR_FILE_SIZE) throw new Error('O OCR visual aceita documentos de até 8 MB. Você ainda pode revisar este arquivo manualmente no MF Scan.');
+  if (!ALLOWED_MIME_TYPES.has(file.type))
+    throw new Error('OCR disponível apenas para PDF, JPEG, PNG ou WebP.');
+  if (file.size < 1 || file.size > MAX_OCR_FILE_SIZE)
+    throw new Error(
+      'O OCR visual aceita documentos de até 8 MB. Você ainda pode revisar este arquivo manualmente no MF Scan.',
+    );
 
   const objectPath = `${userId}/mobile-document-ocr/${crypto.randomUUID()}-${safeFileName(file.name || 'documento')}`;
   let uploaded = false;
@@ -86,19 +96,29 @@ export async function analyzeDocumentWithOcr(options: {
       })
       .select('id')
       .single();
-    if (insertError || !extraction?.id) throw insertError || new Error('Não foi possível preparar o documento para OCR.');
+    if (insertError || !extraction?.id)
+      throw (
+        insertError ||
+        new Error('Não foi possível preparar o documento para OCR.')
+      );
     extractionId = String(extraction.id);
 
-    const { data, error: invokeError } = await supabase.functions.invoke('document-ocr', {
-      body: { extractionId },
-    });
+    const { data, error: invokeError } = await supabase.functions.invoke(
+      'document-ocr',
+      {
+        body: { extractionId },
+      },
+    );
     if (invokeError) throw invokeError;
     if (data?.error) throw new Error(String(data.error));
 
     const metadata = normalizedMetadata(data?.metadata);
     return {
       extractionId,
-      documentConfidence: Math.max(0, Math.min(1, Number(data?.documentConfidence || 0))),
+      documentConfidence: Math.max(
+        0,
+        Math.min(1, Number(data?.documentConfidence || 0)),
+      ),
       metadata,
     };
   } catch (error) {
@@ -107,7 +127,10 @@ export async function analyzeDocumentWithOcr(options: {
         .from('mf_document_extractions')
         .update({
           status: 'failed',
-          error_message: (error instanceof Error ? error.message : 'Falha no OCR documental.').slice(0, 1000),
+          error_message: (error instanceof Error
+            ? error.message
+            : 'Falha no OCR documental.'
+          ).slice(0, 1000),
           completed_at: new Date().toISOString(),
         })
         .eq('id', extractionId)
@@ -119,7 +142,10 @@ export async function analyzeDocumentWithOcr(options: {
   }
 }
 
-export async function completeDocumentOcrExtraction(extractionId: string, userId: string) {
+export async function completeDocumentOcrExtraction(
+  extractionId: string,
+  userId: string,
+) {
   if (!extractionId) return;
   const { error } = await supabase
     .from('mf_document_extractions')

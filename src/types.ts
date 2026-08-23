@@ -122,7 +122,13 @@ export interface ImportedTransaction {
   review_status?: 'pending' | 'accepted' | 'edited' | 'rejected';
 }
 
-export type FinancialAccountType = 'checking' | 'savings' | 'cash' | 'investment' | 'credit' | 'other';
+export type FinancialAccountType =
+  | 'checking'
+  | 'savings'
+  | 'cash'
+  | 'investment'
+  | 'credit'
+  | 'other';
 
 export interface FinancialAccount {
   id: string;
@@ -183,7 +189,14 @@ export interface StatementImportBatch {
   id: string;
   user_id: string;
   account_id: string;
-  status: 'uploaded' | 'parsed' | 'reviewing' | 'committing' | 'completed' | 'failed' | 'reverted';
+  status:
+    | 'uploaded'
+    | 'parsed'
+    | 'reviewing'
+    | 'committing'
+    | 'completed'
+    | 'failed'
+    | 'reverted';
   source_format: string;
   file_name?: string | null;
   parser_name?: string | null;
@@ -213,7 +226,14 @@ export interface StatementImportRow {
   description?: string | null;
   category_name?: string | null;
   signed_amount?: number | null;
-  status: 'parsed' | 'imported' | 'duplicate' | 'rejected' | 'ignored' | 'reconciled' | 'reverted';
+  status:
+    | 'parsed'
+    | 'imported'
+    | 'duplicate'
+    | 'rejected'
+    | 'ignored'
+    | 'reconciled'
+    | 'reverted';
   error_message?: string | null;
   ledger_entry_id?: string | null;
 }
@@ -248,7 +268,13 @@ export interface DocumentExtraction {
   source_file_size: number;
   source_file_hash?: string | null;
   document_type: 'statement' | 'payroll' | 'other';
-  status: 'uploaded' | 'processing' | 'reviewing' | 'completed' | 'failed' | 'cancelled';
+  status:
+    | 'uploaded'
+    | 'processing'
+    | 'reviewing'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
   provider?: string | null;
   model?: string | null;
   document_confidence?: number | null;
@@ -285,8 +311,22 @@ export interface BankConnection {
   institution_id?: string | null;
   institution_name: string;
   display_name?: string | null;
-  status: 'pending' | 'authorizing' | 'active' | 'expiring' | 'expired' | 'revocation_pending' | 'revoked' | 'error';
-  sync_status: 'idle' | 'queued' | 'syncing' | 'completed' | 'partial' | 'error';
+  status:
+    | 'pending'
+    | 'authorizing'
+    | 'active'
+    | 'expiring'
+    | 'expired'
+    | 'revocation_pending'
+    | 'revoked'
+    | 'error';
+  sync_status:
+    | 'idle'
+    | 'queued'
+    | 'syncing'
+    | 'completed'
+    | 'partial'
+    | 'error';
   scopes: string[];
   consent_expires_at?: string | null;
   last_synced_at?: string | null;
@@ -299,7 +339,13 @@ export interface BankConnection {
 export interface BankSyncRun {
   id: string;
   connection_id: string;
-  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  status:
+    | 'queued'
+    | 'running'
+    | 'completed'
+    | 'partial'
+    | 'failed'
+    | 'cancelled';
   trigger_source: 'initial' | 'manual' | 'scheduled' | 'webhook' | 'retry';
   received_count: number;
   imported_count: number;
@@ -337,7 +383,9 @@ export interface FinanceSummary {
   };
   topCategories: { name: string; amount: number; percentage: number }[];
   priorities: PriorityItem[];
-  processedFixedBills?: (FixedBill & { reconciledStatus: 'paid_identified' | 'pending' | 'overdue' | 'off-cycle' })[];
+  processedFixedBills?: (FixedBill & {
+    reconciledStatus: 'paid_identified' | 'pending' | 'overdue' | 'off-cycle';
+  })[];
 }
 
 export interface Investment {

@@ -24,7 +24,11 @@
   padding: 17px;
   border-color: rgba(0, 242, 255, 0.14);
   border-radius: 21px;
-  background: linear-gradient(145deg, rgba(0, 242, 255, 0.06), rgba(255, 255, 255, 0.025));
+  background: linear-gradient(
+    145deg,
+    rgba(0, 242, 255, 0.06),
+    rgba(255, 255, 255, 0.025)
+  );
 }
 
 .mf-mobile-inbox-upload__icon {
@@ -180,17 +184,17 @@
   font-weight: 800;
 }
 
-.mf-mobile-inbox-status[data-status='reviewing'] {
+.mf-mobile-inbox-status[data-status="reviewing"] {
   background: rgba(0, 242, 255, 0.07);
   color: #87f9ff;
 }
 
-.mf-mobile-inbox-status[data-status='failed'] {
+.mf-mobile-inbox-status[data-status="failed"] {
   background: rgba(248, 113, 113, 0.08);
   color: #fca5a5;
 }
 
-.mf-mobile-inbox-status[data-status='processing'] {
+.mf-mobile-inbox-status[data-status="processing"] {
   color: #ffd080;
 }
 
@@ -266,13 +270,13 @@
   font-weight: 900;
 }
 
-.mf-mobile-inbox-document > span[data-confidence='média'],
-.mf-mobile-inbox-document > span[data-confidence='media'] {
+.mf-mobile-inbox-document > span[data-confidence="média"],
+.mf-mobile-inbox-document > span[data-confidence="media"] {
   background: rgba(255, 196, 92, 0.07);
   color: #ffd080;
 }
 
-.mf-mobile-inbox-document > span[data-confidence='baixa'] {
+.mf-mobile-inbox-document > span[data-confidence="baixa"] {
   background: rgba(248, 113, 113, 0.08);
   color: #fca5a5;
 }
@@ -305,7 +309,7 @@
   color: #00f2ff;
 }
 
-.mf-mobile-inbox-state-card[data-tone='danger'] > svg {
+.mf-mobile-inbox-state-card[data-tone="danger"] > svg {
   color: #fca5a5;
 }
 
@@ -372,7 +376,7 @@
   font-size: 14px;
 }
 
-.mf-mobile-inbox-review-summary [data-warning='true'] strong {
+.mf-mobile-inbox-review-summary [data-warning="true"] strong {
   color: #ffd080;
 }
 
@@ -388,7 +392,7 @@
   border-radius: 19px;
 }
 
-.mf-mobile-inbox-item[data-included='false'] {
+.mf-mobile-inbox-item[data-included="false"] {
   opacity: 0.48;
 }
 
@@ -433,7 +437,9 @@
   font-weight: 900;
 }
 
-.mf-mobile-inbox-item[data-included='false'] .mf-mobile-inbox-item__head button {
+.mf-mobile-inbox-item[data-included="false"]
+  .mf-mobile-inbox-item__head
+  button {
   border-color: rgba(248, 113, 113, 0.12);
   background: rgba(248, 113, 113, 0.05);
   color: #fca5a5;

@@ -1,4 +1,3 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -12,6 +11,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { supabase } from '../../lib/supabase';
@@ -73,14 +73,21 @@ type MobileInboxProps = {
   onImported: () => Promise<void> | void;
 };
 
-const ALLOWED_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
-const EXTRACTION_SELECT = 'id,user_id,account_id,source_file_path,source_file_name,source_mime_type,source_file_size,source_file_hash,document_type,status,provider,model,document_confidence,result_metadata,error_message,created_at,updated_at';
+const EXTRACTION_SELECT =
+  'id,user_id,account_id,source_file_path,source_file_name,source_mime_type,source_file_size,source_file_hash,document_type,status,provider,model,document_confidence,result_metadata,error_message,created_at,updated_at';
 
 function parseMoneyInput(value: string) {
   const clean = value.trim().replace(/\s/g, '');
   if (!clean) return Number.NaN;
-  if (clean.includes(',')) return Number(clean.replace(/\./g, '').replace(',', '.'));
+  if (clean.includes(','))
+    return Number(clean.replace(/\./g, '').replace(',', '.'));
   return Number(clean);
 }
 
@@ -113,20 +120,39 @@ function safeFileName(name: string) {
   return cleaned.slice(0, 140) || 'extrato';
 }
 
-function metadataText(metadata: Record<string, unknown> | null | undefined, key: string) {
+function metadataText(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+) {
   const value = metadata?.[key];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-function metadataWarnings(metadata: Record<string, unknown> | null | undefined) {
+function metadataWarnings(
+  metadata: Record<string, unknown> | null | undefined,
+) {
   const warnings = metadata?.warnings;
-  return Array.isArray(warnings) ? warnings.filter((item): item is string => typeof item === 'string').slice(0, 5) : [];
+  return Array.isArray(warnings)
+    ? warnings
+        .filter((item): item is string => typeof item === 'string')
+        .slice(0, 5)
+    : [];
 }
 
 function initialCategoryId(item: InboxItem, categories: TransactionCategory[]) {
-  if (item.category_id && categories.some((category) => category.id === item.category_id)) return item.category_id;
-  const key = String(item.category_name || '').trim().toLocaleLowerCase('pt-BR');
-  return categories.find((category) => category.name.trim().toLocaleLowerCase('pt-BR') === key)?.id || '';
+  if (
+    item.category_id &&
+    categories.some((category) => category.id === item.category_id)
+  )
+    return item.category_id;
+  const key = String(item.category_name || '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
+  return (
+    categories.find(
+      (category) => category.name.trim().toLocaleLowerCase('pt-BR') === key,
+    )?.id || ''
+  );
 }
 
 function itemAmount(item: InboxItem) {
@@ -134,13 +160,23 @@ function itemAmount(item: InboxItem) {
   return value > 0 ? String(value).replace('.', ',') : '';
 }
 
-export default function MobileInbox({ userId, accounts, categories, onImported }: MobileInboxProps) {
+export default function MobileInbox({
+  userId,
+  accounts,
+  categories,
+  onImported,
+}: MobileInboxProps) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<InboxExtraction[]>([]);
   const [selected, setSelected] = useState<InboxExtraction | null>(null);
   const [items, setItems] = useState<EditableItem[]>([]);
-  const [uploadAccountId, setUploadAccountId] = useState(() => accounts.find((account) => account.is_default)?.id || accounts[0]?.id || '');
+  const [uploadAccountId, setUploadAccountId] = useState(
+    () =>
+      accounts.find((account) => account.is_default)?.id ||
+      accounts[0]?.id ||
+      '',
+  );
   const [reviewAccountId, setReviewAccountId] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -149,11 +185,23 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
   const [notice, setNotice] = useState<string | null>(null);
 
   const expenseCategories = useMemo(
-    () => categories.filter((category) => category.is_active && (category.category_type === 'expense' || category.category_type === 'both')),
+    () =>
+      categories.filter(
+        (category) =>
+          category.is_active &&
+          (category.category_type === 'expense' ||
+            category.category_type === 'both'),
+      ),
     [categories],
   );
   const incomeCategories = useMemo(
-    () => categories.filter((category) => category.is_active && (category.category_type === 'income' || category.category_type === 'both')),
+    () =>
+      categories.filter(
+        (category) =>
+          category.is_active &&
+          (category.category_type === 'income' ||
+            category.category_type === 'both'),
+      ),
     [categories],
   );
 
@@ -177,7 +225,9 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     }
   }, [userId]);
 
-  useEffect(() => { void refreshQueue(); }, [refreshQueue]);
+  useEffect(() => {
+    void refreshQueue();
+  }, [refreshQueue]);
 
   async function processExtraction(extraction: InboxExtraction, force = false) {
     if (busy && !force) return;
@@ -185,9 +235,12 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     setError(null);
     setNotice(null);
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('statement-ocr', {
-        body: { extractionId: extraction.id },
-      });
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        'statement-ocr',
+        {
+          body: { extractionId: extraction.id },
+        },
+      );
       if (invokeError) throw invokeError;
       if (data?.error) throw new Error(String(data.error));
 
@@ -197,13 +250,18 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
         .eq('id', extraction.id)
         .eq('user_id', userId)
         .single();
-      if (refreshError || !refreshedExtraction) throw refreshError || new Error('O OCR terminou, mas a revisão não pôde ser carregada.');
+      if (refreshError || !refreshedExtraction)
+        throw (
+          refreshError ||
+          new Error('O OCR terminou, mas a revisão não pôde ser carregada.')
+        );
 
       setNotice('OCR concluído. Revise os lançamentos antes de importar.');
       await refreshQueue();
       await openExtraction(refreshedExtraction as InboxExtraction);
     } catch (processError: any) {
-      const message = processError?.message || 'Não foi possível analisar o extrato.';
+      const message =
+        processError?.message || 'Não foi possível analisar o extrato.';
       await refreshQueue();
       setError(message);
     } finally {
@@ -254,7 +312,10 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
         })
         .select(EXTRACTION_SELECT)
         .single();
-      if (insertError || !extraction) throw insertError || new Error('Não foi possível registrar o documento.');
+      if (insertError || !extraction)
+        throw (
+          insertError || new Error('Não foi possível registrar o documento.')
+        );
 
       setNotice('Extrato enviado. Iniciando análise segura.');
       await refreshQueue();
@@ -267,7 +328,10 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
           .eq('user_id', userId)
           .eq('source_file_path', objectPath)
           .maybeSingle();
-        if (!registered) await supabase.storage.from('mf-import-documents').remove([objectPath]);
+        if (!registered)
+          await supabase.storage
+            .from('mf-import-documents')
+            .remove([objectPath]);
       }
       setError(uploadError?.message || 'Não foi possível enviar o extrato.');
     } finally {
@@ -278,7 +342,12 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
 
   async function openExtraction(extraction: InboxExtraction) {
     setSelected(extraction);
-    setReviewAccountId(extraction.account_id || accounts.find((account) => account.is_default)?.id || accounts[0]?.id || '');
+    setReviewAccountId(
+      extraction.account_id ||
+        accounts.find((account) => account.is_default)?.id ||
+        accounts[0]?.id ||
+        '',
+    );
     setItems([]);
     setLoadingItems(extraction.status === 'reviewing');
     setError(null);
@@ -287,54 +356,72 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     try {
       const { data, error: itemError } = await supabase
         .from('mf_document_extraction_items')
-        .select('id,extraction_id,user_id,line_number,transaction_date,description,signed_amount,transaction_type,source_name,external_id,running_balance,category_id,category_name,overall_confidence,field_confidence,review_status')
+        .select(
+          'id,extraction_id,user_id,line_number,transaction_date,description,signed_amount,transaction_type,source_name,external_id,running_balance,category_id,category_name,overall_confidence,field_confidence,review_status',
+        )
         .eq('user_id', userId)
         .eq('extraction_id', extraction.id)
         .order('line_number');
       if (itemError) throw itemError;
 
-      setItems(((data || []) as InboxItem[]).map((item) => ({
-        ...item,
-        category_id: initialCategoryId(item, categories),
-        amountText: itemAmount(item),
-        dirty: false,
-      })));
+      setItems(
+        ((data || []) as InboxItem[]).map((item) => ({
+          ...item,
+          category_id: initialCategoryId(item, categories),
+          amountText: itemAmount(item),
+          dirty: false,
+        })),
+      );
     } catch (itemError: any) {
-      setError(itemError?.message || 'Não foi possível carregar os itens extraídos.');
+      setError(
+        itemError?.message || 'Não foi possível carregar os itens extraídos.',
+      );
     } finally {
       setLoadingItems(false);
     }
   }
 
   function patchItem(id: string, patch: Partial<EditableItem>) {
-    setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch, dirty: true } : item));
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, ...patch, dirty: true } : item,
+      ),
+    );
   }
 
   function toggleIncluded(item: EditableItem) {
-    patchItem(item.id, { review_status: item.review_status === 'rejected' ? 'pending' : 'rejected' });
+    patchItem(item.id, {
+      review_status: item.review_status === 'rejected' ? 'pending' : 'rejected',
+    });
   }
 
   function compatibleCategories(item: EditableItem) {
-    return item.transaction_type === 'income' ? incomeCategories : expenseCategories;
+    return item.transaction_type === 'income'
+      ? incomeCategories
+      : expenseCategories;
   }
 
   function selectedCategory(item: EditableItem) {
-    return compatibleCategories(item).find((category) => category.id === item.category_id);
+    return compatibleCategories(item).find(
+      (category) => category.id === item.category_id,
+    );
   }
 
   const validation = useMemo(() => {
     const included = items.filter((item) => item.review_status !== 'rejected');
     const invalid = included.filter((item) => {
       const amount = parseMoneyInput(item.amountText);
-      return !item.transaction_date
-        || !item.description?.trim()
-        || !item.transaction_type
-        || !Number.isFinite(amount)
-        || amount <= 0
-        || !selectedCategory(item);
+      return (
+        !item.transaction_date ||
+        !item.description?.trim() ||
+        !item.transaction_type ||
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        !selectedCategory(item)
+      );
     });
     return { included, invalid };
-  }, [items, expenseCategories, incomeCategories]);
+  }, [items, selectedCategory]);
 
   async function persistReview() {
     if (!selected) return;
@@ -350,9 +437,12 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
         line_number: item.line_number,
         transaction_date: item.transaction_date || null,
         description: item.description?.trim() || null,
-        signed_amount: Number.isFinite(amount) && amount > 0 && item.transaction_type
-          ? (item.transaction_type === 'expense' ? -Math.abs(amount) : Math.abs(amount))
-          : null,
+        signed_amount:
+          Number.isFinite(amount) && amount > 0 && item.transaction_type
+            ? item.transaction_type === 'expense'
+              ? -Math.abs(amount)
+              : Math.abs(amount)
+            : null,
         transaction_type: item.transaction_type || null,
         source_name: item.source_name || null,
         external_id: item.external_id || null,
@@ -361,7 +451,13 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
         category_name: category?.name || item.category_name || null,
         overall_confidence: Number(item.overall_confidence || 0),
         field_confidence: item.field_confidence || {},
-        review_status: rejected ? 'rejected' : item.dirty ? 'edited' : item.review_status === 'accepted' ? 'accepted' : 'pending',
+        review_status: rejected
+          ? 'rejected'
+          : item.dirty
+            ? 'edited'
+            : item.review_status === 'accepted'
+              ? 'accepted'
+              : 'pending',
         reviewed_at: reviewedAt,
       };
     });
@@ -388,11 +484,18 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     setNotice(null);
     try {
       await persistReview();
-      setItems((current) => current.map((item) => ({
-        ...item,
-        review_status: item.review_status === 'rejected' ? 'rejected' : item.dirty ? 'edited' : item.review_status,
-        dirty: false,
-      })));
+      setItems((current) =>
+        current.map((item) => ({
+          ...item,
+          review_status:
+            item.review_status === 'rejected'
+              ? 'rejected'
+              : item.dirty
+                ? 'edited'
+                : item.review_status,
+          dirty: false,
+        })),
+      );
       setNotice('Revisão salva. Nada foi importado ainda.');
     } catch (saveError: any) {
       setError(saveError?.message || 'Não foi possível salvar a revisão.');
@@ -415,7 +518,9 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
       return;
     }
     if (validation.invalid.length) {
-      setError(`Corrija ou ignore ${validation.invalid.length} lançamento(s) incompleto(s) antes de importar.`);
+      setError(
+        `Corrija ou ignore ${validation.invalid.length} lançamento(s) incompleto(s) antes de importar.`,
+      );
       return;
     }
 
@@ -432,35 +537,44 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
           category: category.name,
           amount: Math.abs(parseMoneyInput(item.amountText)),
           type: item.transaction_type,
-          source: item.source_name || metadataText(selected.result_metadata, 'institution_name') || 'OCR/IA',
+          source:
+            item.source_name ||
+            metadataText(selected.result_metadata, 'institution_name') ||
+            'OCR/IA',
           external_id: item.external_id || null,
         };
       });
 
-      const { data: importResult, error: importError } = await supabase.rpc('mf_commit_statement_import_v3', {
-        p_entries: entries,
-        p_account_id: reviewAccountId,
-        p_balance_mode: 'keep',
-        p_statement_balance: null,
-        p_file_name: selected.source_file_name,
-        p_file_type: selected.source_mime_type,
-        p_file_size: selected.source_file_size,
-        p_file_hash: selected.source_file_hash || null,
-        p_parser_name: `statement-ocr:${selected.model || 'reviewed'}`,
-        p_raw_metadata: {
-          ...(selected.result_metadata || {}),
-          document_extraction_id: selected.id,
-          document_confidence: selected.document_confidence ?? null,
-          reviewed_from: 'MF Inbox Mobile',
+      const { data: importResult, error: importError } = await supabase.rpc(
+        'mf_commit_statement_import_v3',
+        {
+          p_entries: entries,
+          p_account_id: reviewAccountId,
+          p_balance_mode: 'keep',
+          p_statement_balance: null,
+          p_file_name: selected.source_file_name,
+          p_file_type: selected.source_mime_type,
+          p_file_size: selected.source_file_size,
+          p_file_hash: selected.source_file_hash || null,
+          p_parser_name: `statement-ocr:${selected.model || 'reviewed'}`,
+          p_raw_metadata: {
+            ...(selected.result_metadata || {}),
+            document_extraction_id: selected.id,
+            document_confidence: selected.document_confidence ?? null,
+            reviewed_from: 'MF Inbox Mobile',
+          },
         },
-      });
+      );
       if (importError) throw importError;
 
       const acceptedIds = validation.included.map((item) => item.id);
       if (acceptedIds.length) {
         const { error: acceptedError } = await supabase
           .from('mf_document_extraction_items')
-          .update({ review_status: 'accepted', reviewed_at: new Date().toISOString() })
+          .update({
+            review_status: 'accepted',
+            reviewed_at: new Date().toISOString(),
+          })
           .eq('user_id', userId)
           .eq('extraction_id', selected.id)
           .in('id', acceptedIds);
@@ -488,17 +602,25 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
       await onImported();
       setSelected(null);
       setItems([]);
-      setNotice(`${Number(importResult?.inserted_count || 0)} lançamento(s) importado(s); ${Number(importResult?.duplicate_count || 0)} duplicado(s) ignorado(s).`);
+      setNotice(
+        `${Number(importResult?.inserted_count || 0)} lançamento(s) importado(s); ${Number(importResult?.duplicate_count || 0)} duplicado(s) ignorado(s).`,
+      );
       await refreshQueue();
     } catch (importError: any) {
-      setError(importError?.message || 'Não foi possível importar os lançamentos revisados.');
+      setError(
+        importError?.message ||
+          'Não foi possível importar os lançamentos revisados.',
+      );
     } finally {
       setBusy(null);
     }
   }
 
   if (selected) {
-    const institution = metadataText(selected.result_metadata, 'institution_name');
+    const institution = metadataText(
+      selected.result_metadata,
+      'institution_name',
+    );
     const periodStart = metadataText(selected.result_metadata, 'period_start');
     const periodEnd = metadataText(selected.result_metadata, 'period_end');
     const warnings = metadataWarnings(selected.result_metadata);
@@ -506,49 +628,151 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
     return (
       <div className="mf-mobile-focus-page">
         <header className="mf-mobile-focus-header">
-          <button type="button" className="mf-mobile-icon-button" onClick={() => { setSelected(null); setItems([]); setError(null); }} aria-label="Voltar para o Inbox"><ArrowLeft size={21} /></button>
-          <div><span className="mf-mobile-eyebrow">MF Inbox</span><h1>Revisar extrato</h1></div>
-          <span className="mf-mobile-icon-button mf-mobile-inbox__header-icon" aria-hidden="true"><Inbox size={19} /></span>
+          <button
+            type="button"
+            className="mf-mobile-icon-button"
+            onClick={() => {
+              setSelected(null);
+              setItems([]);
+              setError(null);
+            }}
+            aria-label="Voltar para o Inbox"
+          >
+            <ArrowLeft size={21} />
+          </button>
+          <div>
+            <span className="mf-mobile-eyebrow">MF Inbox</span>
+            <h1>Revisar extrato</h1>
+          </div>
+          <span
+            className="mf-mobile-icon-button mf-mobile-inbox__header-icon"
+            aria-hidden="true"
+          >
+            <Inbox size={19} />
+          </span>
         </header>
 
         <main className="mf-mobile-inbox-review">
           <section className="mf-mobile-inbox-document">
             <FileText size={22} />
-            <div><strong>{selected.source_file_name}</strong><small>{formatFileSize(selected.source_file_size)}{institution ? ` · ${institution}` : ''}</small></div>
-            <span data-confidence={confidenceText(selected.document_confidence).toLowerCase()}>{confidenceText(selected.document_confidence)}</span>
+            <div>
+              <strong>{selected.source_file_name}</strong>
+              <small>
+                {formatFileSize(selected.source_file_size)}
+                {institution ? ` · ${institution}` : ''}
+              </small>
+            </div>
+            <span
+              data-confidence={confidenceText(
+                selected.document_confidence,
+              ).toLowerCase()}
+            >
+              {confidenceText(selected.document_confidence)}
+            </span>
           </section>
 
-          {(periodStart || periodEnd) ? <p className="mf-mobile-inbox-period">Período identificado: {periodStart || '—'} até {periodEnd || '—'}</p> : null}
-          {warnings.map((warning, index) => <div key={`${warning}-${index}`} className="mf-mobile-feedback warning"><AlertTriangle size={15} />{warning}</div>)}
+          {periodStart || periodEnd ? (
+            <p className="mf-mobile-inbox-period">
+              Período identificado: {periodStart || '—'} até {periodEnd || '—'}
+            </p>
+          ) : null}
+          {warnings.map((warning, index) => (
+            <div
+              key={`${warning}-${index}`}
+              className="mf-mobile-feedback warning"
+            >
+              <AlertTriangle size={15} />
+              {warning}
+            </div>
+          ))}
 
           {selected.status === 'failed' ? (
             <section className="mf-mobile-inbox-state-card" data-tone="danger">
-              <AlertTriangle size={25} /><strong>A análise falhou</strong><p>{selected.error_message || 'O OCR não conseguiu processar este documento.'}</p>
-              <button type="button" onClick={() => void processExtraction(selected)} disabled={busy === `ocr-${selected.id}`}><RefreshCw size={16} />Tentar OCR novamente</button>
+              <AlertTriangle size={25} />
+              <strong>A análise falhou</strong>
+              <p>
+                {selected.error_message ||
+                  'O OCR não conseguiu processar este documento.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => void processExtraction(selected)}
+                disabled={busy === `ocr-${selected.id}`}
+              >
+                <RefreshCw size={16} />
+                Tentar OCR novamente
+              </button>
             </section>
           ) : selected.status === 'uploaded' ? (
             <section className="mf-mobile-inbox-state-card">
-              <ShieldCheck size={25} /><strong>Pronto para analisar</strong><p>O arquivo está privado e ainda não passou pelo OCR.</p>
-              <button type="button" onClick={() => void processExtraction(selected)} disabled={busy === `ocr-${selected.id}`}><RefreshCw size={16} />Processar extrato</button>
+              <ShieldCheck size={25} />
+              <strong>Pronto para analisar</strong>
+              <p>O arquivo está privado e ainda não passou pelo OCR.</p>
+              <button
+                type="button"
+                onClick={() => void processExtraction(selected)}
+                disabled={busy === `ocr-${selected.id}`}
+              >
+                <RefreshCw size={16} />
+                Processar extrato
+              </button>
             </section>
           ) : selected.status === 'processing' ? (
-            <section className="mf-mobile-inbox-state-card"><Loader2 className="animate-spin" size={27} /><strong>Analisando o extrato</strong><p>Quando o OCR terminar, os lançamentos aparecerão para sua revisão.</p><button type="button" onClick={() => { setSelected(null); void refreshQueue(); }}><RefreshCw size={16} />Atualizar fila</button></section>
+            <section className="mf-mobile-inbox-state-card">
+              <Loader2 className="animate-spin" size={27} />
+              <strong>Analisando o extrato</strong>
+              <p>
+                Quando o OCR terminar, os lançamentos aparecerão para sua
+                revisão.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(null);
+                  void refreshQueue();
+                }}
+              >
+                <RefreshCw size={16} />
+                Atualizar fila
+              </button>
+            </section>
           ) : loadingItems ? (
-            <section className="mf-mobile-inbox-state-card"><Loader2 className="animate-spin" size={27} /><strong>Carregando revisão</strong></section>
+            <section className="mf-mobile-inbox-state-card">
+              <Loader2 className="animate-spin" size={27} />
+              <strong>Carregando revisão</strong>
+            </section>
           ) : (
             <>
               <label className="mf-mobile-field">
                 <span>Conta do extrato</span>
-                <select value={reviewAccountId} onChange={(event) => setReviewAccountId(event.target.value)}>
+                <select
+                  value={reviewAccountId}
+                  onChange={(event) => setReviewAccountId(event.target.value)}
+                >
                   <option value="">Selecione a conta</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
                 </select>
               </label>
 
               <section className="mf-mobile-inbox-review-summary">
-                <div><small>Incluídos</small><strong>{validation.included.length}</strong></div>
-                <div><small>Ignorados</small><strong>{items.length - validation.included.length}</strong></div>
-                <div data-warning={validation.invalid.length ? 'true' : 'false'}><small>Precisam ajuste</small><strong>{validation.invalid.length}</strong></div>
+                <div>
+                  <small>Incluídos</small>
+                  <strong>{validation.included.length}</strong>
+                </div>
+                <div>
+                  <small>Ignorados</small>
+                  <strong>{items.length - validation.included.length}</strong>
+                </div>
+                <div
+                  data-warning={validation.invalid.length ? 'true' : 'false'}
+                >
+                  <small>Precisam ajuste</small>
+                  <strong>{validation.invalid.length}</strong>
+                </div>
               </section>
 
               <div className="mf-mobile-inbox-items">
@@ -557,38 +781,194 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
                   const categoryOptions = compatibleCategories(item);
                   const effectiveCategory = selectedCategory(item);
                   return (
-                    <article key={item.id} className="mf-mobile-inbox-item" data-included={included ? 'true' : 'false'}>
+                    <article
+                      key={item.id}
+                      className="mf-mobile-inbox-item"
+                      data-included={included ? 'true' : 'false'}
+                    >
                       <div className="mf-mobile-inbox-item__head">
-                        <div><span>Linha {item.line_number}</span><small>Confiança {Math.round(Number(item.overall_confidence || 0) * 100)}%</small></div>
-                        <button type="button" onClick={() => toggleIncluded(item)} aria-label={included ? 'Ignorar lançamento' : 'Incluir lançamento'}>{included ? <Check size={17} /> : <X size={17} />}{included ? 'Incluir' : 'Ignorado'}</button>
+                        <div>
+                          <span>Linha {item.line_number}</span>
+                          <small>
+                            Confiança{' '}
+                            {Math.round(
+                              Number(item.overall_confidence || 0) * 100,
+                            )}
+                            %
+                          </small>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleIncluded(item)}
+                          aria-label={
+                            included
+                              ? 'Ignorar lançamento'
+                              : 'Incluir lançamento'
+                          }
+                        >
+                          {included ? <Check size={17} /> : <X size={17} />}
+                          {included ? 'Incluir' : 'Ignorado'}
+                        </button>
                       </div>
 
-                      <label className="mf-mobile-field"><span>Descrição</span><input value={item.description || ''} onChange={(event) => patchItem(item.id, { description: event.target.value })} disabled={!included} /></label>
+                      <label className="mf-mobile-field">
+                        <span>Descrição</span>
+                        <input
+                          value={item.description || ''}
+                          onChange={(event) =>
+                            patchItem(item.id, {
+                              description: event.target.value,
+                            })
+                          }
+                          disabled={!included}
+                        />
+                      </label>
                       <div className="mf-mobile-inbox-item__grid">
-                        <label className="mf-mobile-field"><span>Data</span><input type="date" value={item.transaction_date || ''} onChange={(event) => patchItem(item.id, { transaction_date: event.target.value })} disabled={!included} /></label>
-                        <label className="mf-mobile-field"><span>Valor</span><input inputMode="decimal" value={item.amountText} onChange={(event) => patchItem(item.id, { amountText: event.target.value.replace(/[^0-9,.]/g, '') })} disabled={!included} /></label>
+                        <label className="mf-mobile-field">
+                          <span>Data</span>
+                          <input
+                            type="date"
+                            value={item.transaction_date || ''}
+                            onChange={(event) =>
+                              patchItem(item.id, {
+                                transaction_date: event.target.value,
+                              })
+                            }
+                            disabled={!included}
+                          />
+                        </label>
+                        <label className="mf-mobile-field">
+                          <span>Valor</span>
+                          <input
+                            inputMode="decimal"
+                            value={item.amountText}
+                            onChange={(event) =>
+                              patchItem(item.id, {
+                                amountText: event.target.value.replace(
+                                  /[^0-9,.]/g,
+                                  '',
+                                ),
+                              })
+                            }
+                            disabled={!included}
+                          />
+                        </label>
                       </div>
 
-                      <div className="mf-mobile-segmented" role="group" aria-label={`Tipo da linha ${item.line_number}`}>
-                        <button type="button" data-active={item.transaction_type === 'expense'} onClick={() => patchItem(item.id, { transaction_type: 'expense', category_id: '' })} disabled={!included}>Saída</button>
-                        <button type="button" data-active={item.transaction_type === 'income'} onClick={() => patchItem(item.id, { transaction_type: 'income', category_id: '' })} disabled={!included}>Entrada</button>
+                      <div
+                        className="mf-mobile-segmented"
+                        role="group"
+                        aria-label={`Tipo da linha ${item.line_number}`}
+                      >
+                        <button
+                          type="button"
+                          data-active={item.transaction_type === 'expense'}
+                          onClick={() =>
+                            patchItem(item.id, {
+                              transaction_type: 'expense',
+                              category_id: '',
+                            })
+                          }
+                          disabled={!included}
+                        >
+                          Saída
+                        </button>
+                        <button
+                          type="button"
+                          data-active={item.transaction_type === 'income'}
+                          onClick={() =>
+                            patchItem(item.id, {
+                              transaction_type: 'income',
+                              category_id: '',
+                            })
+                          }
+                          disabled={!included}
+                        >
+                          Entrada
+                        </button>
                       </div>
 
-                      <label className="mf-mobile-field"><span>Categoria</span><select value={effectiveCategory?.id || ''} onChange={(event) => patchItem(item.id, { category_id: event.target.value })} disabled={!included}><option value="">Selecione</option>{categoryOptions.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                      <label className="mf-mobile-field">
+                        <span>Categoria</span>
+                        <select
+                          value={effectiveCategory?.id || ''}
+                          onChange={(event) =>
+                            patchItem(item.id, {
+                              category_id: event.target.value,
+                            })
+                          }
+                          disabled={!included}
+                        >
+                          <option value="">Selecione</option>
+                          {categoryOptions.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </article>
                   );
                 })}
-                {!items.length ? <div className="mf-mobile-inbox-empty"><Inbox size={27} /><strong>Nenhuma linha foi extraída</strong><p>Você pode tentar o OCR novamente com um arquivo mais legível.</p></div> : null}
+                {!items.length ? (
+                  <div className="mf-mobile-inbox-empty">
+                    <Inbox size={27} />
+                    <strong>Nenhuma linha foi extraída</strong>
+                    <p>
+                      Você pode tentar o OCR novamente com um arquivo mais
+                      legível.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
-              {error ? <div className="mf-mobile-feedback error">{error}</div> : null}
-              {notice ? <div className="mf-mobile-feedback success"><Check size={15} />{notice}</div> : null}
+              {error ? (
+                <div className="mf-mobile-feedback error">{error}</div>
+              ) : null}
+              {notice ? (
+                <div className="mf-mobile-feedback success">
+                  <Check size={15} />
+                  {notice}
+                </div>
+              ) : null}
 
               <div className="mf-mobile-inbox-review-actions">
-                <button type="button" className="mf-mobile-secondary-button" onClick={() => void saveReviewOnly()} disabled={Boolean(busy) || !items.length}>{busy === 'save-review' ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />}Salvar revisão</button>
-                <button type="button" className="mf-mobile-primary-button" onClick={() => void importReviewed()} disabled={Boolean(busy) || !validation.included.length || Boolean(validation.invalid.length)}>{busy === 'import' ? <Loader2 className="animate-spin" size={17} /> : <Check size={17} />}Importar confirmados</button>
+                <button
+                  type="button"
+                  className="mf-mobile-secondary-button"
+                  onClick={() => void saveReviewOnly()}
+                  disabled={Boolean(busy) || !items.length}
+                >
+                  {busy === 'save-review' ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <ShieldCheck size={16} />
+                  )}
+                  Salvar revisão
+                </button>
+                <button
+                  type="button"
+                  className="mf-mobile-primary-button"
+                  onClick={() => void importReviewed()}
+                  disabled={
+                    Boolean(busy) ||
+                    !validation.included.length ||
+                    Boolean(validation.invalid.length)
+                  }
+                >
+                  {busy === 'import' ? (
+                    <Loader2 className="animate-spin" size={17} />
+                  ) : (
+                    <Check size={17} />
+                  )}
+                  Importar confirmados
+                </button>
               </div>
-              <p className="mf-mobile-inbox-disclaimer">A importação usa a deduplicação existente do MF por identificador/fingerprint e mantém o saldo atual da conta, registrando as movimentações sem recalibrar o saldo manualmente.</p>
+              <p className="mf-mobile-inbox-disclaimer">
+                A importação usa a deduplicação existente do MF por
+                identificador/fingerprint e mantém o saldo atual da conta,
+                registrando as movimentações sem recalibrar o saldo manualmente.
+              </p>
             </>
           )}
         </main>
@@ -599,35 +979,147 @@ export default function MobileInbox({ userId, accounts, categories, onImported }
   return (
     <div className="mf-mobile-focus-page">
       <header className="mf-mobile-focus-header">
-        <button type="button" className="mf-mobile-icon-button" onClick={() => navigate(MOBILE_ROUTES.more)} aria-label="Voltar para Mais"><ArrowLeft size={21} /></button>
-        <div><span className="mf-mobile-eyebrow">MF Inbox</span><h1>Revisões</h1></div>
-        <button type="button" className="mf-mobile-icon-button" onClick={() => void refreshQueue()} aria-label="Atualizar Inbox"><RefreshCw size={18} /></button>
+        <button
+          type="button"
+          className="mf-mobile-icon-button"
+          onClick={() => navigate(MOBILE_ROUTES.more)}
+          aria-label="Voltar para Mais"
+        >
+          <ArrowLeft size={21} />
+        </button>
+        <div>
+          <span className="mf-mobile-eyebrow">MF Inbox</span>
+          <h1>Revisões</h1>
+        </div>
+        <button
+          type="button"
+          className="mf-mobile-icon-button"
+          onClick={() => void refreshQueue()}
+          aria-label="Atualizar Inbox"
+        >
+          <RefreshCw size={18} />
+        </button>
       </header>
 
       <main className="mf-mobile-inbox">
         <section className="mf-mobile-inbox-upload">
-          <div className="mf-mobile-inbox-upload__icon"><Upload size={23} /></div>
-          <div><strong>Enviar extrato para revisão</strong><p>PDF ou foto de extrato bancário. O OCR nunca importa automaticamente.</p></div>
-          {accounts.length > 1 ? <label className="mf-mobile-field"><span>Conta relacionada</span><select value={uploadAccountId} onChange={(event) => setUploadAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label> : null}
-          <button type="button" className="mf-mobile-primary-button" onClick={() => fileInputRef.current?.click()} disabled={busy === 'upload'}>{busy === 'upload' ? <Loader2 className="animate-spin" size={17} /> : <Upload size={17} />}Escolher extrato</button>
-          <input ref={fileInputRef} hidden type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => void uploadStatement(event.target.files?.[0])} />
-          <small>Até 20 MB · PDF, JPEG, PNG ou WebP · armazenamento privado por usuário</small>
+          <div className="mf-mobile-inbox-upload__icon">
+            <Upload size={23} />
+          </div>
+          <div>
+            <strong>Enviar extrato para revisão</strong>
+            <p>
+              PDF ou foto de extrato bancário. O OCR nunca importa
+              automaticamente.
+            </p>
+          </div>
+          {accounts.length > 1 ? (
+            <label className="mf-mobile-field">
+              <span>Conta relacionada</span>
+              <select
+                value={uploadAccountId}
+                onChange={(event) => setUploadAccountId(event.target.value)}
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <button
+            type="button"
+            className="mf-mobile-primary-button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy === 'upload'}
+          >
+            {busy === 'upload' ? (
+              <Loader2 className="animate-spin" size={17} />
+            ) : (
+              <Upload size={17} />
+            )}
+            Escolher extrato
+          </button>
+          <input
+            ref={fileInputRef}
+            hidden
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(event) => void uploadStatement(event.target.files?.[0])}
+          />
+          <small>
+            Até 20 MB · PDF, JPEG, PNG ou WebP · armazenamento privado por
+            usuário
+          </small>
         </section>
 
         {error ? <div className="mf-mobile-feedback error">{error}</div> : null}
-        {notice ? <div className="mf-mobile-feedback success"><Check size={15} />{notice}</div> : null}
+        {notice ? (
+          <div className="mf-mobile-feedback success">
+            <Check size={15} />
+            {notice}
+          </div>
+        ) : null}
 
         <section className="mf-mobile-inbox-queue">
-          <div className="mf-mobile-inbox-queue__title"><div><span>Fila de revisão</span><small>Somente extratos ainda não finalizados</small></div><b>{queue.length}</b></div>
+          <div className="mf-mobile-inbox-queue__title">
+            <div>
+              <span>Fila de revisão</span>
+              <small>Somente extratos ainda não finalizados</small>
+            </div>
+            <b>{queue.length}</b>
+          </div>
 
-          {loading ? <div className="mf-mobile-inbox-empty"><Loader2 className="animate-spin" size={26} /><strong>Carregando Inbox</strong></div> : queue.length ? queue.map((extraction) => (
-            <button key={extraction.id} type="button" className="mf-mobile-inbox-queue-item" onClick={() => void openExtraction(extraction)}>
-              <span className="mf-mobile-inbox-queue-item__icon"><FileText size={19} /></span>
-              <div><strong>{extraction.source_file_name}</strong><small>{statusLabel(extraction.status)} · {formatFileSize(extraction.source_file_size)} · {new Date(extraction.created_at).toLocaleDateString('pt-BR')}</small></div>
-              <span className="mf-mobile-inbox-status" data-status={extraction.status}>{extraction.status === 'processing' ? <Loader2 className="animate-spin" size={14} /> : statusLabel(extraction.status)}</span>
-              <ChevronRight size={17} />
-            </button>
-          )) : <div className="mf-mobile-inbox-empty"><Inbox size={29} /><strong>Nada para revisar</strong><p>Quando um extrato for analisado, ele ficará aqui até você confirmar ou corrigir as linhas.</p></div>}
+          {loading ? (
+            <div className="mf-mobile-inbox-empty">
+              <Loader2 className="animate-spin" size={26} />
+              <strong>Carregando Inbox</strong>
+            </div>
+          ) : queue.length ? (
+            queue.map((extraction) => (
+              <button
+                key={extraction.id}
+                type="button"
+                className="mf-mobile-inbox-queue-item"
+                onClick={() => void openExtraction(extraction)}
+              >
+                <span className="mf-mobile-inbox-queue-item__icon">
+                  <FileText size={19} />
+                </span>
+                <div>
+                  <strong>{extraction.source_file_name}</strong>
+                  <small>
+                    {statusLabel(extraction.status)} ·{' '}
+                    {formatFileSize(extraction.source_file_size)} ·{' '}
+                    {new Date(extraction.created_at).toLocaleDateString(
+                      'pt-BR',
+                    )}
+                  </small>
+                </div>
+                <span
+                  className="mf-mobile-inbox-status"
+                  data-status={extraction.status}
+                >
+                  {extraction.status === 'processing' ? (
+                    <Loader2 className="animate-spin" size={14} />
+                  ) : (
+                    statusLabel(extraction.status)
+                  )}
+                </span>
+                <ChevronRight size={17} />
+              </button>
+            ))
+          ) : (
+            <div className="mf-mobile-inbox-empty">
+              <Inbox size={29} />
+              <strong>Nada para revisar</strong>
+              <p>
+                Quando um extrato for analisado, ele ficará aqui até você
+                confirmar ou corrigir as linhas.
+              </p>
+            </div>
+          )}
         </section>
       </main>
     </div>

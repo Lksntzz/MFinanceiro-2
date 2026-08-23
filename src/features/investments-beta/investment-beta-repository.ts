@@ -1,8 +1,8 @@
 import { supabase } from '../../lib/supabase';
 import {
   ASSET_CLASS_LABELS,
-  InvestmentAssetClass,
-  InvestmentBetaOperation,
+  type InvestmentAssetClass,
+  type InvestmentBetaOperation,
   normalizeSymbol,
   sanitizeNumber,
 } from './investment-beta-domain';
@@ -20,7 +20,11 @@ export type BetaCloudTargetsResult = {
 function relationUnavailable(error: any) {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
-  return code === '42P01' || code === 'PGRST205' || message.includes('mf_investment_beta_');
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('mf_investment_beta_')
+  );
 }
 
 function rowToOperation(row: any): InvestmentBetaOperation {
@@ -64,7 +68,9 @@ function operationToRow(operation: InvestmentBetaOperation) {
   };
 }
 
-export async function loadBetaCloudOperations(userId: string): Promise<BetaCloudOperationsResult> {
+export async function loadBetaCloudOperations(
+  userId: string,
+): Promise<BetaCloudOperationsResult> {
   const { data, error } = await supabase
     .from('mf_investment_beta_operations')
     .select('*')
@@ -80,7 +86,9 @@ export async function loadBetaCloudOperations(userId: string): Promise<BetaCloud
   return { available: true, operations: (data || []).map(rowToOperation) };
 }
 
-export async function saveBetaCloudOperation(operation: InvestmentBetaOperation): Promise<boolean> {
+export async function saveBetaCloudOperation(
+  operation: InvestmentBetaOperation,
+): Promise<boolean> {
   const { error } = await supabase
     .from('mf_investment_beta_operations')
     .upsert(operationToRow(operation), { onConflict: 'id' });
@@ -92,7 +100,10 @@ export async function saveBetaCloudOperation(operation: InvestmentBetaOperation)
   return true;
 }
 
-export async function deleteBetaCloudOperation(userId: string, operationId: string): Promise<boolean> {
+export async function deleteBetaCloudOperation(
+  userId: string,
+  operationId: string,
+): Promise<boolean> {
   const { error } = await supabase
     .from('mf_investment_beta_operations')
     .delete()
@@ -106,7 +117,9 @@ export async function deleteBetaCloudOperation(userId: string, operationId: stri
   return true;
 }
 
-export async function loadBetaCloudTargets(userId: string): Promise<BetaCloudTargetsResult> {
+export async function loadBetaCloudTargets(
+  userId: string,
+): Promise<BetaCloudTargetsResult> {
   const { data, error } = await supabase
     .from('mf_investment_beta_targets')
     .select('asset_class,target_percentage')
@@ -130,12 +143,17 @@ export async function saveBetaCloudTargets(
   userId: string,
   targets: Partial<Record<InvestmentAssetClass, number>>,
 ): Promise<boolean> {
-  const rows = (Object.keys(ASSET_CLASS_LABELS) as InvestmentAssetClass[]).map((assetClass) => ({
-    user_id: userId,
-    asset_class: assetClass,
-    target_percentage: Math.min(100, Math.max(0, sanitizeNumber(targets[assetClass]))),
-    updated_at: new Date().toISOString(),
-  }));
+  const rows = (Object.keys(ASSET_CLASS_LABELS) as InvestmentAssetClass[]).map(
+    (assetClass) => ({
+      user_id: userId,
+      asset_class: assetClass,
+      target_percentage: Math.min(
+        100,
+        Math.max(0, sanitizeNumber(targets[assetClass])),
+      ),
+      updated_at: new Date().toISOString(),
+    }),
+  );
 
   const { error } = await supabase
     .from('mf_investment_beta_targets')

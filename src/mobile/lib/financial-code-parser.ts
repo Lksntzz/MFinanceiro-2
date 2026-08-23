@@ -67,7 +67,11 @@ function lineToBankBarcode(digits: string) {
 
 function parsePix(rawValue: string): ParsedFinancialCode | undefined {
   const payload = rawValue.trim();
-  if (!payload.includes('BR.GOV.BCB.PIX') && !payload.toLowerCase().includes('br.gov.bcb.pix')) return undefined;
+  if (
+    !payload.includes('BR.GOV.BCB.PIX') &&
+    !payload.toLowerCase().includes('br.gov.bcb.pix')
+  )
+    return undefined;
 
   const top = parseTlv(payload);
   let pixAccount: TlvMap | undefined;
@@ -88,7 +92,8 @@ function parsePix(rawValue: string): ParsedFinancialCode | undefined {
   const pixUrl = pixAccount?.['25']?.trim();
   const pixKey = pixAccount?.['01']?.trim();
   const dynamicPix = Boolean(pixUrl);
-  const usableAmount = Number.isFinite(amount) && Number(amount) > 0 ? Number(amount) : undefined;
+  const usableAmount =
+    Number.isFinite(amount) && Number(amount) > 0 ? Number(amount) : undefined;
 
   return {
     kind: 'pix',
@@ -111,7 +116,12 @@ function parsePix(rawValue: string): ParsedFinancialCode | undefined {
 
 function parseBankBoleto(rawValue: string): ParsedFinancialCode | undefined {
   const digits = rawValue.replace(/\D/g, '');
-  const barcode = digits.length === 47 ? lineToBankBarcode(digits) : digits.length === 44 ? digits : undefined;
+  const barcode =
+    digits.length === 47
+      ? lineToBankBarcode(digits)
+      : digits.length === 44
+        ? digits
+        : undefined;
   if (!barcode || barcode.startsWith('8')) return undefined;
 
   const factor = barcode.slice(5, 9);
@@ -121,7 +131,10 @@ function parseBankBoleto(rawValue: string): ParsedFinancialCode | undefined {
 
   return {
     kind: 'boleto',
-    label: digits.length === 47 ? 'Linha digitável de boleto' : 'Código de barras de boleto',
+    label:
+      digits.length === 47
+        ? 'Linha digitável de boleto'
+        : 'Código de barras de boleto',
     rawValue: digits,
     bankCode: barcode.slice(0, 3),
     draft: {
@@ -135,9 +148,12 @@ function parseBankBoleto(rawValue: string): ParsedFinancialCode | undefined {
   };
 }
 
-function parseCollectionCode(rawValue: string): ParsedFinancialCode | undefined {
+function parseCollectionCode(
+  rawValue: string,
+): ParsedFinancialCode | undefined {
   const digits = rawValue.replace(/\D/g, '');
-  if ((digits.length !== 44 && digits.length !== 48) || !digits.startsWith('8')) return undefined;
+  if ((digits.length !== 44 && digits.length !== 48) || !digits.startsWith('8'))
+    return undefined;
 
   return {
     kind: 'collection',
@@ -154,10 +170,10 @@ function parseCollectionCode(rawValue: string): ParsedFinancialCode | undefined 
 
 export function parseFinancialCode(rawValue: string): ParsedFinancialCode {
   const clean = rawValue.trim();
-  return parsePix(clean)
-    || parseBankBoleto(clean)
-    || parseCollectionCode(clean)
-    || {
+  return (
+    parsePix(clean) ||
+    parseBankBoleto(clean) ||
+    parseCollectionCode(clean) || {
       kind: 'unknown',
       label: 'Código não identificado',
       rawValue: clean,
@@ -166,5 +182,6 @@ export function parseFinancialCode(rawValue: string): ParsedFinancialCode {
         documentKind: 'unknown_code',
         confidence: 'low',
       },
-    };
+    }
+  );
 }

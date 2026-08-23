@@ -1,5 +1,5 @@
-@import '../mobile.css';
-@import '../mobile-hardening.css';
+@import "../mobile.css";
+@import "../mobile-hardening.css";
 
 .mf-mobile-recurrences-page {
   padding-bottom: calc(28px + env(safe-area-inset-bottom));

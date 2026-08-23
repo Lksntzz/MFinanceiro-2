@@ -1,6 +1,8 @@
-import { UserSettings } from '../types';
+import type { UserSettings } from '../types';
 
-export const DEFAULT_USER_SETTINGS = (userId: string): Omit<UserSettings, 'id'> => ({
+export const DEFAULT_USER_SETTINGS = (
+  userId: string,
+): Omit<UserSettings, 'id'> => ({
   user_id: userId,
   current_balance: 0,
   gross_salary: 0,
@@ -28,5 +30,5 @@ export const CATEGORIES = [
   'Salário',
   'Benefícios',
   'Transferência',
-  'Outros'
+  'Outros',
 ];

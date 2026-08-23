@@ -16,7 +16,9 @@ export function useUserPreferences(userId: string) {
     return subscribeUserPreferences(userId, setPreferencesState);
   }, [userId]);
 
-  function setPreferences(next: UserPreferences | ((current: UserPreferences) => UserPreferences)) {
+  function setPreferences(
+    next: UserPreferences | ((current: UserPreferences) => UserPreferences),
+  ) {
     setPreferencesState((current) => {
       const resolved = typeof next === 'function' ? next(current) : next;
       saveUserPreferences(userId, resolved);

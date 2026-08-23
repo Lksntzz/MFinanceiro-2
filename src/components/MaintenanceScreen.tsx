@@ -1,4 +1,3 @@
-import React from 'react';
 import { Clock3, Sparkles, Wrench } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -30,7 +29,9 @@ export default function MaintenanceScreen({
                 <span className="block text-[10px] font-black uppercase tracking-[0.22em] text-brand-primary">
                   MFinanceiro
                 </span>
-                <span className="text-xs text-white/40">Ambiente temporariamente restrito</span>
+                <span className="text-xs text-white/40">
+                  Ambiente temporariamente restrito
+                </span>
               </div>
             </div>
             <span className="flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-amber-300">
@@ -49,8 +50,12 @@ export default function MaintenanceScreen({
             <Sparkles size={39} className="text-brand-primary" />
           </motion.div>
 
-          <h1 className="text-3xl font-black tracking-tight text-white">Sistema em manutenção</h1>
-          <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-white/60">{message}</p>
+          <h1 className="text-3xl font-black tracking-tight text-white">
+            Sistema em manutenção
+          </h1>
+          <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-white/60">
+            {message}
+          </p>
 
           <div className="mx-auto mt-7 flex max-w-sm items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/40">
             <Clock3 size={15} className="text-brand-primary" />

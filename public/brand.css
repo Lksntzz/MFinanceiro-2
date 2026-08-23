@@ -8,15 +8,15 @@
 /* Shared MF Financeiro identity */
 .mf-side-brand-mark,
 .mf-brand-icon {
-  background-image: url('/mf-app-icon.svg') !important;
+  background-image: url("/mf-app-icon.svg") !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: cover !important;
   color: transparent !important;
   overflow: hidden !important;
   box-shadow:
-    0 0 0 1px rgba(64, 207, 255, .08),
-    0 8px 22px rgba(0, 117, 255, .14) !important;
+    0 0 0 1px rgba(64, 207, 255, 0.08),
+    0 8px 22px rgba(0, 117, 255, 0.14) !important;
 }
 
 .mf-side-brand-mark {
@@ -40,42 +40,42 @@
 }
 
 .mf-side-brand-copy strong::after {
-  content: 'MF Financeiro';
+  content: "MF Financeiro";
   color: #fff;
   font-size: 11.5px;
   font-weight: 900;
-  letter-spacing: -.025em;
+  letter-spacing: -0.025em;
 }
 
 .mf-side-brand-copy small::after {
-  content: 'Controle inteligente';
-  color: rgba(255,255,255,.34);
+  content: "Controle inteligente";
+  color: rgba(255, 255, 255, 0.34);
   font-size: 7px;
   font-weight: 800;
-  letter-spacing: .075em;
+  letter-spacing: 0.075em;
   text-transform: uppercase;
 }
 
 .mf-brand h1::after {
-  content: 'MF Financeiro';
+  content: "MF Financeiro";
   color: #fff;
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: -.025em;
+  letter-spacing: -0.025em;
 }
 
 /* Authentication / first-entry branding */
 .mf-auth-intro > div:first-child,
 .mf-auth-card .mf-auth-mark {
-  background-image: url('/mf-app-icon.svg') !important;
+  background-image: url("/mf-app-icon.svg") !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: cover !important;
   overflow: hidden !important;
-  border: 1px solid rgba(86, 197, 255, .12) !important;
+  border: 1px solid rgba(86, 197, 255, 0.12) !important;
   box-shadow:
-    0 0 0 1px rgba(69, 226, 255, .05),
-    0 0 42px rgba(0, 151, 255, .24) !important;
+    0 0 0 1px rgba(69, 226, 255, 0.05),
+    0 0 42px rgba(0, 151, 255, 0.24) !important;
 }
 
 .mf-auth-intro > div:first-child > svg,
@@ -90,27 +90,27 @@
 }
 
 .mf-auth-intro > h1::after {
-  content: 'MF Financeiro';
+  content: "MF Financeiro";
   display: block;
   color: #f8fbff;
   font-size: clamp(2.35rem, 5vw, 3.15rem);
   font-weight: 900;
-  letter-spacing: -.055em;
-  text-shadow: 0 0 30px rgba(23, 198, 255, .12);
+  letter-spacing: -0.055em;
+  text-shadow: 0 0 30px rgba(23, 198, 255, 0.12);
 }
 
 .mf-auth-card .mf-auth-mark + h1::after {
-  content: 'MF Financeiro';
+  content: "MF Financeiro";
   display: block;
   color: #f8fbff;
   font-size: 1.8rem;
   font-weight: 900;
-  letter-spacing: -.045em;
+  letter-spacing: -0.045em;
 }
 
 .mf-auth-intro > p,
 .mf-auth-card .mf-auth-mark + h1 + p {
-  color: rgba(116, 232, 244, .48) !important;
+  color: rgba(116, 232, 244, 0.48) !important;
 }
 
 /* Preserve the selected cyan/teal identity in the app chrome. */
@@ -120,7 +120,9 @@ body {
 }
 
 @media (max-width: 820px) {
-  .mf-brand h1::after { font-size: 11px; }
+  .mf-brand h1::after {
+    font-size: 11px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -128,6 +130,6 @@ body {
   .mf-brand-icon,
   .mf-auth-intro > div:first-child,
   .mf-auth-card .mf-auth-mark {
-    box-shadow: 0 0 0 1px rgba(69, 226, 255, .08) !important;
+    box-shadow: 0 0 0 1px rgba(69, 226, 255, 0.08) !important;
   }
 }

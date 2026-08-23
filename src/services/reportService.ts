@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Transaction, Investment } from '../types';
 import { downloadXlsx } from '../lib/xlsx-export';
+import type { Investment, Transaction } from '../types';
 
 export const ReportService = {
   exportTransactionsToExcel: async (transactions: Transaction[]) => {
@@ -13,16 +13,18 @@ export const ReportService = {
       transaction.type === 'income' ? 'Entrada' : 'Saída',
     ]);
 
-    await downloadXlsx(`MFinanceiro_Relatorio_Transacoes_${Date.now()}.xlsx`, [{
-      name: 'Transações',
-      rows: [['Data', 'Descrição', 'Valor', 'Categoria', 'Tipo'], ...rows],
-      columnWidths: [13, 38, 14, 22, 12],
-    }]);
+    await downloadXlsx(`MFinanceiro_Relatorio_Transacoes_${Date.now()}.xlsx`, [
+      {
+        name: 'Transações',
+        rows: [['Data', 'Descrição', 'Valor', 'Categoria', 'Tipo'], ...rows],
+        columnWidths: [13, 38, 14, 22, 12],
+      },
+    ]);
   },
 
   exportPortfolioToPDF: (investments: Investment[], total: number) => {
     const doc = new jsPDF();
-    
+
     // Header
     doc.setFontSize(22);
     doc.text('MFinanceiro - Relatório de Investimentos', 14, 20);
@@ -31,12 +33,16 @@ export const ReportService = {
     doc.text(`Patrimônio Total: R$ ${total.toLocaleString('pt-BR')}`, 14, 38);
 
     // Table
-    const tableData = investments.map(inv => [
+    const tableData = investments.map((inv) => [
       inv.name,
-      inv.type === 'fixed_income' ? 'Renda Fixa' : inv.type === 'variable_income' ? 'Var. Renda' : inv.type,
+      inv.type === 'fixed_income'
+        ? 'Renda Fixa'
+        : inv.type === 'variable_income'
+          ? 'Var. Renda'
+          : inv.type,
       inv.institution,
       `R$ ${inv.amount.toLocaleString('pt-BR')}`,
-      `${inv.yield_percentage?.toFixed(2) || '0'}%`
+      `${inv.yield_percentage?.toFixed(2) || '0'}%`,
     ]);
 
     autoTable(doc, {
@@ -44,9 +50,9 @@ export const ReportService = {
       head: [['Ativo', 'Tipo', 'Instituição', 'Valor Atual', 'Rentabilidade']],
       body: tableData,
       theme: 'striped',
-      headStyles: { fillColor: [0, 242, 255] }
+      headStyles: { fillColor: [0, 242, 255] },
     });
 
-    doc.save(`MFinanceiro_Portfolio_${new Date().getTime()}.pdf`);
-  }
+    doc.save(`MFinanceiro_Portfolio_${Date.now()}.pdf`);
+  },
 };

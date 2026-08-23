@@ -26,13 +26,25 @@ function cacheKey(userId: string): string {
   return `${CACHE_PREFIX}${userId}`;
 }
 
-export function readDashboardWorkspaceCache(userId: string): DashboardWorkspaceCacheSnapshot | null {
+export function readDashboardWorkspaceCache(
+  userId: string,
+): DashboardWorkspaceCacheSnapshot | null {
   if (typeof window === 'undefined') return null;
 
   try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(cacheKey(userId)) || 'null') as DashboardWorkspaceCacheSnapshot | null;
-    if (!parsed || parsed.version !== 1 || parsed.userId !== userId || !parsed.settings) return null;
-    if (!Array.isArray(parsed.accounts) || !Array.isArray(parsed.categories) || !Array.isArray(parsed.fixedBills) || !Array.isArray(parsed.cards) || !Array.isArray(parsed.installments)) return null;
+    const parsed = JSON.parse(
+      window.sessionStorage.getItem(cacheKey(userId)) || 'null',
+    ) as DashboardWorkspaceCacheSnapshot | null;
+    if (parsed?.version !== 1 || parsed.userId !== userId || !parsed.settings)
+      return null;
+    if (
+      !Array.isArray(parsed.accounts) ||
+      !Array.isArray(parsed.categories) ||
+      !Array.isArray(parsed.fixedBills) ||
+      !Array.isArray(parsed.cards) ||
+      !Array.isArray(parsed.installments)
+    )
+      return null;
     if (Date.now() - Number(parsed.savedAt || 0) > MAX_CACHE_AGE_MS) {
       window.sessionStorage.removeItem(cacheKey(userId));
       return null;

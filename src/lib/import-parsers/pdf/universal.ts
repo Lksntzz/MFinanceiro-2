@@ -1,9 +1,10 @@
-import { ExtractedPdfTransaction, PdfParserContext } from './types';
+import type { ExtractedPdfTransaction, PdfParserContext } from './types';
 import { looksLikeNoiseLine, normalizeHeader } from './utils';
 
 const DATE_REGEX = /\b(\d{2}[./-]\d{2}(?:[./-]\d{2,4})?)\b/;
 // Keep monetary values contiguous so a document/NSU column cannot be merged into the amount.
-const AMOUNT_REGEX = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
+const AMOUNT_REGEX =
+  /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/g;
 
 function inferStatementYear(text: string): number | null {
   const explicitDates = [...text.matchAll(/\b\d{2}[./-]\d{2}[./-](20\d{2})\b/g)]
@@ -42,25 +43,47 @@ function isBalanceOrSummaryLine(line: string): boolean {
   ].some((token) => normalized.includes(token));
 }
 
-function cleanDescription(line: string, rawDate: string | null, amountTokens: string[]): string {
+function cleanDescription(
+  line: string,
+  rawDate: string | null,
+  amountTokens: string[],
+): string {
   let description = line;
   if (rawDate) description = description.replace(rawDate, ' ');
-  for (const amount of amountTokens) description = description.replace(amount, ' ');
+  for (const amount of amountTokens)
+    description = description.replace(amount, ' ');
 
   return description
-    .replace(/\b(?:doc(?:umento)?|id|nsu|aut(?:orizacao)?)?\s*[:#-]?\s*\d{8,}\b/gi, ' ')
+    .replace(
+      /\b(?:doc(?:umento)?|id|nsu|aut(?:orizacao)?)?\s*[:#-]?\s*\d{8,}\b/gi,
+      ' ',
+    )
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function signedByContext(line: string, description: string, parsed: number): number {
+function signedByContext(
+  line: string,
+  description: string,
+  parsed: number,
+): number {
   if (parsed < 0 || /-\s*$/.test(line)) return -Math.abs(parsed);
 
   const normalized = normalizeHeader(`${line} ${description}`);
-  if (/\bD\b/i.test(line) || /(debito|saida|pagamento|compra|tarifa|saque|pixenviado|transferenciaenviada)/.test(normalized)) {
+  if (
+    /\bD\b/i.test(line) ||
+    /(debito|saida|pagamento|compra|tarifa|saque|pixenviado|transferenciaenviada)/.test(
+      normalized,
+    )
+  ) {
     return -Math.abs(parsed);
   }
-  if (/\bC\b/i.test(line) || /(credito|entrada|recebido|deposito|pixrecebido|transferenciarecebida|rendimento)/.test(normalized)) {
+  if (
+    /\bC\b/i.test(line) ||
+    /(credito|entrada|recebido|deposito|pixrecebido|transferenciarecebida|rendimento)/.test(
+      normalized,
+    )
+  ) {
     return Math.abs(parsed);
   }
   return parsed;
@@ -74,7 +97,9 @@ function keyOf(item: ExtractedPdfTransaction): string {
   ].join('|');
 }
 
-export function mergePdfTransactions(...groups: ExtractedPdfTransaction[][]): ExtractedPdfTransaction[] {
+export function mergePdfTransactions(
+  ...groups: ExtractedPdfTransaction[][]
+): ExtractedPdfTransaction[] {
   const seen = new Set<string>();
   const merged: ExtractedPdfTransaction[] = [];
   for (const item of groups.flat()) {
@@ -91,7 +116,9 @@ export function mergePdfTransactions(...groups: ExtractedPdfTransaction[][]): Ex
  * Supports tables where a date appears once and the following movements reuse it,
  * common in PJ statements, and tolerates descriptions split across adjacent rows.
  */
-export function parseUniversalPdfStatement(context: PdfParserContext): ExtractedPdfTransaction[] {
+export function parseUniversalPdfStatement(
+  context: PdfParserContext,
+): ExtractedPdfTransaction[] {
   const extracted: ExtractedPdfTransaction[] = [];
   const statementYear = inferStatementYear(context.fullText);
   let currentDate: string | null = null;
@@ -109,10 +136,18 @@ export function parseUniversalPdfStatement(context: PdfParserContext): Extracted
       continue;
     }
 
-    const amountTokens = [...line.matchAll(AMOUNT_REGEX)].map((match) => match[0]);
+    const amountTokens = [...line.matchAll(AMOUNT_REGEX)].map(
+      (match) => match[0],
+    );
     if (amountTokens.length === 0) {
-      const withoutDate = dateMatch ? line.replace(dateMatch[1], ' ').trim() : line;
-      if (withoutDate && !/^\d+$/.test(withoutDate) && withoutDate.length <= 180) {
+      const withoutDate = dateMatch
+        ? line.replace(dateMatch[1], ' ').trim()
+        : line;
+      if (
+        withoutDate &&
+        !/^\d+$/.test(withoutDate) &&
+        withoutDate.length <= 180
+      ) {
         pendingDescription.push(withoutDate);
         if (pendingDescription.length > 3) pendingDescription.shift();
       }
@@ -126,8 +161,13 @@ export function parseUniversalPdfStatement(context: PdfParserContext): Extracted
     const parsedAmount = context.parseAmount(movementToken);
     if (!Number.isFinite(parsedAmount) || Math.abs(parsedAmount) <= 0) continue;
 
-    let description = cleanDescription(line, dateMatch?.[1] || null, amountTokens);
-    if (!description && pendingDescription.length) description = pendingDescription.join(' ');
+    let description = cleanDescription(
+      line,
+      dateMatch?.[1] || null,
+      amountTokens,
+    );
+    if (!description && pendingDescription.length)
+      description = pendingDescription.join(' ');
     if (description.length < 2 && pendingDescription.length) {
       description = `${pendingDescription.join(' ')} ${description}`.trim();
     }

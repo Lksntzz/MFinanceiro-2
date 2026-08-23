@@ -35,32 +35,52 @@ export function dismissedAlertsKey(userId: string): string {
 
 export function sanitizeDismissedAlerts(raw: unknown): string[] {
   return Array.isArray(raw)
-    ? raw.filter((item): item is string => typeof item === 'string').slice(-MAX_DISMISSED_ALERTS)
+    ? raw
+        .filter((item): item is string => typeof item === 'string')
+        .slice(-MAX_DISMISSED_ALERTS)
     : [];
 }
 
-export function loadDismissedAlerts(userId: string, storage: StorageReader): string[] {
+export function loadDismissedAlerts(
+  userId: string,
+  storage: StorageReader,
+): string[] {
   try {
-    return sanitizeDismissedAlerts(JSON.parse(storage.getItem(dismissedAlertsKey(userId)) || '[]'));
+    return sanitizeDismissedAlerts(
+      JSON.parse(storage.getItem(dismissedAlertsKey(userId)) || '[]'),
+    );
   } catch {
     return [];
   }
 }
 
-export function persistDismissedAlerts(userId: string, ids: string[], storage: StorageWriter): void {
+export function persistDismissedAlerts(
+  userId: string,
+  ids: string[],
+  storage: StorageWriter,
+): void {
   try {
-    storage.setItem(dismissedAlertsKey(userId), JSON.stringify(sanitizeDismissedAlerts(ids)));
+    storage.setItem(
+      dismissedAlertsKey(userId),
+      JSON.stringify(sanitizeDismissedAlerts(ids)),
+    );
   } catch {
     // This preference is optional and must not block the dashboard.
   }
 }
 
 export function appendDismissedAlert(current: string[], id: string): string[] {
-  return current.includes(id) ? current : sanitizeDismissedAlerts([...current, id]);
+  return current.includes(id)
+    ? current
+    : sanitizeDismissedAlerts([...current, id]);
 }
 
-export function sortTransactionsByDateDesc(transactions: Transaction[]): Transaction[] {
-  return [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+export function sortTransactionsByDateDesc(
+  transactions: Transaction[],
+): Transaction[] {
+  return [...transactions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
 }
 
 export function buildDashboardNotifications({
@@ -75,27 +95,35 @@ export function buildDashboardNotifications({
   const notifications: DashboardNotification[] = [];
 
   if (preferences.commitments) {
-    fixedBills.filter((bill) => bill.status !== 'paid').forEach((bill) => {
-      const id = `fixed-${bill.id}-${monthKey}`;
-      if (!dismissed.has(id)) {
-        notifications.push({
-          id,
-          type: 'fixed',
-          title: bill.name,
-          amount: Number(bill.amount || 0),
-          dueDate: Number(bill.due_day || 1),
-          status: 'pending',
-          originalData: bill,
-        });
-      }
-    });
+    fixedBills
+      .filter((bill) => bill.status !== 'paid')
+      .forEach((bill) => {
+        const id = `fixed-${bill.id}-${monthKey}`;
+        if (!dismissed.has(id)) {
+          notifications.push({
+            id,
+            type: 'fixed',
+            title: bill.name,
+            amount: Number(bill.amount || 0),
+            dueDate: Number(bill.due_day || 1),
+            status: 'pending',
+            originalData: bill,
+          });
+        }
+      });
   }
 
   if (preferences.cards) {
     cards
-      .filter((card) => Number(card.limit || 0) > 0 && Number(card.used || 0) / Number(card.limit || 1) >= 0.8)
+      .filter(
+        (card) =>
+          Number(card.limit || 0) > 0 &&
+          Number(card.used || 0) / Number(card.limit || 1) >= 0.8,
+      )
       .forEach((card) => {
-        const usagePercent = Math.round((Number(card.used || 0) / Number(card.limit || 1)) * 100);
+        const usagePercent = Math.round(
+          (Number(card.used || 0) / Number(card.limit || 1)) * 100,
+        );
         const id = `card-limit-${card.id}-${Math.floor(usagePercent / 5) * 5}`;
         if (!dismissed.has(id)) {
           notifications.push({

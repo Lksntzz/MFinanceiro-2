@@ -1,4 +1,3 @@
-
 import { AlertCircle, ExternalLink } from 'lucide-react';
 
 export default function ConfigRequired() {
@@ -10,9 +9,11 @@ export default function ConfigRequired() {
         </div>
         <h1 className="text-2xl font-bold mb-4">Configuração Necessária</h1>
         <p className="text-white/60 mb-8">
-          Para usar o <strong>MFinanceiro</strong>, você precisa configurar as variáveis de ambiente do Supabase no arquivo <code>.env</code> ou no painel de segredos.
+          Para usar o <strong>MFinanceiro</strong>, você precisa configurar as
+          variáveis de ambiente do Supabase no arquivo <code>.env</code> ou no
+          painel de segredos.
         </p>
-        
+
         <div className="space-y-4 text-left bg-white/5 p-6 rounded-xl border border-white/10 font-mono text-sm mb-8">
           <div className="text-white/40"># Adicione ao seu .env</div>
           <div>VITE_SUPABASE_URL="https://..."</div>
@@ -20,9 +21,9 @@ export default function ConfigRequired() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <a 
-            href="https://supabase.com" 
-            target="_blank" 
+          <a
+            href="https://supabase.com"
+            target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 py-3 rounded-xl transition-all"
           >

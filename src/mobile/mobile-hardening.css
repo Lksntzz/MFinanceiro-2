@@ -1,9 +1,9 @@
-html[data-mf-mobile='true'] .mf-mobile-shell,
-html[data-mf-mobile='true'] .mf-mobile-focus-page {
+html[data-mf-mobile="true"] .mf-mobile-shell,
+html[data-mf-mobile="true"] .mf-mobile-focus-page {
   display: block;
 }
 
-html[data-mf-mobile='true'] .mf-mobile-loading {
+html[data-mf-mobile="true"] .mf-mobile-loading {
   display: flex;
 }
 

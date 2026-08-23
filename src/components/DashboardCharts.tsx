@@ -1,12 +1,13 @@
+import { Chart as ChartJS, registerables } from 'chart.js';
 import React from 'react';
 import { Line } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables } from 'chart.js';
 
 ChartJS.register(...registerables);
 
 const DESKTOP_QUERY = '(min-width: 821px)';
 const DESKTOP_TICK_SIZE = 11;
-const APP_FONT_FAMILY = "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const APP_FONT_FAMILY =
+  "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 function withDesktopChartTypography(options: any, isDesktop: boolean) {
   if (!isDesktop) return options;
@@ -35,10 +36,17 @@ function withDesktopChartTypography(options: any, isDesktop: boolean) {
   return { ...options, scales };
 }
 
-export default function DashboardCharts({ data, options }: { data: any; options: any }) {
-  const [isDesktop, setIsDesktop] = React.useState(() => (
-    typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches
-  ));
+export default function DashboardCharts({
+  data,
+  options,
+}: {
+  data: any;
+  options: any;
+}) {
+  const [isDesktop, setIsDesktop] = React.useState(
+    () =>
+      typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches,
+  );
 
   React.useEffect(() => {
     const media = window.matchMedia(DESKTOP_QUERY);

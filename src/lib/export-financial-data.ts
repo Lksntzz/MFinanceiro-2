@@ -17,9 +17,13 @@ const EXPORT_TABLES = [
 
 async function readTable(table: string, userId: string) {
   try {
-    const { data, error } = await supabase.from(table as any).select('*').eq('user_id', userId);
+    const { data, error } = await supabase
+      .from(table as any)
+      .select('*')
+      .eq('user_id', userId);
     if (error) {
-      if (['42P01', 'PGRST205', '42501'].includes(String(error.code || ''))) return [];
+      if (['42P01', 'PGRST205', '42501'].includes(String(error.code || '')))
+        return [];
       throw error;
     }
     return data || [];
@@ -50,17 +54,26 @@ async function readLedger() {
 }
 
 export async function exportFinancialData(userId: string) {
-  const entries = await Promise.all(EXPORT_TABLES.map(async (table) => [table, await readTable(table, userId)] as const));
+  const entries = await Promise.all(
+    EXPORT_TABLES.map(
+      async (table) => [table, await readTable(table, userId)] as const,
+    ),
+  );
   const ledger = await readLedger();
   const payload = {
     schema: 'mf-financeiro-user-export-v1',
     exported_at: new Date().toISOString(),
     user_id: userId,
     note: 'O pacote contém dados estruturados do MF Financeiro. Arquivos privados armazenados no Storage não são incluídos automaticamente.',
-    data: Object.fromEntries([...entries, ['mf_finance_ledger_entries', ledger]]),
+    data: Object.fromEntries([
+      ...entries,
+      ['mf_finance_ledger_entries', ledger],
+    ]),
   };
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json;charset=utf-8',
+  });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;

@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import type React from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light' | 'gold';
 
@@ -12,8 +13,12 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [isPrivate, setIsPrivate] = useState(() => localStorage.getItem('mfinanceiro-privacy') === 'true');
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('mfinanceiro-theme') as Theme) || 'dark');
+  const [isPrivate, setIsPrivate] = useState(
+    () => localStorage.getItem('mfinanceiro-privacy') === 'true',
+  );
+  const [theme, setTheme] = useState<Theme>(
+    () => (localStorage.getItem('mfinanceiro-theme') as Theme) || 'dark',
+  );
 
   useEffect(() => {
     localStorage.setItem('mfinanceiro-privacy', String(isPrivate));
@@ -38,11 +43,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else document.documentElement.classList.remove('light');
   }, [theme]);
 
-  return <AppContext.Provider value={{ isPrivate, setIsPrivate, theme, setTheme }}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={{ isPrivate, setIsPrivate, theme, setTheme }}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp() {
   const context = useContext(AppContext);
-  if (context === undefined) throw new Error('useApp must be used within an AppProvider');
+  if (context === undefined)
+    throw new Error('useApp must be used within an AppProvider');
   return context;
 }

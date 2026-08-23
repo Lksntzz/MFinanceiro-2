@@ -3,7 +3,10 @@ import { Capacitor } from '@capacitor/core';
 
 import { MOBILE_ROUTES } from '../routes';
 
-const PRODUCTION_HOSTS = new Set(['mfinanceiro.com.br', 'www.mfinanceiro.com.br']);
+const PRODUCTION_HOSTS = new Set([
+  'mfinanceiro.com.br',
+  'www.mfinanceiro.com.br',
+]);
 
 const NATIVE_DESTINATIONS: Record<string, string> = {
   '': MOBILE_ROUTES.home,
@@ -33,20 +36,29 @@ export function nativeUrlToPath(rawUrl: string): string | null {
     const url = new URL(rawUrl);
 
     if (url.protocol === 'mfinanceiro:') {
-      const destination = normalizeNativeDestination(`${url.hostname}${url.pathname}`);
+      const destination = normalizeNativeDestination(
+        `${url.hostname}${url.pathname}`,
+      );
       const mapped = NATIVE_DESTINATIONS[destination];
       return mapped ? `${mapped}${url.search}` : null;
     }
 
-    if ((url.protocol === 'https:' || url.protocol === 'http:') && PRODUCTION_HOSTS.has(url.hostname.toLocaleLowerCase('pt-BR'))) {
+    if (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      PRODUCTION_HOSTS.has(url.hostname.toLocaleLowerCase('pt-BR'))
+    ) {
       const pathname = url.pathname || '/';
-      if (pathname === '/' || pathname === '/app') return `${MOBILE_ROUTES.home}${url.search}`;
+      if (pathname === '/' || pathname === '/app')
+        return `${MOBILE_ROUTES.home}${url.search}`;
       if (pathname === '/quick') return `${MOBILE_ROUTES.quick}${url.search}`;
       if (pathname === '/scan') return `${MOBILE_ROUTES.scan}${url.search}`;
       if (pathname === '/voice') return `${MOBILE_ROUTES.voice}${url.search}`;
-      if (pathname === MOBILE_ROUTES.pulse) return `${MOBILE_ROUTES.pulse}${url.search}`;
-      if (pathname === MOBILE_ROUTES.documentInbox) return `${MOBILE_ROUTES.documentInbox}${url.search}`;
-      if (pathname.startsWith(MOBILE_ROUTES.cards)) return `${pathname}${url.search}`;
+      if (pathname === MOBILE_ROUTES.pulse)
+        return `${MOBILE_ROUTES.pulse}${url.search}`;
+      if (pathname === MOBILE_ROUTES.documentInbox)
+        return `${MOBILE_ROUTES.documentInbox}${url.search}`;
+      if (pathname.startsWith(MOBILE_ROUTES.cards))
+        return `${pathname}${url.search}`;
       return null;
     }
   } catch {
@@ -78,7 +90,10 @@ export async function installNativeDeepLinkBridge() {
     console.warn('MF native launch URL could not be resolved:', error);
   }
 
-  await CapacitorApp.addListener('appUrlOpen', (event: URLOpenListenerEvent) => {
-    navigateNativeUrl(event.url);
-  });
+  await CapacitorApp.addListener(
+    'appUrlOpen',
+    (event: URLOpenListenerEvent) => {
+      navigateNativeUrl(event.url);
+    },
+  );
 }

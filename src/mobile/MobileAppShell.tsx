@@ -1,5 +1,5 @@
-import React from 'react';
 import { CreditCard, Home, ListChecks, Menu, Plus } from 'lucide-react';
+import type React from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { MOBILE_ROUTES } from './routes';
@@ -10,7 +10,11 @@ import './mobile-nav.css';
 
 const navItems: readonly MobileNavItem[] = [
   { key: 'home', label: 'Início', path: MOBILE_ROUTES.home },
-  { key: 'transactions', label: 'Movimentos', path: MOBILE_ROUTES.transactions },
+  {
+    key: 'transactions',
+    label: 'Movimentos',
+    path: MOBILE_ROUTES.transactions,
+  },
   { key: 'cards', label: 'Cartões', path: MOBILE_ROUTES.cards },
   { key: 'more', label: 'Mais', path: MOBILE_ROUTES.more },
 ];
@@ -28,11 +32,15 @@ type MobileAppShellProps = {
 };
 
 function isActivePath(currentPath: string, item: MobileNavItem) {
-  if (item.key === 'home') return currentPath === '/app' || currentPath === '/app/';
+  if (item.key === 'home')
+    return currentPath === '/app' || currentPath === '/app/';
   return currentPath.startsWith(item.path);
 }
 
-export default function MobileAppShell({ children, onQuickAction }: MobileAppShellProps) {
+export default function MobileAppShell({
+  children,
+  onQuickAction,
+}: MobileAppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -62,19 +70,28 @@ export default function MobileAppShell({ children, onQuickAction }: MobileAppShe
     <div className="mf-mobile-shell">
       <main className="mf-mobile-shell__content">{children}</main>
 
-      <nav className="mf-mobile-nav" aria-label="Navegação principal do MF Financeiro">
-        <div className="mf-mobile-nav__side">{leftItems.map(renderNavItem)}</div>
+      <nav
+        className="mf-mobile-nav"
+        aria-label="Navegação principal do MF Financeiro"
+      >
+        <div className="mf-mobile-nav__side">
+          {leftItems.map(renderNavItem)}
+        </div>
 
         <button
           type="button"
           className="mf-mobile-nav__quick"
           aria-label="Novo lançamento"
-          onClick={() => (onQuickAction ? onQuickAction() : navigate(MOBILE_ROUTES.quick))}
+          onClick={() =>
+            onQuickAction ? onQuickAction() : navigate(MOBILE_ROUTES.quick)
+          }
         >
           <Plus size={28} aria-hidden="true" />
         </button>
 
-        <div className="mf-mobile-nav__side">{rightItems.map(renderNavItem)}</div>
+        <div className="mf-mobile-nav__side">
+          {rightItems.map(renderNavItem)}
+        </div>
       </nav>
     </div>
   );

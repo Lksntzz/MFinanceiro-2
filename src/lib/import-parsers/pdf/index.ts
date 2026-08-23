@@ -1,13 +1,13 @@
-import { PdfBankParser } from './types';
-import { parseMercadoPagoPdf } from './mercadopago';
-import { parseNubankPdf } from './nubank';
-import { parseInterPdf } from './inter';
 import { parseBradescoPdf } from './bradesco';
-import { parseSantanderPdf } from './santander';
 import { parseC6BankPdf } from './c6bank';
 import { parseGenericPdf } from './generic';
-import { detectBankFromText } from './utils';
+import { parseInterPdf } from './inter';
+import { parseMercadoPagoPdf } from './mercadopago';
+import { parseNubankPdf } from './nubank';
+import { parseSantanderPdf } from './santander';
+import type { PdfBankParser } from './types';
 import { parseUniversalPdfStatement } from './universal';
+import { detectBankFromText } from './utils';
 
 const BANK_PDF_PARSERS: Record<string, PdfBankParser> = {
   mercadopago: parseMercadoPagoPdf,

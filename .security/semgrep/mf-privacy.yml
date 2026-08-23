@@ -1,0 +1,14 @@
+rules:
+  - id: mf-no-pii-in-telemetry
+    patterns:
+      - pattern-either:
+          - pattern: |
+              reportOperationalEvent(..., { $KEY: ... })
+          - pattern: |
+              reportException(..., { $KEY: ... })
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)(email|password|cpf|cnpj|card|cvv|balance|salary|income|expense|document|token|secret)
+    message: "Possível vazamento de dados sensíveis na telemetria. Evite chaves como e-mail, CPF, cartão, saldo ou senhas no contexto da telemetria."
+    languages: [typescript, javascript]
+    severity: ERROR

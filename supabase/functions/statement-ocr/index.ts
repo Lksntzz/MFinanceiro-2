@@ -1,5 +1,5 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "@supabase/supabase-js";
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { createClient } from '@supabase/supabase-js';
 import {
   BASE_REVIEW_THRESHOLD,
   buildAdaptivePatternMap,
@@ -7,78 +7,111 @@ import {
   clampConfidence,
   merchantKey,
   normalizeLearningKey,
-} from "../_shared/adaptive-learning.ts";
+} from '../_shared/adaptive-learning.ts';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const responseSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    document_confidence: { type: "number", minimum: 0, maximum: 1 },
-    institution_name: { type: ["string", "null"] },
-    period_start: { type: ["string", "null"], description: "ISO date YYYY-MM-DD" },
-    period_end: { type: ["string", "null"], description: "ISO date YYYY-MM-DD" },
-    statement_balance: { type: ["number", "null"] },
-    warnings: { type: "array", items: { type: "string" } },
+    document_confidence: { type: 'number', minimum: 0, maximum: 1 },
+    institution_name: { type: ['string', 'null'] },
+    period_start: {
+      type: ['string', 'null'],
+      description: 'ISO date YYYY-MM-DD',
+    },
+    period_end: {
+      type: ['string', 'null'],
+      description: 'ISO date YYYY-MM-DD',
+    },
+    statement_balance: { type: ['number', 'null'] },
+    warnings: { type: 'array', items: { type: 'string' } },
     transactions: {
-      type: "array",
+      type: 'array',
       items: {
-        type: "object",
+        type: 'object',
         properties: {
-          date: { type: ["string", "null"], description: "ISO date YYYY-MM-DD" },
-          description: { type: ["string", "null"] },
-          amount: { type: ["number", "null"], description: "Always positive" },
-          type: { type: ["string", "null"], enum: ["income", "expense", null] },
-          category: { type: ["string", "null"] },
-          source: { type: ["string", "null"] },
-          external_id: { type: ["string", "null"] },
-          running_balance: { type: ["number", "null"] },
-          confidence: { type: "number", minimum: 0, maximum: 1 },
+          date: {
+            type: ['string', 'null'],
+            description: 'ISO date YYYY-MM-DD',
+          },
+          description: { type: ['string', 'null'] },
+          amount: { type: ['number', 'null'], description: 'Always positive' },
+          type: { type: ['string', 'null'], enum: ['income', 'expense', null] },
+          category: { type: ['string', 'null'] },
+          source: { type: ['string', 'null'] },
+          external_id: { type: ['string', 'null'] },
+          running_balance: { type: ['number', 'null'] },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
           field_confidence: {
-            type: "object",
-            additionalProperties: { type: "number", minimum: 0, maximum: 1 },
+            type: 'object',
+            additionalProperties: { type: 'number', minimum: 0, maximum: 1 },
           },
         },
-        required: ["date", "description", "amount", "type", "category", "source", "external_id", "running_balance", "confidence", "field_confidence"],
+        required: [
+          'date',
+          'description',
+          'amount',
+          'type',
+          'category',
+          'source',
+          'external_id',
+          'running_balance',
+          'confidence',
+          'field_confidence',
+        ],
       },
     },
   },
-  required: ["document_confidence", "institution_name", "period_start", "period_end", "statement_balance", "warnings", "transactions"],
+  required: [
+    'document_confidence',
+    'institution_name',
+    'period_start',
+    'period_end',
+    'statement_balance',
+    'warnings',
+    'transactions',
+  ],
 };
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
 
-function readSupabaseKey(jsonName: string, directName: string, legacyName: string) {
+function readSupabaseKey(
+  jsonName: string,
+  directName: string,
+  legacyName: string,
+) {
   const direct = Deno.env.get(directName);
   if (direct) return direct;
   const encoded = Deno.env.get(jsonName);
   if (encoded) {
     try {
       const keys = JSON.parse(encoded) as Record<string, unknown>;
-      if (typeof keys.default === "string") return keys.default;
+      if (typeof keys.default === 'string') return keys.default;
     } catch {
       // Fall through to the legacy environment variable.
     }
   }
-  return Deno.env.get(legacyName) || "";
+  return Deno.env.get(legacyName) || '';
 }
 
 function isoDate(value: unknown): string | null {
-  const text = String(value || "").trim();
+  const text = String(value || '').trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 function bytesToBase64(bytes: Uint8Array) {
-  let binary = "";
+  let binary = '';
   const chunkSize = 0x8000;
   for (let index = 0; index < bytes.length; index += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
@@ -87,24 +120,26 @@ function bytesToBase64(bytes: Uint8Array) {
 }
 
 function interactionText(payload: Record<string, unknown>): string {
-  if (typeof payload.output_text === "string") return payload.output_text;
+  if (typeof payload.output_text === 'string') return payload.output_text;
   const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
   for (const output of outputs) {
     const item = output as Record<string, unknown>;
-    if (item.type === "text" && typeof item.text === "string") return item.text;
+    if (item.type === 'text' && typeof item.text === 'string') return item.text;
   }
   const steps = Array.isArray(payload.steps) ? payload.steps : [];
   for (let stepIndex = steps.length - 1; stepIndex >= 0; stepIndex -= 1) {
     const step = steps[stepIndex] as Record<string, unknown>;
     const content = Array.isArray(step?.content) ? step.content : [];
-    const textPart = content.find((part) => typeof (part as Record<string, unknown>)?.text === "string") as Record<string, unknown> | undefined;
-    if (typeof textPart?.text === "string") return textPart.text;
+    const textPart = content.find(
+      (part) => typeof (part as Record<string, unknown>)?.text === 'string',
+    ) as Record<string, unknown> | undefined;
+    if (typeof textPart?.text === 'string') return textPart.text;
   }
-  throw new Error("O provedor de IA não retornou o JSON esperado.");
+  throw new Error('O provedor de IA não retornou o JSON esperado.');
 }
 
 function numericConfidenceMap(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const result: Record<string, number> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     result[key] = clampConfidence(raw);
@@ -113,135 +148,215 @@ function numericConfidenceMap(value: unknown) {
 }
 
 Deno.serve(async (request: Request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
+  if (request.method === 'OPTIONS')
+    return new Response('ok', { headers: corsHeaders });
+  if (request.method !== 'POST')
+    return json({ error: 'Método não permitido.' }, 405);
 
-  const authorization = request.headers.get("Authorization");
-  const token = authorization?.replace(/^Bearer\s+/i, "");
-  if (!authorization || !token) return json({ error: "Autenticação necessária." }, 401);
+  const authorization = request.headers.get('Authorization');
+  const token = authorization?.replace(/^Bearer\s+/i, '');
+  if (!authorization || !token)
+    return json({ error: 'Autenticação necessária.' }, 401);
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const publishableKey = readSupabaseKey(
-    "SUPABASE_PUBLISHABLE_KEYS",
-    "SUPABASE_PUBLISHABLE_KEY",
-    "SUPABASE_ANON_KEY",
+    'SUPABASE_PUBLISHABLE_KEYS',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
   );
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || "";
-  const model = Deno.env.get("GEMINI_OCR_MODEL") || "gemini-3.6-flash";
-  if (!supabaseUrl || !publishableKey) return json({ error: "Supabase não configurado na função." }, 500);
-  if (!geminiApiKey) return json({ error: "OCR/IA ainda não foi habilitado pelo administrador." }, 503);
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY') || '';
+  const model = Deno.env.get('GEMINI_OCR_MODEL') || 'gemini-3.6-flash';
+  if (!supabaseUrl || !publishableKey)
+    return json({ error: 'Supabase não configurado na função.' }, 500);
+  if (!geminiApiKey)
+    return json(
+      { error: 'OCR/IA ainda não foi habilitado pelo administrador.' },
+      503,
+    );
 
   const supabase = createClient(supabaseUrl, publishableKey, {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: userData, error: userError } = await supabase.auth.getUser(token);
-  if (userError || !userData.user) return json({ error: "Sessão inválida." }, 401);
+  const { data: userData, error: userError } =
+    await supabase.auth.getUser(token);
+  if (userError || !userData.user)
+    return json({ error: 'Sessão inválida.' }, 401);
 
-  let extractionId = "";
+  let extractionId = '';
   try {
-    const body = await request.json() as { extractionId?: string };
-    extractionId = String(body.extractionId || "");
-    if (!/^[0-9a-f-]{36}$/i.test(extractionId)) throw new Error("Identificador da análise inválido.");
+    const body = (await request.json()) as { extractionId?: string };
+    extractionId = String(body.extractionId || '');
+    if (!/^[0-9a-f-]{36}$/i.test(extractionId))
+      throw new Error('Identificador da análise inválido.');
 
     const { data: extraction, error: extractionError } = await supabase
-      .from("mf_document_extractions")
-      .select("id,user_id,source_file_path,source_file_name,source_mime_type,source_file_size,status")
-      .eq("id", extractionId)
-      .eq("user_id", userData.user.id)
+      .from('mf_document_extractions')
+      .select(
+        'id,user_id,source_file_path,source_file_name,source_mime_type,source_file_size,status',
+      )
+      .eq('id', extractionId)
+      .eq('user_id', userData.user.id)
       .single();
-    if (extractionError || !extraction) throw new Error("Análise não encontrada.");
-    if (!["uploaded", "failed"].includes(extraction.status)) throw new Error("Este documento já está sendo processado ou revisado.");
+    if (extractionError || !extraction)
+      throw new Error('Análise não encontrada.');
+    if (!['uploaded', 'failed'].includes(extraction.status))
+      throw new Error('Este documento já está sendo processado ou revisado.');
 
     const { error: startError } = await supabase
-      .from("mf_document_extractions")
-      .update({ status: "processing", provider: "google-gemini", model, error_message: null, started_at: new Date().toISOString() })
-      .eq("id", extractionId)
-      .eq("user_id", userData.user.id);
+      .from('mf_document_extractions')
+      .update({
+        status: 'processing',
+        provider: 'google-gemini',
+        model,
+        error_message: null,
+        started_at: new Date().toISOString(),
+      })
+      .eq('id', extractionId)
+      .eq('user_id', userData.user.id);
     if (startError) throw startError;
 
     const { data: file, error: downloadError } = await supabase.storage
-      .from("mf-import-documents")
+      .from('mf-import-documents')
       .download(extraction.source_file_path);
-    if (downloadError || !file) throw new Error("Não foi possível ler o documento privado enviado.");
+    if (downloadError || !file)
+      throw new Error('Não foi possível ler o documento privado enviado.');
 
     const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
-    const fileType = extraction.source_mime_type === "application/pdf" ? "document" : "image";
-    const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey },
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            type: "text",
-            text: [
-              "Extraia apenas transações realmente visíveis neste extrato financeiro brasileiro.",
-              "Não invente datas, descrições, valores, saldos ou identificadores.",
-              "Use amount positivo e type income/expense. Preserve o texto do estabelecimento.",
-              "A categoria é apenas uma sugestão e nunca deve alterar data, valor, descrição ou tipo.",
-              "Dê confiança de 0 a 1 por linha e por campo. Se houver dúvida, reduza a confiança.",
-              "Itens com confiança baixa serão obrigatoriamente revisados por uma pessoa.",
-            ].join(" "),
+    const fileType =
+      extraction.source_mime_type === 'application/pdf' ? 'document' : 'image';
+    const aiResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/interactions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': geminiApiKey,
+        },
+        body: JSON.stringify({
+          model,
+          input: [
+            {
+              type: 'text',
+              text: [
+                'Extraia apenas transações realmente visíveis neste extrato financeiro brasileiro.',
+                'Não invente datas, descrições, valores, saldos ou identificadores.',
+                'Use amount positivo e type income/expense. Preserve o texto do estabelecimento.',
+                'A categoria é apenas uma sugestão e nunca deve alterar data, valor, descrição ou tipo.',
+                'Dê confiança de 0 a 1 por linha e por campo. Se houver dúvida, reduza a confiança.',
+                'Itens com confiança baixa serão obrigatoriamente revisados por uma pessoa.',
+              ].join(' '),
+            },
+            {
+              type: fileType,
+              data: base64,
+              mime_type: extraction.source_mime_type,
+            },
+          ],
+          generation_config: { thinking_level: 'low' },
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: responseSchema,
           },
-          { type: fileType, data: base64, mime_type: extraction.source_mime_type },
-        ],
-        generation_config: { thinking_level: "low" },
-        response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
-      }),
-    });
+        }),
+      },
+    );
     if (!aiResponse.ok) {
       const providerMessage = (await aiResponse.text()).slice(0, 500);
-      throw new Error(`Falha no OCR/IA (${aiResponse.status}): ${providerMessage}`);
+      throw new Error(
+        `Falha no OCR/IA (${aiResponse.status}): ${providerMessage}`,
+      );
     }
 
-    const interaction = await aiResponse.json() as Record<string, unknown>;
-    const parsed = JSON.parse(interactionText(interaction)) as Record<string, unknown>;
-    const transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
-    if (transactions.length > 2000) throw new Error("O documento excedeu o limite de 2.000 lançamentos.");
+    const interaction = (await aiResponse.json()) as Record<string, unknown>;
+    const parsed = JSON.parse(interactionText(interaction)) as Record<
+      string,
+      unknown
+    >;
+    const transactions = Array.isArray(parsed.transactions)
+      ? parsed.transactions
+      : [];
+    if (transactions.length > 2000)
+      throw new Error('O documento excedeu o limite de 2.000 lançamentos.');
 
-    const institutionKey = normalizeLearningKey(parsed.institution_name || "desconhecida") || "desconhecida";
+    const institutionKey =
+      normalizeLearningKey(parsed.institution_name || 'desconhecida') ||
+      'desconhecida';
     const [qualityResult, patternResult] = await Promise.all([
       supabase
-        .from("mf_ocr_quality_profiles")
-        .select("institution_key,reviewed_item_count,review_threshold,correction_rate")
-        .eq("user_id", userData.user.id)
-        .in("institution_key", institutionKey === "*" ? ["*"] : [institutionKey, "*"]),
+        .from('mf_ocr_quality_profiles')
+        .select(
+          'institution_key,reviewed_item_count,review_threshold,correction_rate',
+        )
+        .eq('user_id', userData.user.id)
+        .in(
+          'institution_key',
+          institutionKey === '*' ? ['*'] : [institutionKey, '*'],
+        ),
       supabase
-        .from("mf_adaptive_category_patterns")
-        .select("merchant_key,transaction_type,category_id,category_name,confidence_score,confirmation_count")
-        .eq("user_id", userData.user.id)
-        .eq("auto_apply", true)
-        .eq("suppressed", false)
+        .from('mf_adaptive_category_patterns')
+        .select(
+          'merchant_key,transaction_type,category_id,category_name,confidence_score,confirmation_count',
+        )
+        .eq('user_id', userData.user.id)
+        .eq('auto_apply', true)
+        .eq('suppressed', false)
         .limit(2000),
     ]);
 
-    const qualityRows = qualityResult.error ? [] : (qualityResult.data || []);
-    const specificProfile = qualityRows.find((row) => row.institution_key === institutionKey);
-    const globalProfile = qualityRows.find((row) => row.institution_key === "*");
-    const chosenProfile = specificProfile && Number(specificProfile.reviewed_item_count || 0) >= 10
-      ? specificProfile
-      : globalProfile || specificProfile;
+    const qualityRows = qualityResult.error ? [] : qualityResult.data || [];
+    const specificProfile = qualityRows.find(
+      (row) => row.institution_key === institutionKey,
+    );
+    const globalProfile = qualityRows.find(
+      (row) => row.institution_key === '*',
+    );
+    const chosenProfile =
+      specificProfile && Number(specificProfile.reviewed_item_count || 0) >= 10
+        ? specificProfile
+        : globalProfile || specificProfile;
     const reviewThreshold = Math.min(
       0.98,
-      Math.max(0.75, Number(chosenProfile?.review_threshold || BASE_REVIEW_THRESHOLD)),
+      Math.max(
+        0.75,
+        Number(chosenProfile?.review_threshold || BASE_REVIEW_THRESHOLD),
+      ),
     );
-    const qualityProfileSampleSize = Math.max(0, Number(chosenProfile?.reviewed_item_count || 0));
-    const adaptivePatterns = buildAdaptivePatternMap(patternResult.error ? [] : (patternResult.data || []));
+    const qualityProfileSampleSize = Math.max(
+      0,
+      Number(chosenProfile?.reviewed_item_count || 0),
+    );
+    const adaptivePatterns = buildAdaptivePatternMap(
+      patternResult.error ? [] : patternResult.data || [],
+    );
     let adaptiveCategoryMatches = 0;
 
     const items = transactions.map((raw, index) => {
       const item = raw as Record<string, unknown>;
       const amount = Math.abs(Number(item.amount || 0));
-      const type = item.type === "income" || item.type === "expense" ? item.type : null;
-      const description = String(item.description || "").trim().slice(0, 240);
+      const type =
+        item.type === 'income' || item.type === 'expense' ? item.type : null;
+      const description = String(item.description || '')
+        .trim()
+        .slice(0, 240);
       const rawConfidence = clampConfidence(item.confidence);
-      const calibratedConfidence = calibrateConfidence(rawConfidence, reviewThreshold);
-      const valid = Boolean(isoDate(item.date) && description && amount > 0 && type);
-      const adaptivePattern = type ? adaptivePatterns.get(`${type}:${merchantKey(description)}`) : undefined;
+      const calibratedConfidence = calibrateConfidence(
+        rawConfidence,
+        reviewThreshold,
+      );
+      const valid = Boolean(
+        isoDate(item.date) && description && amount > 0 && type,
+      );
+      const adaptivePattern = type
+        ? adaptivePatterns.get(`${type}:${merchantKey(description)}`)
+        : undefined;
       if (adaptivePattern) adaptiveCategoryMatches += 1;
-      const categoryName = String(adaptivePattern?.category_name || item.category || "Geral").trim().slice(0, 120) || "Geral";
+      const categoryName =
+        String(adaptivePattern?.category_name || item.category || 'Geral')
+          .trim()
+          .slice(0, 120) || 'Geral';
       const fieldConfidence = numericConfidenceMap(item.field_confidence);
 
       return {
@@ -250,14 +365,23 @@ Deno.serve(async (request: Request) => {
         line_number: index + 1,
         transaction_date: isoDate(item.date),
         description: description || null,
-        signed_amount: valid ? (type === "expense" ? -amount : amount) : null,
+        signed_amount: valid ? (type === 'expense' ? -amount : amount) : null,
         transaction_type: type,
-        source_name: String(item.source || parsed.institution_name || "OCR/IA").trim().slice(0, 120),
-        external_id: String(item.external_id || "").trim().slice(0, 240) || null,
-        running_balance: Number.isFinite(Number(item.running_balance)) ? Number(item.running_balance) : null,
+        source_name: String(item.source || parsed.institution_name || 'OCR/IA')
+          .trim()
+          .slice(0, 120),
+        external_id:
+          String(item.external_id || '')
+            .trim()
+            .slice(0, 240) || null,
+        running_balance: Number.isFinite(Number(item.running_balance))
+          ? Number(item.running_balance)
+          : null,
         category_id: adaptivePattern?.category_id || null,
         category_name: categoryName,
-        overall_confidence: valid ? calibratedConfidence : Math.min(calibratedConfidence, 0.4),
+        overall_confidence: valid
+          ? calibratedConfidence
+          : Math.min(calibratedConfidence, 0.4),
         field_confidence: {
           ...fieldConfidence,
           model_overall_confidence: rawConfidence,
@@ -265,7 +389,7 @@ Deno.serve(async (request: Request) => {
           review_threshold: reviewThreshold,
           adaptive_category_confidence: adaptivePattern?.confidence_score || 0,
         },
-        review_status: "pending",
+        review_status: 'pending',
         raw_payload: {
           ...item,
           learning: {
@@ -276,11 +400,11 @@ Deno.serve(async (request: Request) => {
             quality_profile_sample_size: qualityProfileSampleSize,
             adaptive_category: adaptivePattern
               ? {
-                category_id: adaptivePattern.category_id,
-                category_name: adaptivePattern.category_name,
-                confidence: adaptivePattern.confidence_score,
-                confirmations: adaptivePattern.confirmation_count,
-              }
+                  category_id: adaptivePattern.category_id,
+                  category_name: adaptivePattern.category_name,
+                  confidence: adaptivePattern.confidence_score,
+                  confirmations: adaptivePattern.confirmation_count,
+                }
               : null,
           },
         },
@@ -288,17 +412,19 @@ Deno.serve(async (request: Request) => {
     });
 
     const { error: clearError } = await supabase
-      .from("mf_document_extraction_items")
+      .from('mf_document_extraction_items')
       .delete()
-      .eq("extraction_id", extractionId)
-      .eq("user_id", userData.user.id);
+      .eq('extraction_id', extractionId)
+      .eq('user_id', userData.user.id);
     if (clearError) throw clearError;
     let storedItems: Record<string, unknown>[] = [];
     if (items.length) {
       const { data: insertedItems, error: insertError } = await supabase
-        .from("mf_document_extraction_items")
+        .from('mf_document_extraction_items')
         .insert(items)
-        .select("id,line_number,transaction_date,description,signed_amount,transaction_type,source_name,external_id,running_balance,category_id,category_name,overall_confidence,field_confidence,review_status");
+        .select(
+          'id,line_number,transaction_date,description,signed_amount,transaction_type,source_name,external_id,running_balance,category_id,category_name,overall_confidence,field_confidence,review_status',
+        );
       if (insertError) throw insertError;
       storedItems = insertedItems || [];
     }
@@ -308,30 +434,36 @@ Deno.serve(async (request: Request) => {
       institution_key: institutionKey,
       period_start: isoDate(parsed.period_start),
       period_end: isoDate(parsed.period_end),
-      statement_balance: Number.isFinite(Number(parsed.statement_balance)) ? Number(parsed.statement_balance) : null,
-      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20) : [],
+      statement_balance: Number.isFinite(Number(parsed.statement_balance))
+        ? Number(parsed.statement_balance)
+        : null,
+      warnings: Array.isArray(parsed.warnings)
+        ? parsed.warnings.slice(0, 20)
+        : [],
       item_count: items.length,
       requires_human_review: true,
       review_threshold: reviewThreshold,
       quality_profile_sample_size: qualityProfileSampleSize,
-      quality_profile_correction_rate: Number(chosenProfile?.correction_rate || 0),
+      quality_profile_correction_rate: Number(
+        chosenProfile?.correction_rate || 0,
+      ),
       adaptive_category_matches: adaptiveCategoryMatches,
     };
     const { error: completeError } = await supabase
-      .from("mf_document_extractions")
+      .from('mf_document_extractions')
       .update({
-        status: "reviewing",
+        status: 'reviewing',
         document_confidence: clampConfidence(parsed.document_confidence),
         result_metadata: metadata,
         completed_at: new Date().toISOString(),
       })
-      .eq("id", extractionId)
-      .eq("user_id", userData.user.id);
+      .eq('id', extractionId)
+      .eq('user_id', userData.user.id);
     if (completeError) throw completeError;
 
     return json({
       extractionId,
-      status: "reviewing",
+      status: 'reviewing',
       documentConfidence: clampConfidence(parsed.document_confidence),
       reviewThreshold,
       qualityProfileSampleSize,
@@ -340,13 +472,18 @@ Deno.serve(async (request: Request) => {
       items: storedItems,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha inesperada no OCR/IA.";
+    const message =
+      error instanceof Error ? error.message : 'Falha inesperada no OCR/IA.';
     if (extractionId) {
       await supabase
-        .from("mf_document_extractions")
-        .update({ status: "failed", error_message: message.slice(0, 1000), completed_at: new Date().toISOString() })
-        .eq("id", extractionId)
-        .eq("user_id", userData.user.id);
+        .from('mf_document_extractions')
+        .update({
+          status: 'failed',
+          error_message: message.slice(0, 1000),
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', extractionId)
+        .eq('user_id', userData.user.id);
     }
     return json({ error: message }, 400);
   }

@@ -1,5 +1,4 @@
-
-import { PAYMENT_ALIASES, PaymentAlias } from '../data/payment-aliases';
+import { PAYMENT_ALIASES } from '../data/payment-aliases';
 
 export function normalizeText(text: string): string {
   if (!text) return '';
@@ -17,12 +16,26 @@ export function normalizeText(text: string): string {
  */
 function removeNoise(text: string): string {
   const noise = [
-    'pagamento', 'conta', 'fatura', 'servicos', 's.a.', 'sa', 'ltda', 'financeiro', 
-    'debito', 'automatico', 'agendamento', 'boleto', 'consumo', 'mensalidade',
-    'qr', 'pix', 'pagto'
+    'pagamento',
+    'conta',
+    'fatura',
+    'servicos',
+    's.a.',
+    'sa',
+    'ltda',
+    'financeiro',
+    'debito',
+    'automatico',
+    'agendamento',
+    'boleto',
+    'consumo',
+    'mensalidade',
+    'qr',
+    'pix',
+    'pagto',
   ];
   let result = text;
-  noise.forEach(n => {
+  noise.forEach((n) => {
     const regex = new RegExp(`\\b${n}\\b`, 'gi');
     result = result.replace(regex, '');
   });
@@ -32,13 +45,23 @@ function removeNoise(text: string): string {
 /**
  * Tenta identificar a categoria/empresa de uma descrição de extrato usando a base local estática
  */
-export function identifyCompany(description: string): { company: string; category: string; confidence: number; officialName: string } | null {
+export function identifyCompany(description: string): {
+  company: string;
+  category: string;
+  confidence: number;
+  officialName: string;
+} | null {
   const normalizedDesc = normalizeText(description);
   const cleanDesc = removeNoise(normalizedDesc);
-  
+
   if (normalizedDesc.length < 3) return null;
 
-  let bestMatch: { company: string; category: string; confidence: number; officialName: string } | null = null;
+  let bestMatch: {
+    company: string;
+    category: string;
+    confidence: number;
+    officialName: string;
+  } | null = null;
   let maxConfidence = 0;
 
   // Percorre todas as categorias e empresas na base local
@@ -49,7 +72,10 @@ export function identifyCompany(description: string): { company: string; categor
       // 1. Verificar aliases (maior peso)
       for (const alias of company.aliases) {
         const normAlias = normalizeText(alias);
-        if (normalizedDesc.includes(normAlias) || cleanDesc.includes(normAlias)) {
+        if (
+          normalizedDesc.includes(normAlias) ||
+          cleanDesc.includes(normAlias)
+        ) {
           confidence = Math.max(confidence, 0.9);
           // Se for match exato ou palavra isolada idêntica
           if (cleanDesc === normAlias || normalizedDesc === normAlias) {
@@ -80,7 +106,7 @@ export function identifyCompany(description: string): { company: string; categor
           company: company.displayName,
           category: category,
           confidence: confidence,
-          officialName: company.officialName
+          officialName: company.officialName,
         };
       }
 

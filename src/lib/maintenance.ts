@@ -77,11 +77,12 @@ function scopedConfig(
   const iosMessage = parseMessage(iosRow?.maintenance_message);
   const currentSurface = currentMaintenanceSurface();
 
-  const current = currentSurface === 'ios'
-    ? { mode: iosMode, message: iosMessage }
-    : currentSurface === 'mobile'
-      ? { mode: mobileMode, message: mobileMessage }
-      : { mode: desktopMode, message: desktopMessage };
+  const current =
+    currentSurface === 'ios'
+      ? { mode: iosMode, message: iosMessage }
+      : currentSurface === 'mobile'
+        ? { mode: mobileMode, message: mobileMessage }
+        : { mode: desktopMode, message: desktopMessage };
 
   return {
     maintenance_mode: current.mode,
@@ -167,19 +168,30 @@ export function getMaintenanceForSurface(
 
   if (surface === 'ios') {
     return {
-      maintenance_mode: Boolean(config.ios_mode ?? config.mobile_mode ?? config.maintenance_mode),
-      maintenance_message: config.ios_message || config.mobile_message || config.maintenance_message,
+      maintenance_mode: Boolean(
+        config.ios_mode ?? config.mobile_mode ?? config.maintenance_mode,
+      ),
+      maintenance_message:
+        config.ios_message ||
+        config.mobile_message ||
+        config.maintenance_message,
     };
   }
 
   return surface === 'mobile'
     ? {
-        maintenance_mode: Boolean(config.mobile_mode ?? config.maintenance_mode),
-        maintenance_message: config.mobile_message || config.maintenance_message,
+        maintenance_mode: Boolean(
+          config.mobile_mode ?? config.maintenance_mode,
+        ),
+        maintenance_message:
+          config.mobile_message || config.maintenance_message,
       }
     : {
-        maintenance_mode: Boolean(config.desktop_mode ?? config.maintenance_mode),
-        maintenance_message: config.desktop_message || config.maintenance_message,
+        maintenance_mode: Boolean(
+          config.desktop_mode ?? config.maintenance_mode,
+        ),
+        maintenance_message:
+          config.desktop_message || config.maintenance_message,
       };
 }
 
@@ -217,12 +229,20 @@ export async function broadcastMaintenanceConfig(
           if (sendStatus === 'ok') finish();
           else finish(new Error(`Falha ao publicar manutenção: ${sendStatus}`));
         } catch (error) {
-          finish(error instanceof Error ? error : new Error('Falha ao publicar manutenção.'));
+          finish(
+            error instanceof Error
+              ? error
+              : new Error('Falha ao publicar manutenção.'),
+          );
         }
         return;
       }
 
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+      if (
+        status === 'CHANNEL_ERROR' ||
+        status === 'TIMED_OUT' ||
+        status === 'CLOSED'
+      ) {
         finish(new Error(`Canal de manutenção indisponível: ${status}`));
       }
     });
@@ -230,10 +250,11 @@ export async function broadcastMaintenanceConfig(
 }
 
 export function isMaintenanceAdmin(session: Session | null): boolean {
-  const isDev = (import.meta as any).env.DEV === true ||
-                (import.meta as any).env.MODE === 'development' ||
-                window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1';
+  const isDev =
+    (import.meta as any).env.DEV === true ||
+    (import.meta as any).env.MODE === 'development' ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
 
   if (isDev) return true;
   if (!session?.user) return false;

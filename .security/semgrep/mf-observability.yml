@@ -1,0 +1,14 @@
+rules:
+  - id: mf-critical-operation-needs-correlation
+    patterns:
+      - pattern-either:
+          - pattern: |
+              reportOperationalEvent($EVENT, $AREA, $SEV, { route: $R, ... })
+      - pattern-not:
+          - pattern: |
+              reportOperationalEvent($EVENT, $AREA, $SEV, { correlationId: $C, ... })
+          - pattern: |
+              reportOperationalEvent($EVENT, $AREA, $SEV, { correlation_id: $C, ... })
+    message: "Operações críticas reportadas devem incluir um correlation_id no contexto de telemetria para rastreamento fim a fim."
+    languages: [typescript, javascript]
+    severity: WARNING

@@ -1,5 +1,5 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import App from './App.tsx';
 import AccessibilityLayer from './components/AccessibilityLayer';
@@ -28,8 +28,9 @@ async function checkForAppUpdate() {
     });
     if (!response.ok) return;
 
-    const remoteVersion = await response.json() as { buildId?: string };
-    if (!remoteVersion.buildId || remoteVersion.buildId === __MF_BUILD_ID__) return;
+    const remoteVersion = (await response.json()) as { buildId?: string };
+    if (!remoteVersion.buildId || remoteVersion.buildId === __MF_BUILD_ID__)
+      return;
 
     versionReloadStarted = true;
 
@@ -63,13 +64,21 @@ function startAppVersionWatcher() {
 window.addEventListener('load', () => {
   if ('serviceWorker' in navigator) {
     if (import.meta.env.PROD) {
-      navigator.serviceWorker.register('/sw.js').then((registration) => {
-        registration.update().catch(() => {});
-      }).catch(() => {
-        void import('./lib/operational-observability').then(({ reportOperationalEvent }) =>
-          reportOperationalEvent('runtime.service_worker_registration_failed', 'service-worker', 'warning'),
-        );
-      });
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          registration.update().catch(() => {});
+        })
+        .catch(() => {
+          void import('./lib/operational-observability').then(
+            ({ reportOperationalEvent }) =>
+              reportOperationalEvent(
+                'runtime.service_worker_registration_failed',
+                'service-worker',
+                'warning',
+              ),
+          );
+        });
     } else {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
         registrations.forEach((registration) => registration.unregister());

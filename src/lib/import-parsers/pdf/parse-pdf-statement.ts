@@ -1,10 +1,14 @@
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
-// @ts-ignore
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { ImportedTransaction } from '../../../types';
+import type { ImportedTransaction } from '../../../types';
 import { getPdfBankParser, resolvePdfBank } from './index';
-import { parseAmount, parsePdfDateToIso, normalizeHeader, looksLikeNoiseLine } from './utils';
-import { ExtractedPdfTransaction, PdfParserContext } from './types';
+import type { ExtractedPdfTransaction, PdfParserContext } from './types';
+import {
+  looksLikeNoiseLine,
+  normalizeHeader,
+  parseAmount,
+  parsePdfDateToIso,
+} from './utils';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -12,36 +16,54 @@ GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 // are treated as parser corruption (usually document/NSU digits joined to money),
 // never as a ready transaction. The original PDF remains untouched for re-parsing.
 const MAX_SAFE_PDF_TRANSACTION_AMOUNT = 1_000_000_000;
-const STRICT_MONEY_PATTERN = /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/;
+const STRICT_MONEY_PATTERN =
+  /(?:R\$\s*)?[+-]?\s*(?:\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+[,.]\d{2})-?/;
 
-function inferCategoryFromStatement(description: string, type: 'income' | 'expense'): string {
+function inferCategoryFromStatement(
+  description: string,
+  type: 'income' | 'expense',
+): string {
   const text = normalizeHeader(description);
 
   if (/(rendimento|rendimentos|juros)/.test(text)) return 'Rendimentos';
   if (/(pixrecebido|recebido)/.test(text)) return 'Transferencia';
   if (/(pixenviado|enviado)/.test(text)) return 'Transferencia';
   if (/(dinheiroreservado|reservado|reserva)/.test(text)) return 'Reserva';
-  if (/(uber|autopass|99|taxi|estacionamento|combustivel|posto)/.test(text)) return 'Transporte';
-  if (/(ifood|pizzaria|esfiha|supermercado|mercado|food|coffee|padaria|doce|restaurante)/.test(text)) return 'Alimentacao';
+  if (/(uber|autopass|99|taxi|estacionamento|combustivel|posto)/.test(text))
+    return 'Transporte';
+  if (
+    /(ifood|pizzaria|esfiha|supermercado|mercado|food|coffee|padaria|doce|restaurante)/.test(
+      text,
+    )
+  )
+    return 'Alimentacao';
   if (/(farmacia|clinica|hospital|medic)/.test(text)) return 'Saude';
 
   return type === 'income' ? 'Receita' : 'Despesa';
 }
 
 function generateId(prefix: string, index: number): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    return crypto.randomUUID();
   return `${prefix}-${Date.now()}-${index}`;
 }
 
 function normalizeBankLabel(bank: string): string {
   switch (bank) {
-    case 'mercadopago': return 'Mercado Pago';
-    case 'nubank': return 'Nubank';
-    case 'inter': return 'Inter';
-    case 'bradesco': return 'Bradesco';
-    case 'santander': return 'Santander';
-    case 'c6bank': return 'C6 Bank';
-    default: return 'Importado PDF';
+    case 'mercadopago':
+      return 'Mercado Pago';
+    case 'nubank':
+      return 'Nubank';
+    case 'inter':
+      return 'Inter';
+    case 'bradesco':
+      return 'Bradesco';
+    case 'santander':
+      return 'Santander';
+    case 'c6bank':
+      return 'C6 Bank';
+    default:
+      return 'Importado PDF';
   }
 }
 
@@ -70,7 +92,10 @@ export interface PdfParseResult {
 export interface PdfClassificationOptions {
   accountHolderName?: string;
   internalAccountAliases?: string[];
-  requestPassword?: (options: { fileName?: string; incorrect?: boolean }) => Promise<string | null>;
+  requestPassword?: (options: {
+    fileName?: string;
+    incorrect?: boolean;
+  }) => Promise<string | null>;
 }
 
 function normalizeText(value: string): string {
@@ -97,9 +122,9 @@ function tokenOverlapRatio(a: string, b: string): number {
 function extractPixCounterparty(description: string): string {
   const raw = description || '';
   const patterns = [
-    /pix\s+(?:para|p\/|destinatario|favorecido)\s*[:\-]?\s*(.+)$/i,
-    /pix\s+(?:de|remetente)\s*[:\-]?\s*(.+)$/i,
-    /transferencia\s+pix\s*[:\-]?\s*(.+)$/i,
+    /pix\s+(?:para|p\/|destinatario|favorecido)\s*[:-]?\s*(.+)$/i,
+    /pix\s+(?:de|remetente)\s*[:-]?\s*(.+)$/i,
+    /transferencia\s+pix\s*[:-]?\s*(.+)$/i,
   ];
   for (const pattern of patterns) {
     const match = raw.match(pattern);
@@ -108,9 +133,13 @@ function extractPixCounterparty(description: string): string {
   return raw;
 }
 
-function isLikelyInternalTransfer(description: string, options?: PdfClassificationOptions): boolean {
+function isLikelyInternalTransfer(
+  description: string,
+  options?: PdfClassificationOptions,
+): boolean {
   const normalized = normalizeText(description);
-  const isPixTransfer = normalized.includes('transferenciapix') || normalized.includes('pix');
+  const isPixTransfer =
+    normalized.includes('transferenciapix') || normalized.includes('pix');
   if (!isPixTransfer) return false;
 
   const counterparty = extractPixCounterparty(description);
@@ -123,7 +152,10 @@ function isLikelyInternalTransfer(description: string, options?: PdfClassificati
   return aliases.some((alias) => {
     const normalizedAlias = normalizeText(alias);
     if (!normalizedAlias) return false;
-    if (normalizeText(counterparty).includes(normalizedAlias) || normalizedAlias.includes(normalizeText(counterparty))) {
+    if (
+      normalizeText(counterparty).includes(normalizedAlias) ||
+      normalizedAlias.includes(normalizeText(counterparty))
+    ) {
       return true;
     }
     return tokenOverlapRatio(counterparty, alias) >= 0.6;
@@ -133,7 +165,7 @@ function isLikelyInternalTransfer(description: string, options?: PdfClassificati
 function classifyStatementEntry(
   description: string,
   type: 'income' | 'expense',
-  options?: PdfClassificationOptions
+  options?: PdfClassificationOptions,
 ): { category: string; tags: string[] } {
   const normalized = normalizeText(description);
 
@@ -147,14 +179,24 @@ function classifyStatementEntry(
   if (/baixaautomatpoupanca/.test(normalized)) {
     return {
       category: 'Movimentação Interna',
-      tags: ['movimentacao_interna', 'conta_poupanca', 'nao_conta_fixa', 'nao_despesa_comum'],
+      tags: [
+        'movimentacao_interna',
+        'conta_poupanca',
+        'nao_conta_fixa',
+        'nao_despesa_comum',
+      ],
     };
   }
 
   if (isLikelyInternalTransfer(description, options)) {
     return {
       category: 'Transferência Interna',
-      tags: ['transferencia_interna', 'nao_salario', 'nao_nova_renda', 'nao_gasto_comum'],
+      tags: [
+        'transferencia_interna',
+        'nao_salario',
+        'nao_nova_renda',
+        'nao_gasto_comum',
+      ],
     };
   }
 
@@ -171,7 +213,9 @@ function classifyStatementEntry(
   };
 }
 
-function inferFlowByDescription(description: string): 'income' | 'expense' | null {
+function inferFlowByDescription(
+  description: string,
+): 'income' | 'expense' | null {
   const normalized = normalizeText(description);
 
   const incomeHints = [
@@ -185,7 +229,7 @@ function inferFlowByDescription(description: string): 'income' | 'expense' | nul
     'financiam',
     'deposito',
     'rendimentos',
-    'rendimento'
+    'rendimento',
   ];
   if (incomeHints.some((hint) => normalized.includes(hint))) return 'income';
 
@@ -197,7 +241,7 @@ function inferFlowByDescription(description: string): 'income' | 'expense' | nul
     'baixaautomatpoupanca',
     'pagamento',
     'compra',
-    'debito'
+    'debito',
   ];
   if (expenseHints.some((hint) => normalized.includes(hint))) return 'expense';
 
@@ -207,16 +251,21 @@ function inferFlowByDescription(description: string): 'income' | 'expense' | nul
 function toImportedTransactions(
   bank: string,
   extracted: ExtractedPdfTransaction[],
-  options?: PdfClassificationOptions
+  options?: PdfClassificationOptions,
 ): ImportedTransaction[] {
   const bankSource = normalizeBankLabel(bank);
   return extracted.map((entry, index) => {
     const amount = Math.abs(entry.signedAmount);
     const description = entry.description || 'Sem descricao';
     const flowByContext = inferFlowByDescription(description);
-    const type: 'income' | 'expense' = flowByContext || (entry.signedAmount >= 0 ? 'income' : 'expense');
-    const amountIsSafe = Number.isFinite(amount) && amount > 0 && amount < MAX_SAFE_PDF_TRANSACTION_AMOUNT;
-    const status: ImportedTransaction['status'] = description !== 'Sem descricao' && amountIsSafe ? 'ready' : 'error';
+    const type: 'income' | 'expense' =
+      flowByContext || (entry.signedAmount >= 0 ? 'income' : 'expense');
+    const amountIsSafe =
+      Number.isFinite(amount) &&
+      amount > 0 &&
+      amount < MAX_SAFE_PDF_TRANSACTION_AMOUNT;
+    const status: ImportedTransaction['status'] =
+      description !== 'Sem descricao' && amountIsSafe ? 'ready' : 'error';
     const classification = classifyStatementEntry(description, type, options);
 
     return {
@@ -231,44 +280,72 @@ function toImportedTransactions(
       categorySuggestion: classification.category,
       status,
       confidence: amountIsSafe
-        ? (typeof entry.confidence === 'number' ? entry.confidence : (status === 'ready' ? 0.9 : 0.35))
+        ? typeof entry.confidence === 'number'
+          ? entry.confidence
+          : status === 'ready'
+            ? 0.9
+            : 0.35
         : 0.05,
       original_description: description,
       bank_source: bankSource,
-      running_balance: entry.runningBalance
+      running_balance: entry.runningBalance,
     };
   });
 }
 
 function isPasswordError(error: unknown): boolean {
-  const value = error as { name?: string; message?: string; code?: number } | null;
+  const value = error as {
+    name?: string;
+    message?: string;
+    code?: number;
+  } | null;
   const name = String(value?.name || '').toLowerCase();
   const message = String(value?.message || '').toLowerCase();
-  return name.includes('password') || message.includes('password') || message.includes('senha');
+  return (
+    name.includes('password') ||
+    message.includes('password') ||
+    message.includes('senha')
+  );
 }
 
 function classifyPdfOpenError(error: unknown): string {
-  const value = error as { name?: string; message?: string; code?: number } | null;
+  const value = error as {
+    name?: string;
+    message?: string;
+    code?: number;
+  } | null;
   const name = String(value?.name || '').toLowerCase();
   const message = String(value?.message || '').toLowerCase();
 
   if (isPasswordError(error)) {
     return 'O PDF continua protegido e não pôde ser aberto. Confira a senha e tente novamente.';
   }
-  if (name.includes('invalidpdf') || message.includes('invalid pdf') || message.includes('pdf structure')) {
+  if (
+    name.includes('invalidpdf') ||
+    message.includes('invalid pdf') ||
+    message.includes('pdf structure')
+  ) {
     return 'PDF inválido ou com estrutura não compatível. Baixe novamente o extrato original no banco; não use impressão em PDF.';
   }
   if (name.includes('missingpdf') || message.includes('missing pdf')) {
     return 'O arquivo PDF não pôde ser carregado completamente. Selecione o arquivo novamente.';
   }
-  if (name.includes('unexpectedresponse') || message.includes('unexpected response')) {
+  if (
+    name.includes('unexpectedresponse') ||
+    message.includes('unexpected response')
+  ) {
     return 'Falha ao carregar o PDF no navegador. Tente baixar o extrato novamente e importar o arquivo local.';
   }
   return 'Não foi possível abrir este PDF. Baixe o extrato original novamente ou use CSV/OFX.';
 }
 
-function emptyPdfResult(selectedBank: string, reason: string, scanned = false): PdfParseResult {
-  const bank = selectedBank && selectedBank !== 'auto' ? selectedBank : 'generic';
+function emptyPdfResult(
+  selectedBank: string,
+  reason: string,
+  scanned = false,
+): PdfParseResult {
+  const bank =
+    selectedBank && selectedBank !== 'auto' ? selectedBank : 'generic';
   return {
     transactions: [],
     debug: {
@@ -286,7 +363,7 @@ function emptyPdfResult(selectedBank: string, reason: string, scanned = false): 
       usedGenericFallback: false,
       reason,
       textPreview: '',
-    }
+    },
   };
 }
 
@@ -300,7 +377,10 @@ async function openPdfWithPassword(
   const loadingTask = getDocument({ data: bytes });
   let passwordCancelled = false;
 
-  loadingTask.onPassword = (updatePassword: (password: string) => void, reason: number) => {
+  loadingTask.onPassword = (
+    updatePassword: (password: string) => void,
+    reason: number,
+  ) => {
     const incorrect = reason === 2;
     if (!requestPassword) {
       passwordCancelled = true;
@@ -329,20 +409,30 @@ async function openPdfWithPassword(
 export async function parsePdfStatementWithDebug(
   file: File,
   selectedBank: string,
-  options?: PdfClassificationOptions
+  options?: PdfClassificationOptions,
 ): Promise<PdfParseResult> {
   let bytes: Uint8Array;
   try {
     bytes = new Uint8Array(await file.arrayBuffer());
   } catch {
-    return emptyPdfResult(selectedBank, 'Não foi possível ler os bytes do arquivo. Selecione o PDF novamente.');
+    return emptyPdfResult(
+      selectedBank,
+      'Não foi possível ler os bytes do arquivo. Selecione o PDF novamente.',
+    );
   }
 
   let pdf: any;
   try {
-    const opened = await openPdfWithPassword(bytes, file.name, options?.requestPassword);
+    const opened = await openPdfWithPassword(
+      bytes,
+      file.name,
+      options?.requestPassword,
+    );
     if (opened.passwordCancelled || !opened.pdf) {
-      return emptyPdfResult(selectedBank, 'Leitura cancelada. A senha do PDF é necessária para importar este extrato.');
+      return emptyPdfResult(
+        selectedBank,
+        'Leitura cancelada. A senha do PDF é necessária para importar este extrato.',
+      );
     }
     pdf = opened.pdf;
   } catch (error) {
@@ -360,17 +450,21 @@ export async function parsePdfStatementWithDebug(
       const rows = new Map<number, { x: number; text: string }[]>();
       totalTextItems += content.items.length;
 
-      for (const item of content.items as Array<{ str: string; transform: number[] }>) {
+      for (const item of content.items as Array<{
+        str: string;
+        transform: number[];
+      }>) {
         const y = Math.round(item.transform[5]);
         if (!rows.has(y)) rows.set(y, []);
-        rows.get(y)!.push({ x: item.transform[4], text: item.str });
+        rows.get(y)?.push({ x: item.transform[4], text: item.str });
         fullText += ` ${item.str}`;
       }
 
       const ys = [...rows.keys()].sort((a, b) => b - a);
       for (const y of ys) {
-        const line = rows.get(y)!
-          .sort((a, b) => a.x - b.x)
+        const line = rows
+          .get(y)
+          ?.sort((a, b) => a.x - b.x)
           .map((part) => part.text)
           .join(' ')
           .replace(/\s+/g, ' ')
@@ -381,7 +475,7 @@ export async function parsePdfStatementWithDebug(
   } catch {
     const result = emptyPdfResult(
       selectedBank,
-      'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.'
+      'O PDF abriu, mas o texto não pôde ser extraído. Tente baixar o extrato original ou exportar em CSV/OFX.',
     );
     result.debug.totalPages = pdf.numPages;
     result.debug.totalTextItems = totalTextItems;
@@ -410,38 +504,55 @@ export async function parsePdfStatementWithDebug(
   const transactions = toImportedTransactions(bank, extracted, options);
   const cleanedText = fullText.replace(/\s+/g, ' ').trim();
   const normalizedText = normalizeHeader(cleanedText);
-  const isScannedPdf = cleanedText.length < 40 || totalTextItems < 20 || lines.length < 5;
+  const isScannedPdf =
+    cleanedText.length < 40 || totalTextItems < 20 || lines.length < 5;
   const hasTransactionPattern =
     /\b\d{2}[./-]\d{2}(?:[./-]\d{2,4})?\b/.test(cleanedText) &&
     STRICT_MONEY_PATTERN.test(cleanedText);
   const isLikelyBankStatement =
-    /(extrato|movimentacao|lancamento|saldo|contacorrente|banco|agencia|debito|credito|pix|transferencia)/.test(normalizedText) ||
-    hasTransactionPattern;
-  const safeTransactions = transactions.filter((item) => item.status === 'ready');
+    /(extrato|movimentacao|lancamento|saldo|contacorrente|banco|agencia|debito|credito|pix|transferencia)/.test(
+      normalizedText,
+    ) || hasTransactionPattern;
+  const safeTransactions = transactions.filter(
+    (item) => item.status === 'ready',
+  );
   const suspiciousTransactions = transactions.filter(
-    (item) => Number.isFinite(Number(item.amount)) && Math.abs(Number(item.amount)) >= MAX_SAFE_PDF_TRANSACTION_AMOUNT
+    (item) =>
+      Number.isFinite(Number(item.amount)) &&
+      Math.abs(Number(item.amount)) >= MAX_SAFE_PDF_TRANSACTION_AMOUNT,
   );
 
   let reason: string | undefined;
   if (transactions.length === 0) {
     if (isScannedPdf) {
-      reason = 'PDF sem texto selecionável, provavelmente escaneado ou gerado como imagem. Use o PDF original do banco ou exporte em CSV/OFX.';
+      reason =
+        'PDF sem texto selecionável, provavelmente escaneado ou gerado como imagem. Use o PDF original do banco ou exporte em CSV/OFX.';
     } else if (!isLikelyBankStatement) {
-      reason = 'O PDF abriu, mas não apresenta estrutura reconhecível de extrato bancário.';
+      reason =
+        'O PDF abriu, mas não apresenta estrutura reconhecível de extrato bancário.';
     } else if (cleanedText.length < 120) {
-      reason = 'Texto extraído insuficiente para mapear movimentações financeiras.';
+      reason =
+        'Texto extraído insuficiente para mapear movimentações financeiras.';
     } else {
-      reason = 'Extrato reconhecido, mas nenhuma movimentação pôde ser mapeada com segurança. O layout pode ter mudado.';
+      reason =
+        'Extrato reconhecido, mas nenhuma movimentação pôde ser mapeada com segurança. O layout pode ter mudado.';
     }
-  } else if (safeTransactions.length === 0 && suspiciousTransactions.length > 0) {
-    reason = 'A leitura encontrou valores monetários implausíveis e bloqueou a importação. O PDF provavelmente separa documento/NSU e valor em colunas diferentes.';
+  } else if (
+    safeTransactions.length === 0 &&
+    suspiciousTransactions.length > 0
+  ) {
+    reason =
+      'A leitura encontrou valores monetários implausíveis e bloqueou a importação. O PDF provavelmente separa documento/NSU e valor em colunas diferentes.';
   }
 
   const datePattern = /\b\d{2}[./-]\d{2}(?:[./-]\d{2,4})?\b/;
   const amountPattern = STRICT_MONEY_PATTERN;
-  const rejectedLineReasons: string[] = suspiciousTransactions.slice(0, 4).map((item) =>
-    `Valor bloqueado por segurança: ${Number(item.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em "${String(item.description || '').slice(0, 80)}"`
-  );
+  const rejectedLineReasons: string[] = suspiciousTransactions
+    .slice(0, 4)
+    .map(
+      (item) =>
+        `Valor bloqueado por segurança: ${Number(item.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em "${String(item.description || '').slice(0, 80)}"`,
+    );
   let ignoredLines = 0;
 
   for (const line of lines) {
@@ -453,11 +564,17 @@ export async function parsePdfStatementWithDebug(
     if (rejectedLineReasons.length >= 8) continue;
 
     if (hasDate && !hasAmount) {
-      rejectedLineReasons.push(`Linha ignorada sem valor monetario: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(
+        `Linha ignorada sem valor monetario: "${line.slice(0, 120)}"`,
+      );
     } else if (!hasDate && hasAmount) {
-      rejectedLineReasons.push(`Linha ignorada sem data: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(
+        `Linha ignorada sem data: "${line.slice(0, 120)}"`,
+      );
     } else {
-      rejectedLineReasons.push(`Linha sem padrao de transacao: "${line.slice(0, 120)}"`);
+      rejectedLineReasons.push(
+        `Linha sem padrao de transacao: "${line.slice(0, 120)}"`,
+      );
     }
   }
 
@@ -478,11 +595,14 @@ export async function parsePdfStatementWithDebug(
       usedGenericFallback,
       reason,
       textPreview: cleanedText.slice(0, 500),
-    }
+    },
   };
 }
 
-export async function parsePdfStatement(file: File, selectedBank: string): Promise<ImportedTransaction[]> {
+export async function parsePdfStatement(
+  file: File,
+  selectedBank: string,
+): Promise<ImportedTransaction[]> {
   const result = await parsePdfStatementWithDebug(file, selectedBank);
   return result.transactions;
 }

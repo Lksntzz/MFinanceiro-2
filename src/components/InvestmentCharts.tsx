@@ -1,18 +1,16 @@
 import React from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  ResponsiveContainer, 
+import {
+  Area,
+  Bar,
   CartesianGrid,
   Cell,
-  PieChart,
-  Pie,
+  ComposedChart,
   Line,
-  Area,
-  ComposedChart
+  Pie,
+  PieChart,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
 
 interface InvestmentChartData {
@@ -36,11 +34,14 @@ export const InvestmentDonutChart = ({ data }: DonutChartProps) => {
 
   React.useLayoutEffect(() => {
     if (!containerRef.current) return;
-    
+
     // Initial size measurement
     const rect = containerRef.current.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-      setSize({ width: Math.floor(rect.width), height: Math.floor(rect.height) });
+      setSize({
+        width: Math.floor(rect.width),
+        height: Math.floor(rect.height),
+      });
     }
 
     const obs = new ResizeObserver((entries) => {
@@ -49,7 +50,10 @@ export const InvestmentDonutChart = ({ data }: DonutChartProps) => {
         setSize((prev) => {
           const nextWidth = Math.floor(width);
           const nextHeight = Math.floor(height);
-          if (Math.abs(prev.width - nextWidth) < 2 && Math.abs(prev.height - nextHeight) < 2) {
+          if (
+            Math.abs(prev.width - nextWidth) < 2 &&
+            Math.abs(prev.height - nextHeight) < 2
+          ) {
             return prev;
           }
           return { width: nextWidth, height: nextHeight };
@@ -70,7 +74,10 @@ export const InvestmentDonutChart = ({ data }: DonutChartProps) => {
   }
 
   return (
-    <div ref={containerRef} className="w-full h-[200px] relative overflow-hidden flex items-center justify-center">
+    <div
+      ref={containerRef}
+      className="w-full h-[200px] relative overflow-hidden flex items-center justify-center"
+    >
       {size.width > 0 && size.height > 0 && (
         <PieChart width={size.width} height={size.height}>
           <Pie
@@ -86,17 +93,20 @@ export const InvestmentDonutChart = ({ data }: DonutChartProps) => {
               <Cell key={`cell-${index}`} fill={entry.color} />
             ))}
           </Pie>
-          <Tooltip 
-            contentStyle={{ 
-              backgroundColor: 'rgba(18, 18, 18, 0.95)', 
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'rgba(18, 18, 18, 0.95)',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: '16px',
               fontSize: '12px',
               backdropFilter: 'blur(10px)',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
             }}
             itemStyle={{ color: '#fff' }}
-            formatter={(val) => [`R$ ${Number(val ?? 0).toLocaleString('pt-BR')}`, 'Valor']}
+            formatter={(val) => [
+              `R$ ${Number(val ?? 0).toLocaleString('pt-BR')}`,
+              'Valor',
+            ]}
           />
         </PieChart>
       )}
@@ -110,11 +120,14 @@ export const InvestmentMonthlyChart = ({ data }: InvestmentChartProps) => {
 
   React.useLayoutEffect(() => {
     if (!containerRef.current) return;
-    
+
     // Initial size measurement
     const rect = containerRef.current.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-      setSize({ width: Math.floor(rect.width), height: Math.floor(rect.height) });
+      setSize({
+        width: Math.floor(rect.width),
+        height: Math.floor(rect.height),
+      });
     }
 
     const obs = new ResizeObserver((entries) => {
@@ -123,7 +136,10 @@ export const InvestmentMonthlyChart = ({ data }: InvestmentChartProps) => {
         setSize((prev) => {
           const nextWidth = Math.floor(width);
           const nextHeight = Math.floor(height);
-          if (Math.abs(prev.width - nextWidth) < 2 && Math.abs(prev.height - nextHeight) < 2) {
+          if (
+            Math.abs(prev.width - nextWidth) < 2 &&
+            Math.abs(prev.height - nextHeight) < 2
+          ) {
             return prev;
           }
           return { width: nextWidth, height: nextHeight };
@@ -144,74 +160,94 @@ export const InvestmentMonthlyChart = ({ data }: InvestmentChartProps) => {
   }
 
   return (
-    <div ref={containerRef} className="w-full h-[300px] relative overflow-hidden">
+    <div
+      ref={containerRef}
+      className="w-full h-[300px] relative overflow-hidden"
+    >
       {size.width > 0 && size.height > 0 && (
-        <ComposedChart width={size.width} height={size.height} data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <ComposedChart
+          width={size.width}
+          height={size.height}
+          data={data}
+          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+        >
           <defs>
             <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#00E676" stopOpacity={0.1}/>
-              <stop offset="95%" stopColor="#00E676" stopOpacity={0}/>
+              <stop offset="5%" stopColor="#00E676" stopOpacity={0.1} />
+              <stop offset="95%" stopColor="#00E676" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
-          <XAxis 
-            dataKey="month" 
-            axisLine={false} 
-            tickLine={false} 
-            tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: 'bold' }} 
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="rgba(255,255,255,0.03)"
+          />
+          <XAxis
+            dataKey="month"
+            axisLine={false}
+            tickLine={false}
+            tick={{
+              fill: 'rgba(255,255,255,0.3)',
+              fontSize: 10,
+              fontWeight: 'bold',
+            }}
             dy={10}
           />
-          <YAxis 
-            axisLine={false} 
-            tickLine={false} 
-            tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} 
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
           />
-          <Tooltip 
+          <Tooltip
             cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-            contentStyle={{ 
-              backgroundColor: 'rgba(18, 18, 18, 0.95)', 
+            contentStyle={{
+              backgroundColor: 'rgba(18, 18, 18, 0.95)',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: '16px',
               fontSize: '12px',
               color: '#fff',
               backdropFilter: 'blur(10px)',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
             }}
           />
-          <Area 
-            type="monotone" 
-            dataKey="total" 
-            fillOpacity={1} 
-            fill="url(#colorTotal)" 
+          <Area
+            type="monotone"
+            dataKey="total"
+            fillOpacity={1}
+            fill="url(#colorTotal)"
             stroke="none"
           />
-          <Bar 
-            dataKey="amount" 
+          <Bar
+            dataKey="amount"
             name="Aporte"
-            radius={[4, 4, 0, 0]} 
-            barSize={Math.min(size.width / (data.length || 1) * 0.3, 16)}
+            radius={[4, 4, 0, 0]}
+            barSize={Math.min((size.width / (data.length || 1)) * 0.3, 16)}
           >
-            {data.map((entry, index) => (
-              <Cell 
-                key={`cell-${index}`} 
-                fill={index === data.length - 1 ? '#00E676' : 'rgba(0, 230, 118, 0.3)'} 
+            {data.map((_entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={
+                  index === data.length - 1
+                    ? '#00E676'
+                    : 'rgba(0, 230, 118, 0.3)'
+                }
               />
             ))}
           </Bar>
-          <Line 
-            type="monotone" 
-            dataKey="total" 
+          <Line
+            type="monotone"
+            dataKey="total"
             name="Patrimônio"
-            stroke="#00E676" 
+            stroke="#00E676"
             strokeWidth={3}
             dot={{ r: 4, fill: '#00E676', strokeWidth: 2, stroke: '#121212' }}
             activeDot={{ r: 6, strokeWidth: 0 }}
           />
-          <Line 
-            type="monotone" 
-            dataKey="benchmark" 
+          <Line
+            type="monotone"
+            dataKey="benchmark"
             name="Benchmark (CDI)"
-            stroke="rgba(255,255,255,0.2)" 
+            stroke="rgba(255,255,255,0.2)"
             strokeWidth={2}
             strokeDasharray="5 5"
             dot={false}

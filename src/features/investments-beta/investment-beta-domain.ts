@@ -1,4 +1,12 @@
-export type InvestmentAssetClass = 'stock' | 'fii' | 'etf' | 'bdr' | 'crypto' | 'fixed_income' | 'international' | 'other';
+export type InvestmentAssetClass =
+  | 'stock'
+  | 'fii'
+  | 'etf'
+  | 'bdr'
+  | 'crypto'
+  | 'fixed_income'
+  | 'international'
+  | 'other';
 export type InvestmentOperationType = 'buy' | 'sell';
 export type InvestmentBetaMarketSource = 'brapi-sandbox' | 'brapi-backend';
 
@@ -93,13 +101,28 @@ export function sanitizeNumber(value: unknown): number {
 }
 
 export function normalizeSymbol(value: string): string {
-  return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
 }
 
-export function operationGrossAmount(operation: Pick<InvestmentBetaOperation, 'quantity' | 'unitPrice' | 'fees' | 'type'>): number {
-  const trade = Math.max(0, sanitizeNumber(operation.quantity)) * Math.max(0, sanitizeNumber(operation.unitPrice));
+export function operationGrossAmount(
+  operation: Pick<
+    InvestmentBetaOperation,
+    'quantity' | 'unitPrice' | 'fees' | 'type'
+  >,
+): number {
+  const trade =
+    Math.max(0, sanitizeNumber(operation.quantity)) *
+    Math.max(0, sanitizeNumber(operation.unitPrice));
   const fees = Math.max(0, sanitizeNumber(operation.fees));
-  return Number((operation.type === 'buy' ? trade + fees : Math.max(0, trade - fees)).toFixed(2));
+  return Number(
+    (operation.type === 'buy'
+      ? trade + fees
+      : Math.max(0, trade - fees)
+    ).toFixed(2),
+  );
 }
 
 export function quantityHeldOnDate(
@@ -113,10 +136,17 @@ export function quantityHeldOnDate(
   if (!symbol || !cutoff) return 0;
 
   const quantity = operations
-    .filter((operation) => operation.assetClass === assetClass && normalizeSymbol(operation.symbol) === symbol && String(operation.date || '').slice(0, 10) <= cutoff)
+    .filter(
+      (operation) =>
+        operation.assetClass === assetClass &&
+        normalizeSymbol(operation.symbol) === symbol &&
+        String(operation.date || '').slice(0, 10) <= cutoff,
+    )
     .sort((a, b) => {
       const dateOrder = a.date.localeCompare(b.date);
-      return dateOrder !== 0 ? dateOrder : a.createdAt.localeCompare(b.createdAt);
+      return dateOrder !== 0
+        ? dateOrder
+        : a.createdAt.localeCompare(b.createdAt);
     })
     .reduce((current, operation) => {
       const operationQuantity = Math.max(0, sanitizeNumber(operation.quantity));
@@ -135,14 +165,23 @@ export function projectInvestmentIncomeEvents(
   return events.map((event) => {
     const eligibilityKnown = Boolean(event.recordDate);
     const eligibleQuantity = eligibilityKnown
-      ? quantityHeldOnDate(operations, event.assetClass, event.symbol, event.recordDate || '')
+      ? quantityHeldOnDate(
+          operations,
+          event.assetClass,
+          event.symbol,
+          event.recordDate || '',
+        )
       : 0;
     return {
       ...event,
       eligibilityKnown,
       eligibleQuantity,
       expectedAmount: eligibilityKnown
-        ? Number((eligibleQuantity * Math.max(0, sanitizeNumber(event.rate))).toFixed(2))
+        ? Number(
+            (
+              eligibleQuantity * Math.max(0, sanitizeNumber(event.rate))
+            ).toFixed(2),
+          )
         : 0,
     };
   });
@@ -156,7 +195,18 @@ export function deriveInvestmentPositions(
     const dateOrder = a.date.localeCompare(b.date);
     return dateOrder !== 0 ? dateOrder : a.createdAt.localeCompare(b.createdAt);
   });
-  const positions = new Map<string, { assetClass: InvestmentAssetClass; symbol: string; assetName?: string; currency: string; quantity: number; cost: number; lastPrice: number }>();
+  const positions = new Map<
+    string,
+    {
+      assetClass: InvestmentAssetClass;
+      symbol: string;
+      assetName?: string;
+      currency: string;
+      quantity: number;
+      cost: number;
+      lastPrice: number;
+    }
+  >();
 
   for (const operation of sorted) {
     const symbol = normalizeSymbol(operation.symbol);
@@ -200,11 +250,14 @@ export function deriveInvestmentPositions(
     .filter((position) => position.quantity > 0)
     .map((position) => {
       const quote = quotes[position.symbol];
-      const averagePrice = position.quantity > 0 ? position.cost / position.quantity : 0;
-      const currentPrice = quote?.price && quote.price > 0 ? quote.price : position.lastPrice;
+      const averagePrice =
+        position.quantity > 0 ? position.cost / position.quantity : 0;
+      const currentPrice =
+        quote?.price && quote.price > 0 ? quote.price : position.lastPrice;
       const currentValue = position.quantity * currentPrice;
       const unrealizedResult = currentValue - position.cost;
-      const unrealizedResultPercent = position.cost > 0 ? (unrealizedResult / position.cost) * 100 : 0;
+      const unrealizedResultPercent =
+        position.cost > 0 ? (unrealizedResult / position.cost) * 100 : 0;
       return {
         assetClass: position.assetClass,
         symbol: position.symbol,
@@ -223,11 +276,24 @@ export function deriveInvestmentPositions(
 }
 
 export function deriveAllocationByClass(positions: InvestmentBetaPosition[]) {
-  const total = positions.reduce((sum, position) => sum + Math.max(0, position.currentValue), 0);
+  const total = positions.reduce(
+    (sum, position) => sum + Math.max(0, position.currentValue),
+    0,
+  );
   const rows = new Map<InvestmentAssetClass, number>();
-  positions.forEach((position) => rows.set(position.assetClass, (rows.get(position.assetClass) || 0) + Math.max(0, position.currentValue)));
+  positions.forEach((position) =>
+    rows.set(
+      position.assetClass,
+      (rows.get(position.assetClass) || 0) + Math.max(0, position.currentValue),
+    ),
+  );
   return [...rows.entries()]
-    .map(([assetClass, value]) => ({ assetClass, label: ASSET_CLASS_LABELS[assetClass], value: Number(value.toFixed(2)), percentage: total > 0 ? Number(((value / total) * 100).toFixed(2)) : 0 }))
+    .map(([assetClass, value]) => ({
+      assetClass,
+      label: ASSET_CLASS_LABELS[assetClass],
+      value: Number(value.toFixed(2)),
+      percentage: total > 0 ? Number(((value / total) * 100).toFixed(2)) : 0,
+    }))
     .sort((a, b) => b.value - a.value);
 }
 
@@ -239,8 +305,17 @@ export function calculateRebalancingPlan(
   const available = Math.max(0, sanitizeNumber(contribution));
   if (available <= 0) return [];
   const current = new Map<InvestmentAssetClass, number>();
-  positions.forEach((position) => current.set(position.assetClass, (current.get(position.assetClass) || 0) + Math.max(0, position.currentValue)));
-  const currentTotal = [...current.values()].reduce((sum, value) => sum + value, 0);
+  positions.forEach((position) =>
+    current.set(
+      position.assetClass,
+      (current.get(position.assetClass) || 0) +
+        Math.max(0, position.currentValue),
+    ),
+  );
+  const currentTotal = [...current.values()].reduce(
+    (sum, value) => sum + value,
+    0,
+  );
   const finalTotal = currentTotal + available;
   const desired = (Object.keys(ASSET_CLASS_LABELS) as InvestmentAssetClass[])
     .map((assetClass) => ({
@@ -255,7 +330,11 @@ export function calculateRebalancingPlan(
   const deficits = desired.map((row) => {
     const normalizedTarget = row.target / targetSum;
     const desiredValue = finalTotal * normalizedTarget;
-    return { ...row, normalizedTarget, deficit: Math.max(0, desiredValue - row.currentValue) };
+    return {
+      ...row,
+      normalizedTarget,
+      deficit: Math.max(0, desiredValue - row.currentValue),
+    };
   });
   const deficitTotal = deficits.reduce((sum, row) => sum + row.deficit, 0);
   if (deficitTotal <= 0) return [];
@@ -266,7 +345,11 @@ export function calculateRebalancingPlan(
       label: row.label,
       targetPercentage: Number((row.normalizedTarget * 100).toFixed(2)),
       currentValue: Number(row.currentValue.toFixed(2)),
-      suggestedAmount: Number(Math.min(row.deficit, available * (row.deficit / deficitTotal)).toFixed(2)),
+      suggestedAmount: Number(
+        Math.min(row.deficit, available * (row.deficit / deficitTotal)).toFixed(
+          2,
+        ),
+      ),
     }))
     .filter((row) => row.suggestedAmount > 0)
     .sort((a, b) => b.suggestedAmount - a.suggestedAmount);

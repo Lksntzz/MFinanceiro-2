@@ -12,10 +12,12 @@
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "lint:style": "biome check .",
     "security:check": "node --import tsx scripts/security-policy-check.ts && node --import tsx scripts/maintenance-rpc-contract-check.ts && node --import tsx scripts/access-approval-contract-check.ts",
+    "security:scan": "semgrep scan --config=.security/semgrep --error .",
     "product:check": "node --import tsx scripts/product-maturity-check.ts",
     "mobile:check": "node --import tsx scripts/mobile-logic-check.ts && node --import tsx scripts/native-shell-check.ts && node --import tsx scripts/mobile-layout-contract-check.ts",
-    "check": "npm run lint && npm test && npm run security:check && npm run product:check && npm run mobile:check && npm run build",
+    "check": "npm run lint && npm run lint:style && npm test && npm run security:check && npm run product:check && npm run mobile:check && npm run build",
     "native:sync": "npm run build && cap sync",
     "native:open:ios": "cap open ios",
     "native:open:android": "cap open android"
@@ -43,11 +45,12 @@
     "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
     "@capacitor/android": "8.4.2",
     "@capacitor/cli": "8.4.2",
     "@capacitor/ios": "8.4.2",
-    "@types/node": "^22.14.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
