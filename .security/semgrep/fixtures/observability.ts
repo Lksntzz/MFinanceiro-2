@@ -6,7 +6,9 @@ declare function reportOperationalEvent(
 ): void;
 
 // ruleid: mf-critical-operation-needs-correlation
-reportOperationalEvent('import.failed', 'import', 'error', { route: '/app/import' });
+reportOperationalEvent('import.failed', 'import', 'error', {
+  route: '/app/import',
+});
 
 // ok: mf-critical-operation-needs-correlation
 reportOperationalEvent('import.failed', 'import', 'error', {
