@@ -2,6 +2,11 @@ import { expect, test } from '@playwright/test';
 
 const baseUrl = String(process.env.MF_VISUAL_BASE_URL || '').replace(/\/$/, '');
 
+function isAllowedVisualTarget(value) {
+  if (/^https:\/\//i.test(value)) return true;
+  return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(value);
+}
+
 async function openStable(page, path = '/') {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${baseUrl}${path}`, { waitUntil: 'networkidle' });
@@ -16,8 +21,8 @@ async function expectNoHorizontalOverflow(page) {
 }
 
 test.beforeAll(() => {
-  if (!/^https:\/\//i.test(baseUrl)) {
-    throw new Error('MF_VISUAL_BASE_URL deve apontar para um Preview HTTPS explícito.');
+  if (!isAllowedVisualTarget(baseUrl)) {
+    throw new Error('MF_VISUAL_BASE_URL deve usar HTTPS ou loopback local explícito (127.0.0.1/localhost).');
   }
 });
 
