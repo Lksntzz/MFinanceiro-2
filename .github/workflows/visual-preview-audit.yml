@@ -1,0 +1,58 @@
+name: Visual Preview Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'URL HTTPS do Preview Vercel do commit exato'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  public-shell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      MF_VISUAL_BASE_URL: ${{ inputs.base_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require explicit HTTPS Preview
+        shell: bash
+        run: |
+          case "$MF_VISUAL_BASE_URL" in
+            https://*) ;;
+            *) echo 'Informe uma URL HTTPS explícita do Preview.' && exit 1 ;;
+          esac
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install pinned browser test runner
+        run: npm install --no-save --ignore-scripts @playwright/test@1.55.0
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture and validate public visual shell
+        run: npx playwright test tests/e2e/visual-shell.spec.mjs --reporter=line
+
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-preview-${{ github.sha }}
+          path: test-results
+          if-no-files-found: warn
+          retention-days: 14
