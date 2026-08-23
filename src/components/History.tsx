@@ -6,7 +6,8 @@ import { useNavigate, useSearchParams } from 'react-router';
 
 import { supabase } from '../lib/supabase';
 import { downloadXlsx } from '../lib/xlsx-export';
-import { Transaction } from '../types';
+import { Transaction, TransactionCategory } from '../types';
+import { inferAdaptiveCategory } from '../mobile/lib/adaptive-category';
 
 interface HistoryProps {
   userId: string;
@@ -23,6 +24,7 @@ interface HistoryProps {
   hasMore: boolean;
   isLoadingMore?: boolean;
   onLoadMore: () => Promise<void>;
+  categories: TransactionCategory[];
 }
 
 type FilterType = 'all' | 'income' | 'expense';
@@ -105,6 +107,7 @@ export default function History({
   hasMore,
   isLoadingMore = false,
   onLoadMore,
+  categories,
 }: HistoryProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -196,7 +199,7 @@ export default function History({
     try {
       const { data, error: loadError } = await supabase
         .from('mf_finance_ledger_entries')
-        .select('id,description,source,type,amount,account_id,category')
+        .select('id,user_id,date,description,source,type,amount,account_id,category,category_id')
         .eq('user_id', userId)
         .order('date', { ascending: false })
         .limit(2000);
@@ -221,13 +224,38 @@ export default function History({
       if (previewError) throw previewError;
 
       const matches = ((previewData || []) as CategorizationPreview[]).filter((item) => item.entry_id && item.rule_id && item.category_id && item.category_name);
-      if (!matches.length) {
-        setOrganizerMessage(`Encontrei ${candidates.length} lançamento${candidates.length === 1 ? '' : 's'} genérico${candidates.length === 1 ? '' : 's'}, mas nenhuma regra automática segura se aplica ainda. Crie uma regra para o MF poder organizar em lote.`);
+      
+      const matchedEntryIds = new Set(matches.map((item) => String(item.entry_id)));
+      const remainingCandidates = candidates.filter((candidate) => !matchedEntryIds.has(String(candidate.id)));
+      const historyEntries = (data || []).filter((entry: any) => !isGenericCategory(entry.category));
+
+      const adaptiveMatches: CategorizationPreview[] = [];
+      for (const candidate of remainingCandidates) {
+        if (candidate.type === 'transfer') continue;
+        const suggestion = inferAdaptiveCategory({
+          merchantText: candidate.description || candidate.source || '',
+          type: candidate.type === 'income' ? 'income' : 'expense',
+          history: historyEntries,
+          categories,
+        });
+        if (suggestion) {
+          adaptiveMatches.push({
+            entry_id: candidate.id,
+            rule_id: 'adaptive-fallback',
+            category_id: suggestion.categoryId,
+            category_name: suggestion.categoryName,
+          });
+        }
+      }
+
+      const allMatches = [...matches, ...adaptiveMatches];
+      if (!allMatches.length) {
+        setOrganizerMessage(`Encontrei ${candidates.length} lançamento${candidates.length === 1 ? '' : 's'} genérico${candidates.length === 1 ? '' : 's'}, mas nenhuma regra automática segura ou similaridade histórica se aplica ainda. Crie uma regra para o MF poder organizar em lote.`);
         return;
       }
 
       const byCategory = new Map<string, { categoryId: string; categoryName: string; ids: string[] }>();
-      matches.forEach((match) => {
+      allMatches.forEach((match) => {
         const categoryId = String(match.category_id);
         const categoryName = String(match.category_name);
         const key = `${categoryId}:${categoryName}`;
@@ -252,7 +280,15 @@ export default function History({
       window.dispatchEvent(new CustomEvent('mf:finance-data-changed'));
       await onDataChanged?.();
       const pending = candidates.length - updated;
-      setOrganizerMessage(`${updated} lançamento${updated === 1 ? '' : 's'} organizado${updated === 1 ? '' : 's'} pelas suas regras automáticas.${pending > 0 ? ` ${pending} continuam genéricos porque ainda não há regra segura para eles.` : ''}`);
+      
+      const ruleCount = matches.length;
+      const adaptiveCount = adaptiveMatches.length;
+      const details = [];
+      if (ruleCount > 0) details.push(`${ruleCount} por regras`);
+      if (adaptiveCount > 0) details.push(`${adaptiveCount} por similaridade`);
+      const detailsText = details.length > 0 ? ` (${details.join(' e ')})` : '';
+
+      setOrganizerMessage(`${updated} lançamento${updated === 1 ? '' : 's'} organizado${updated === 1 ? '' : 's'}${detailsText}.${pending > 0 ? ` ${pending} continuam genéricos porque ainda não há regra segura para eles.` : ''}`);
     } catch (error) {
       setOrganizerMessage(error instanceof Error ? error.message : 'Não foi possível organizar os lançamentos genéricos.');
     } finally {
