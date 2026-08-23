@@ -36,8 +36,90 @@ type EventDescriptor = {
   impact?: DiagImpact;
 };
 
-const BLOCKED_KEYS =
-  /(amount|balance|card|account|email|name|description|document|file|token|secret|password|payload|statement|merchant|salary|income|expense|raw|preview|text)/i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FORBIDDEN_KEY_FRAGMENTS = [
+  'password',
+  'senha',
+  'passwd',
+  'secret',
+  'token',
+  'authorization',
+  'cookie',
+  'access',
+  'refresh',
+  'cpf',
+  'cnpj',
+  'email',
+  'phone',
+  'name',
+  'nome',
+  'card',
+  'cartao',
+  'cvv',
+  'account',
+  'conta',
+  'document',
+  'arquivo',
+  'filecontent',
+  'filebytes',
+  'payload',
+  'statement',
+  'extrato',
+  'base64',
+  'raw',
+  'preview',
+  'debug',
+  'rejectedline',
+  'storagepath',
+  'path',
+  'description',
+  'merchant',
+  'estabelecimento',
+  'amount',
+  'value',
+  'balance',
+  'saldo',
+  'salary',
+  'income',
+  'expense',
+  'receita',
+  'despesa',
+];
+const SAFE_STRING_CONTEXT_KEYS = new Set([
+  'route',
+  'stage',
+  'parser',
+  'format',
+  'filetype',
+  'mimetype',
+  'confidencebucket',
+  'reasoncode',
+  'errortype',
+  'browserfamily',
+  'platform',
+  'triggersource',
+  'status',
+  'operationstage',
+]);
+const SAFE_NUMBER_CONTEXT_KEYS = new Set([
+  'durationms',
+  'statuscode',
+  'pagecount',
+  'itemcount',
+  'linecount',
+  'acceptedcount',
+  'rejectedcount',
+  'duplicatecount',
+  'ignoredcount',
+  'filesizebucket',
+]);
+const SAFE_BOOLEAN_CONTEXT_KEYS = new Set([
+  'retryable',
+  'offline',
+  'cached',
+  'fallbackused',
+]);
 const MIN_EVENT_INTERVAL_MS = 60_000;
 const SEND_TIMEOUT_MS = 1_200;
 const CIRCUIT_FAILURE_LIMIT = 3;
@@ -215,47 +297,90 @@ export function createOperationalCorrelationId() {
   });
 }
 
-function cleanToken(value: string, maxLength: number) {
-  return String(value || '')
+function cleanToken(value: unknown, maxLength: number) {
+  if (typeof value !== 'string') return null;
+  const normalized = value
     .toLowerCase()
     .replace(/[^a-z0-9_.-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, maxLength);
+  return normalized || null;
 }
 
-function cleanErrorCode(value: string) {
-  return String(value || '')
+function cleanErrorCode(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const normalized = value
     .toUpperCase()
     .replace(/[^A-Z0-9_.:-]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 120);
+  return normalized || null;
 }
 
-function safeRoute() {
-  if (typeof window === 'undefined') return 'unknown';
-  return window.location.pathname
-    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
-    .replace(/\d{5,}/g, ':n')
-    .slice(0, 180);
+function normalizePrivacyKey(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function safeRoute(value?: unknown) {
+  const route =
+    typeof value === 'string'
+      ? value
+      : typeof window === 'undefined'
+        ? 'unknown'
+        : window.location.pathname;
+  try {
+    const url = new URL(route, 'https://mf.local');
+    return url.pathname
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+      .replace(/\d{5,}/g, ':n')
+      .slice(0, 160);
+  } catch {
+    return 'unknown';
+  }
 }
 
 function sanitizeContext(input: Record<string, unknown> | undefined) {
   const output: Record<string, SafePrimitive> = {};
   for (const [rawKey, rawValue] of Object.entries(input || {})) {
-    const key = cleanToken(rawKey, 48);
-    if (!key || BLOCKED_KEYS.test(key)) continue;
-    if (rawValue === null) {
-      output[key] = null;
-    } else if (typeof rawValue === 'boolean') {
-      output[key] = rawValue;
-    } else if (typeof rawValue === 'number') {
-      output[key] = Number.isFinite(rawValue) ? rawValue : String(rawValue);
-    } else if (typeof rawValue === 'string') {
-      output[key] = rawValue.slice(0, 160);
+    const key = normalizePrivacyKey(rawKey);
+    if (
+      !key ||
+      FORBIDDEN_KEY_FRAGMENTS.some((fragment) => key.includes(fragment))
+    ) {
+      continue;
     }
-    if (Object.keys(output).length >= 12) break;
+
+    if (SAFE_STRING_CONTEXT_KEYS.has(key)) {
+      if (typeof rawValue !== 'string') continue;
+      const value =
+        key === 'route' ? safeRoute(rawValue) : cleanToken(rawValue, 80);
+      if (value && value !== 'unknown') output[key] = value;
+    } else if (SAFE_NUMBER_CONTEXT_KEYS.has(key)) {
+      if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) continue;
+      const value = rawValue;
+      if (key === 'statuscode') {
+        if (value >= 100 && value <= 599) output[key] = value;
+      } else if (key === 'filesizebucket') {
+        if (value >= 0 && value <= 10) output[key] = value;
+      } else if (value >= 0 && value <= 1_000_000) {
+        output[key] = value;
+      }
+    } else if (
+      SAFE_BOOLEAN_CONTEXT_KEYS.has(key) &&
+      typeof rawValue === 'boolean'
+    ) {
+      output[key] = rawValue;
+    }
+    if (Object.keys(output).length >= 16) break;
   }
   return output;
+}
+
+function isUuid(value: string | undefined): value is string {
+  return Boolean(value && UUID_PATTERN.test(value));
 }
 
 function clientSurface(): ClientSurface {
@@ -305,6 +430,13 @@ async function sendEvent(payload: Record<string, unknown>) {
     const accessToken = data.session?.access_token;
     if (!accessToken) return;
 
+    let body: string;
+    try {
+      body = JSON.stringify(payload);
+    } catch {
+      return;
+    }
+
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
     try {
@@ -314,7 +446,7 @@ async function sendEvent(payload: Record<string, unknown>) {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body,
         keepalive: true,
         signal: controller.signal,
       });
@@ -375,9 +507,11 @@ export function reportOperationalEvent(
     deploy_id: buildId,
     surface: clientSurface(),
     environment: environment(),
-    message: descriptor?.title || event,
+    // Free text, including catalog titles, must not cross the telemetry boundary.
     impact: options.impact || descriptor?.impact || 'none',
-    correlation_id: options.correlationId,
+    correlation_id: isUuid(options.correlationId)
+      ? options.correlationId
+      : createOperationalCorrelationId(),
     duration_ms:
       Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : undefined,
     technical_context: {
