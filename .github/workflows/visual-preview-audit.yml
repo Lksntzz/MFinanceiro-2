@@ -1,34 +1,26 @@
-name: Visual Preview Audit
+name: Visual UI Audit
 
 on:
+  pull_request:
   workflow_dispatch:
-    inputs:
-      base_url:
-        description: 'URL HTTPS do Preview Vercel do commit exato'
-        required: true
-        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: visual-ui-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   public-shell:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      MF_VISUAL_BASE_URL: ${{ inputs.base_url }}
+      MF_VISUAL_BASE_URL: http://127.0.0.1:4173
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Require explicit HTTPS Preview
-        shell: bash
-        run: |
-          case "$MF_VISUAL_BASE_URL" in
-            https://*) ;;
-            *) echo 'Informe uma URL HTTPS explícita do Preview.' && exit 1 ;;
-          esac
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -39,20 +31,42 @@ jobs:
       - name: Install application dependencies
         run: npm ci
 
+      - name: Build exact commit
+        run: npm run build
+
       - name: Install pinned browser test runner
         run: npm install --no-save --ignore-scripts @playwright/test@1.55.0
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Start isolated local Preview
+        shell: bash
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/mf-visual-preview.log 2>&1 &
+          echo $! > /tmp/mf-visual-preview.pid
+          for attempt in {1..30}; do
+            if curl -fsS "$MF_VISUAL_BASE_URL/" >/dev/null; then
+              echo "Local Preview ready on $MF_VISUAL_BASE_URL"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/mf-visual-preview.log
+          exit 1
+
       - name: Capture and validate public visual shell
         run: npx playwright test tests/e2e/visual-shell.spec.mjs --reporter=line
+
+      - name: Print local Preview log on failure
+        if: failure()
+        run: cat /tmp/mf-visual-preview.log || true
 
       - name: Upload visual evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: visual-preview-${{ github.sha }}
+          name: visual-ui-${{ github.sha }}
           path: test-results
           if-no-files-found: warn
           retention-days: 14
