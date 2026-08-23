@@ -1,15 +1,12 @@
 rules:
   - id: mf-no-service-role-on-client
-    patterns:
-      - pattern-either:
-          - pattern: |
-              import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
-          - pattern: |
-              import.meta.env.VITE_SUPABASE_SERVICE_KEY
-          - pattern: |
-              import.meta.env.VITE_SERVICE_ROLE
-          - pattern: |
-              "service_role"
-    message: "Nunca exponha chaves de service_role no bundle do navegador/cliente."
+    pattern-either:
+      - pattern: |
+          import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+      - pattern: |
+          import.meta.env.VITE_SUPABASE_SERVICE_KEY
+      - pattern: |
+          import.meta.env.VITE_SERVICE_ROLE
+    message: "Nunca exponha uma chave service_role por variável VITE_* no bundle do navegador. Service role deve permanecer somente server-side."
     languages: [typescript, javascript]
     severity: ERROR
