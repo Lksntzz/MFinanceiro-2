@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { supabase } from './supabase';
+import { trustedMfAdminIngestUrl } from './telemetry-endpoint';
 
 type Severity = 'info' | 'warning' | 'error';
 type DiagSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -420,9 +421,11 @@ function environment(): 'production' | 'preview' | 'development' | 'unknown' {
 }
 
 async function sendEvent(payload: Record<string, unknown>) {
-  const ingestUrl = String(
-    import.meta.env.VITE_MF_ADMIN_INGEST_URL || '',
-  ).trim();
+  // Validate the destination before reading the Financeiro session token.
+  // A bad Vercel/env value disables telemetry instead of exposing a JWT.
+  const ingestUrl = trustedMfAdminIngestUrl(
+    import.meta.env.VITE_MF_ADMIN_INGEST_URL,
+  );
   if (!ingestUrl || Date.now() < circuitOpenUntil) return;
 
   try {
