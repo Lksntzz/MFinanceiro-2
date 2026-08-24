@@ -6,7 +6,6 @@ import AccessibilityLayer from './components/AccessibilityLayer';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { AppProvider } from './context/AppContext';
 import { installGlobalOperationalObservers } from './lib/operational-observability';
-import { runTelemetryPrivacyProbe } from './lib/telemetry-privacy-probe';
 import { installNativeDeepLinkBridge } from './mobile/native/native-deep-links';
 import { installNativeShareBridge } from './mobile/native/native-share';
 import './index.css';
@@ -91,7 +90,6 @@ window.addEventListener('load', () => {
 });
 
 installGlobalOperationalObservers();
-void runTelemetryPrivacyProbe();
 void installNativeDeepLinkBridge();
 void installNativeShareBridge();
 
