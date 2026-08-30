@@ -1,0 +1,4 @@
+project_id = "mf-financeiro-local"
+
+[functions.mf-automation-gateway]
+verify_jwt = false
