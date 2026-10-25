@@ -598,11 +598,3 @@ export async function parsePdfStatementWithDebug(
     },
   };
 }
-
-export async function parsePdfStatement(
-  file: File,
-  selectedBank: string,
-): Promise<ImportedTransaction[]> {
-  const result = await parsePdfStatementWithDebug(file, selectedBank);
-  return result.transactions;
-}

@@ -252,12 +252,11 @@ export function normalizeImportedTransactions(
       item.type === 'income' ? 'income' : 'expense';
     const isValid =
       safeDescription !== 'Sem descricao' && safeAmount > 0 && hasValidDate;
-    const status: ImportedTransaction['status'] =
-      isValid && item.status !== 'error'
-        ? item.status
-        : isValid
-          ? 'ready'
-          : 'error';
+    // Se o leitor já marcou a linha como erro, ela continua erro até o usuário
+    // corrigi-la na revisão (antes ficava 'pronta' sozinha).
+    const status: ImportedTransaction['status'] = isValid
+      ? item.status
+      : 'error';
 
     return {
       ...item,

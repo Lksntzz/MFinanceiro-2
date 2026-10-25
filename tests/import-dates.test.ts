@@ -81,3 +81,23 @@ describe('datas na importação de extratos', () => {
     assert.ok(new Date(iso).getTime() <= now.getTime() + 7 * 86_400_000);
   });
 });
+
+describe('revisão da importação', () => {
+  it('linha que o leitor marcou como erro não vira pronta sozinha', () => {
+    const [row] = normalizeImportedTransactions([
+      {
+        id: 'x',
+        date: '2026-08-14',
+        description: 'COMPRA',
+        amount: 10,
+        type: 'expense',
+        category: 'Geral',
+        status: 'error',
+        confidence: 0.3,
+        original_description: 'COMPRA',
+        bank_source: 'teste',
+      } as never,
+    ]);
+    assert.equal(row.status, 'error');
+  });
+});

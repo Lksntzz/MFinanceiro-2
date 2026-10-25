@@ -63,6 +63,24 @@ interface ImportarExtratosProps {
   internalAccountAliases?: string[];
 }
 
+class AiConsentDeclined extends Error {
+  constructor() {
+    super(
+      'Leitura por IA não autorizada. O arquivo não foi enviado; use CSV, OFX ou XLSX, ou tente novamente e confirme o envio.',
+    );
+    this.name = 'AiConsentDeclined';
+  }
+}
+
+function confirmAiReading(fileName: string): boolean {
+  return window.confirm(
+    `Não foi possível ler "${fileName}" só no seu aparelho.\n\nPara continuar, o documento será enviado ao servidor do MFinanceiro e lido por inteligência artificial (OCR/IA). Você revisa tudo antes de importar.\n\nEnviar o arquivo agora?`,
+  );
+}
+
+const REVIEW_PAGE_SIZE = 100;
+const OCR_REVIEW_CHUNK = 10;
+
 export default function ImportarExtratos({
   onImport,
   onCancel,
@@ -101,6 +119,7 @@ export default function ImportarExtratos({
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [committedCount, setCommittedCount] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(REVIEW_PAGE_SIZE);
   const [selectedAccountId, setSelectedAccountId] = useState(
     () =>
       accounts.find((account) => account.is_default && account.is_active)?.id ||
@@ -189,6 +208,7 @@ export default function ImportarExtratos({
   const resetImportState = useCallback(
     (targetStep: 'upload' | 'processing' = 'upload') => {
       importSessionRef.current += 1;
+      setVisibleCount(REVIEW_PAGE_SIZE);
       setFile(null);
       setImportedData([]);
       setImportDiagnostics(null);
@@ -220,6 +240,7 @@ export default function ImportarExtratos({
     setRejectedOcrItemIds([]);
     setImportError(null);
     setCommittedCount(0);
+    setVisibleCount(REVIEW_PAGE_SIZE);
 
     try {
       const detection = detectFileFormat(fileSnapshot);
@@ -318,6 +339,8 @@ export default function ImportarExtratos({
         );
         if (!hasValidLocalRows) {
           try {
+            if (!confirmAiReading(fileSnapshot.name))
+              throw new AiConsentDeclined();
             const ocrResult = await extractStatementWithOcr(
               fileSnapshot,
               selectedAccountId,
@@ -353,6 +376,7 @@ export default function ImportarExtratos({
           rejectedLineReasons: rejected,
         };
       } else if (detection.format === 'image') {
+        if (!confirmAiReading(fileSnapshot.name)) throw new AiConsentDeclined();
         const ocrResult = await extractStatementWithOcr(
           fileSnapshot,
           selectedAccountId,
@@ -451,7 +475,9 @@ export default function ImportarExtratos({
         linesIgnored: 0,
         rejectedLineReasons: [],
         reason:
-          'Falha ao ler o arquivo. Verifique o formato e tente novamente.',
+          error instanceof AiConsentDeclined
+            ? error.message
+            : 'Falha ao ler o arquivo. Verifique o formato e tente novamente.',
       });
       setStep('review');
     }
@@ -488,58 +514,63 @@ export default function ImportarExtratos({
   async function persistOcrReview() {
     if (!ocrExtractionId) return;
 
-    const updates = importedData
-      .filter((item) => item.extraction_item_id)
-      .map((item) =>
-        supabase
-          .from('mf_document_extraction_items')
-          .update({
-            transaction_date: item.date.slice(0, 10),
-            description: item.description,
-            signed_amount:
-              item.type === 'income'
-                ? Math.abs(item.amount)
-                : -Math.abs(item.amount),
-            transaction_type: item.type,
-            source_name: item.bank_source || item.source || 'OCR/IA',
-            external_id: item.source_id || null,
-            running_balance: item.running_balance ?? null,
-            category_name: item.category || 'Geral',
-            reviewed_at: new Date().toISOString(),
-            review_status:
-              item.status === 'ready'
-                ? item.review_status === 'edited'
-                  ? 'edited'
-                  : 'accepted'
-                : 'rejected',
-            reviewer_notes:
-              item.status === 'ready'
-                ? 'Revisado antes da importação.'
-                : 'Não selecionado na revisão.',
-          })
-          .eq('id', item.extraction_item_id!)
-          .eq('extraction_id', ocrExtractionId),
-      );
+    const reviewRows = importedData.filter((item) => item.extraction_item_id);
+    const runUpdate = (item: ImportedTransaction) =>
+      supabase
+        .from('mf_document_extraction_items')
+        .update({
+          transaction_date: item.date.slice(0, 10),
+          description: item.description,
+          signed_amount:
+            item.type === 'income'
+              ? Math.abs(item.amount)
+              : -Math.abs(item.amount),
+          transaction_type: item.type,
+          source_name: item.bank_source || item.source || 'OCR/IA',
+          external_id: item.source_id || null,
+          running_balance: item.running_balance ?? null,
+          category_name: item.category || 'Geral',
+          reviewed_at: new Date().toISOString(),
+          review_status:
+            item.status === 'ready'
+              ? item.review_status === 'edited'
+                ? 'edited'
+                : 'accepted'
+              : 'rejected',
+          reviewer_notes:
+            item.status === 'ready'
+              ? 'Revisado antes da importação.'
+              : 'Não selecionado na revisão.',
+        })
+        .eq('id', item.extraction_item_id!)
+        .eq('extraction_id', ocrExtractionId);
 
-    if (rejectedOcrItemIds.length) {
-      updates.push(
-        supabase
-          .from('mf_document_extraction_items')
-          .update({
-            review_status: 'rejected',
-            reviewer_notes: 'Removido durante a revisão humana.',
-          })
-          .eq('extraction_id', ocrExtractionId)
-          .in('id', rejectedOcrItemIds),
+    // Em grupos de poucas requisições por vez, para não sobrecarregar o banco.
+    for (let start = 0; start < reviewRows.length; start += OCR_REVIEW_CHUNK) {
+      const results = await Promise.all(
+        reviewRows.slice(start, start + OCR_REVIEW_CHUNK).map(runUpdate),
       );
+      const failed = results.find((result) => result.error);
+      if (failed?.error)
+        throw new Error(
+          `Não foi possível salvar a revisão do OCR: ${failed.error.message}`,
+        );
     }
 
-    const results = await Promise.all(updates);
-    const failed = results.find((result) => result.error);
-    if (failed?.error)
-      throw new Error(
-        `Não foi possível salvar a revisão do OCR: ${failed.error.message}`,
-      );
+    if (rejectedOcrItemIds.length) {
+      const { error: rejectError } = await supabase
+        .from('mf_document_extraction_items')
+        .update({
+          review_status: 'rejected',
+          reviewer_notes: 'Removido durante a revisão humana.',
+        })
+        .eq('extraction_id', ocrExtractionId)
+        .in('id', rejectedOcrItemIds);
+      if (rejectError)
+        throw new Error(
+          `Não foi possível salvar a revisão do OCR: ${rejectError.message}`,
+        );
+    }
   }
 
   const handleFinalImport = async () => {
@@ -703,8 +734,9 @@ export default function ImportarExtratos({
                   <div>
                     <h4 className="text-xs font-bold">Segurança de dados</h4>
                     <p className="text-[10px] text-white/40 mt-1">
-                      Arquivos de OCR ficam em armazenamento privado e a chave
-                      de IA permanece no servidor.
+                      CSV, OFX e Excel são lidos no seu aparelho. PDF sem texto
+                      e imagens só vão ao servidor (OCR/IA) com a sua
+                      confirmação.
                     </p>
                   </div>
                 </div>
@@ -1107,7 +1139,7 @@ export default function ImportarExtratos({
           )}
 
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-            {importedData.map((item) => (
+            {importedData.slice(0, visibleCount).map((item) => (
               <div
                 key={item.id}
                 className={`grid grid-cols-[40px_minmax(0,1fr)] items-center gap-3 rounded-xl border p-3 transition-all md:grid-cols-[40px_minmax(0,1fr)_150px_auto] ${
@@ -1221,6 +1253,20 @@ export default function ImportarExtratos({
                 </div>
               </div>
             ))}
+            {importedData.length > visibleCount && (
+              <button
+                type="button"
+                onClick={() =>
+                  setVisibleCount((current) => current + REVIEW_PAGE_SIZE)
+                }
+                className="w-full rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-bold text-white/70 hover:bg-white/10"
+              >
+                Mostrar mais{' '}
+                {Math.min(REVIEW_PAGE_SIZE, importedData.length - visibleCount)}{' '}
+                de {importedData.length - visibleCount} restantes (a importação
+                inclui todos os itens marcados)
+              </button>
+            )}
             {importedData.length === 0 && (
               <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-xs text-yellow-300">
                 {importDiagnostics?.reason ||

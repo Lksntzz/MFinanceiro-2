@@ -9,7 +9,7 @@ import {
   Trash2,
   WandSparkles,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { toLocalISODate } from '../lib/local-date';
 
@@ -106,6 +106,10 @@ function affectsCurrentBalance(transaction: LedgerTransaction): boolean {
   );
 }
 
+function capitalizeFirst(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function chunk<T>(items: T[], size: number): T[][] {
   const groups: T[][] = [];
   for (let index = 0; index < items.length; index += size)
@@ -137,7 +141,26 @@ export default function History({
   );
   const [organizing, setOrganizing] = useState(false);
   const [organizerMessage, setOrganizerMessage] = useState<string | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const hasMoreRef = useRef(hasMore);
+  hasMoreRef.current = hasMore;
+  const autoExpandedRef = useRef(false);
   const ledgerTransactions = transactions as LedgerTransaction[];
+  const isFiltering = searchTerm.trim() !== '' || filterType !== 'all';
+
+  // Busca, filtros, totais e exportação só enxergam o que já foi carregado.
+  async function loadEverything() {
+    if (loadingAll) return;
+    setLoadingAll(true);
+    try {
+      for (let page = 0; page < 50 && hasMoreRef.current; page += 1) {
+        await onLoadMore();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } finally {
+      setLoadingAll(false);
+    }
+  }
   const assistantOpen = searchParams.get('assist') === 'categorias';
 
   const filteredTransactions = useMemo(() => {
@@ -145,12 +168,16 @@ export default function History({
     return ledgerTransactions.filter((transaction) => {
       if (filterType !== 'all' && transaction.type !== filterType) return false;
       if (!search) return true;
+      const absolute = Math.abs(Number(transaction.amount) || 0);
       return normalize(
         [
           transaction.description,
           transaction.category,
           transaction.source,
           String(transaction.amount),
+          // permite buscar como aparece na tela: "5.500,00" ou "R$ 5.500,00"
+          formatMoney(absolute),
+          absolute.toFixed(2).replace('.', ','),
         ]
           .filter(Boolean)
           .join(' '),
@@ -201,7 +228,9 @@ export default function History({
         return {
           key,
           label: parsed
-            ? format(parsed, "EEEE, dd 'de' MMMM", { locale: ptBR })
+            ? capitalizeFirst(
+                format(parsed, "EEEE, dd 'de' MMMM", { locale: ptBR }),
+              )
             : 'Sem data',
           items: [...items].sort(
             (a, b) =>
@@ -233,6 +262,12 @@ export default function History({
       net: roundMoney(income - expense),
     };
   }, [filteredTransactions]);
+
+  useEffect(() => {
+    if (autoExpandedRef.current || !groups.length) return;
+    autoExpandedRef.current = true;
+    setExpandedDays(new Set([groups[0].key]));
+  }, [groups]);
 
   function toggleDay(key: string) {
     setExpandedDays((current) => {
@@ -328,6 +363,7 @@ export default function History({
         return;
       }
 
+      const rulesToInsert: any[] = [];
       if (adaptiveMatches.length > 0) {
         const { data: existingRules } = await supabase
           .from('mf_categorization_rules')
@@ -341,7 +377,6 @@ export default function History({
           ),
         );
 
-        const rulesToInsert: any[] = [];
         const seenRuleKeys = new Set<string>();
 
         for (const match of adaptiveMatches) {
@@ -378,17 +413,30 @@ export default function History({
             });
           }
         }
+      }
 
-        if (rulesToInsert.length > 0) {
-          const { error: insertRulesError } = await supabase
-            .from('mf_categorization_rules')
-            .insert(rulesToInsert);
-          if (insertRulesError) {
-            console.warn(
-              'Falha ao salvar regras aprendidas:',
-              insertRulesError,
-            );
-          }
+      const analyzedNote =
+        (data || []).length >= 2000
+          ? '\n\nObs.: foram analisados apenas os 2.000 lançamentos mais recentes.'
+          : '';
+      const confirmed = window.confirm(
+        `Organizar ${allMatches.length} lançamento${allMatches.length === 1 ? '' : 's'} (${matches.length} por regras, ${adaptiveMatches.length} por similaridade)?` +
+          (rulesToInsert.length
+            ? `\n\n${rulesToInsert.length} nova${rulesToInsert.length === 1 ? '' : 's'} regra${rulesToInsert.length === 1 ? '' : 's'} aprendida${rulesToInsert.length === 1 ? '' : 's'} será${rulesToInsert.length === 1 ? '' : 'ão'} salva${rulesToInsert.length === 1 ? '' : 's'} e usada${rulesToInsert.length === 1 ? '' : 's'} nas próximas importações.`
+            : '') +
+          analyzedNote,
+      );
+      if (!confirmed) {
+        setOrganizerMessage('Organização cancelada. Nada foi alterado.');
+        return;
+      }
+
+      if (rulesToInsert.length > 0) {
+        const { error: insertRulesError } = await supabase
+          .from('mf_categorization_rules')
+          .insert(rulesToInsert);
+        if (insertRulesError) {
+          console.warn('Falha ao salvar regras aprendidas:', insertRulesError);
         }
       }
 
@@ -533,9 +581,9 @@ export default function History({
                   Organizar lançamentos genéricos
                 </strong>
                 <p className="mt-1 text-[10px] leading-relaxed text-white/45">
-                  O MF testa suas regras de categorização e aplica em lote
-                  somente correspondências determinísticas. Nenhum lançamento é
-                  classificado por palpite.
+                  O MF aplica suas regras de categorização e, quando não há
+                  regra, sugere pela similaridade com seu histórico. Antes de
+                  alterar qualquer coisa, você confirma o que será feito.
                 </p>
                 {organizerMessage && (
                   <p
@@ -606,6 +654,27 @@ export default function History({
         </div>
       </div>
 
+      {hasMore && isFiltering && (
+        <div
+          className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.055] px-3 py-2 text-[10px] leading-relaxed text-amber-100/80"
+          role="status"
+        >
+          <span>
+            A busca e o filtro olham só os {transactions.length} lançamentos já
+            carregados (de {totalCount}). Resultados mais antigos podem não
+            aparecer.
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadEverything()}
+            disabled={loadingAll || isLoadingMore}
+            className="rounded-lg border border-amber-300/30 px-3 py-1.5 font-bold text-amber-200 disabled:opacity-50"
+          >
+            {loadingAll ? 'Carregando tudo…' : 'Carregar todos e buscar'}
+          </button>
+        </div>
+      )}
+
       <div className="shrink-0 rounded-xl border border-brand-primary/15 bg-brand-primary/[0.055] px-3 py-2 text-[10px] leading-relaxed text-white/55">
         O saldo atual é derivado das contas e está{' '}
         {balanceConfirmed
@@ -630,6 +699,7 @@ export default function History({
                 <button
                   type="button"
                   onClick={() => toggleDay(group.key)}
+                  aria-expanded={expanded}
                   className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/5"
                 >
                   <div className="flex min-w-0 items-center gap-2">
@@ -639,11 +709,14 @@ export default function History({
                       <ChevronRight size={16} />
                     )}
                     <div className="min-w-0">
-                      <div className="truncate text-xs font-bold capitalize">
+                      <div className="truncate text-xs font-bold">
                         {group.label}
                       </div>
                       <div className="text-[10px] text-white/40">
-                        {group.items.length} lançamentos
+                        {group.items.length}{' '}
+                        {group.items.length === 1
+                          ? 'lançamento'
+                          : 'lançamentos'}
                       </div>
                     </div>
                   </div>
@@ -750,8 +823,10 @@ export default function History({
           })}
 
           {!groups.length && (
-            <div className="flex h-32 items-center justify-center text-xs text-white/30">
-              Nenhum lançamento encontrado.
+            <div className="flex h-32 items-center justify-center text-center text-xs text-white/30">
+              {hasMore && isFiltering
+                ? 'Nada encontrado entre os lançamentos carregados. Use "Carregar todos e buscar".'
+                : 'Nenhum lançamento encontrado.'}
             </div>
           )}
           <div className="flex flex-col items-center gap-2 py-3 text-[10px] text-white/35">
