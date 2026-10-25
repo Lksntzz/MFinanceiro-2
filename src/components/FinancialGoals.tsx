@@ -9,7 +9,7 @@ import {
   Trophy,
   X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../lib/formatters';
@@ -48,7 +48,7 @@ export default function FinancialGoals() {
 
   const pageSize = 4;
 
-  async function fetchGoals() {
+  const fetchGoals = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -78,7 +78,7 @@ export default function FinancialGoals() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void fetchGoals();

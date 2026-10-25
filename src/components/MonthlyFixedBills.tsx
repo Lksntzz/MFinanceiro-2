@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CATEGORIES } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 
@@ -95,7 +95,7 @@ export default function MonthlyFixedBills({
     [],
   );
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     setError(null);
@@ -136,7 +136,7 @@ export default function MonthlyFixedBills({
     } finally {
       setLoading(false);
     }
-  }
+  }, [userId]);
 
   useEffect(() => {
     void load();

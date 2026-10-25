@@ -1,5 +1,5 @@
 import { Calendar, CreditCard, Plus, RefreshCw, Trash2, X } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../lib/formatters';
@@ -27,7 +27,7 @@ export default function SubscriptionManager() {
 
   const pageSize = 6;
 
-  async function fetchSubscriptions() {
+  const fetchSubscriptions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -69,7 +69,7 @@ export default function SubscriptionManager() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void fetchSubscriptions();

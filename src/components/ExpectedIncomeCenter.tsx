@@ -6,7 +6,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 import type React from 'react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
@@ -32,7 +32,7 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     const { data, error: loadError } = await supabase
       .from('mf_user_settings')
       .select(
@@ -48,7 +48,7 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
     setSettings(snapshot);
     setAmount(String(Number(snapshot.net_salary_estimated || 0)));
     setPayday(String(Number(snapshot.payday_1 || 5)));
-  }
+  }, [userId]);
 
   useEffect(() => {
     void load();

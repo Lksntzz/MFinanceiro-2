@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildPayrollSaveCommand,
   categoryFromDescription,
@@ -76,7 +76,7 @@ export default function IncomePayrollCenter({ userId }: { userId: string }) {
   const [analysisWarnings, setAnalysisWarnings] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     const [settingsResult, statementsResult] = await Promise.all([
@@ -99,7 +99,7 @@ export default function IncomePayrollCenter({ userId }: { userId: string }) {
     );
     setRows((statementsResult.data || []).map(normalizePayroll));
     setLoading(false);
-  }
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
