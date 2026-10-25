@@ -46,6 +46,7 @@ import { MOBILE_ROUTES } from './routes';
 import { openDesktopExperience } from './useMobileExperience';
 import './mobile.css';
 import './pages/mobile-home.css';
+import { sumActiveBalance } from '../lib/financial-accounts';
 
 type PendingItem = {
   id: string;
@@ -258,8 +259,7 @@ function TransactionList({ transactions }: { transactions: Transaction[] }) {
 function HomePage({ data }: { data: MobileData }) {
   const navigate = useNavigate();
   const balance =
-    data.summary?.currentBalance ??
-    data.accounts.reduce((sum, account) => sum + account.current_balance, 0);
+    data.summary?.currentBalance ?? sumActiveBalance(data.accounts);
   const monthExpense = data.monthTransactions
     .filter(
       (item) =>
@@ -633,10 +633,7 @@ export default function MobileApp({ user }: { user: User }) {
       const categorizationHistory = (learningResult.data || []).map(
         normalizeTransaction,
       );
-      const derivedBalance = accounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const derivedBalance = sumActiveBalance(accounts);
       const settings = settingsResult.data
         ? ({
             ...settingsResult.data,

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
+import { sumActiveBalance } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   CardInstallment,
@@ -127,10 +128,7 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
         installmentsResult.error;
       if (firstError) throw firstError;
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const currentBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const currentBalance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setSettings(
         settingsResult.data

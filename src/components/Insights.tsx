@@ -19,6 +19,7 @@ import {
   type FinancialGoalLike,
   type FinancialIntelligenceResult,
   type IntelligenceAlert,
+  maskMoneyText,
 } from '../lib/financial-intelligence';
 import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
@@ -33,6 +34,7 @@ import type {
 } from '../types';
 
 interface InsightsProps {
+  userId: string;
   summary: FinanceSummary | null;
   transactions: Transaction[];
   fixedBills: FixedBill[];
@@ -79,6 +81,7 @@ function ScenarioValue({
 }
 
 export default function Insights({
+  userId,
   summary,
   transactions,
   fixedBills,
@@ -91,15 +94,12 @@ export default function Insights({
   useEffect(() => {
     let active = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
 
     async function loadSupportData() {
       try {
-        const { data: authData, error: authError } =
-          await supabase.auth.getUser();
-        if (authError) throw authError;
-        if (!authData.user) throw new Error('Sessão não encontrada.');
-        const userId = authData.user.id;
-
         const [
           settingsResult,
           cardsResult,
@@ -168,9 +168,14 @@ export default function Insights({
           })) as FinancialGoalLike[],
         });
         setLoadError(null);
+        failures = 0;
 
         if (!channel) {
-          const refresh = () => void loadSupportData();
+          // Agrupa rajadas de mudanças em uma única recarga.
+          const refresh = () => {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => void loadSupportData(), 800);
+          };
           channel = supabase
             .channel(`financial-intelligence-${userId}`)
             .on(
@@ -226,12 +231,21 @@ export default function Insights({
             .subscribe();
         }
       } catch (error) {
-        if (active)
+        if (active) {
           setLoadError(
             error instanceof Error
               ? error.message
               : 'Não foi possível carregar os dados da inteligência financeira.',
           );
+          // Tenta de novo (até 3 vezes) em vez de ficar parado com dados antigos.
+          failures += 1;
+          if (failures <= 3) {
+            retryTimer = setTimeout(
+              () => void loadSupportData(),
+              4000 * failures,
+            );
+          }
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -240,9 +254,11 @@ export default function Insights({
     void loadSupportData();
     return () => {
       active = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      if (retryTimer) clearTimeout(retryTimer);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [userId]);
 
   const intelligence = useMemo<FinancialIntelligenceResult | null>(() => {
     if (!summary) return null;
@@ -312,9 +328,6 @@ export default function Insights({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-black">Inteligência financeira</h2>
-                <span className="rounded-full border border-brand-primary/20 bg-brand-primary/10 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-brand-primary">
-                  projeção v2
-                </span>
               </div>
               <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/50">
                 Cenários determinísticos usando saldo consolidado, histórico
@@ -365,7 +378,10 @@ export default function Insights({
       </section>
 
       {loadError && (
-        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.06] px-4 py-3 text-xs text-yellow-100">
+        <div
+          role="status"
+          className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.06] px-4 py-3 text-xs text-yellow-100"
+        >
           Alguns dados auxiliares não puderam ser atualizados: {loadError}. A
           projeção usa o que já está disponível.
         </div>
@@ -393,6 +409,8 @@ export default function Insights({
                   </h4>
                 </div>
                 <div
+                  role="status"
+                  aria-label={`Cenário base em ${projection.horizonDays} dias: ${projection.base >= 0 ? 'positivo' : 'risco de saldo negativo'}`}
                   className={`rounded-xl px-2.5 py-1 text-[9px] font-black ${projection.base >= 0 ? 'bg-green-500/10 text-green-300' : 'bg-red-500/10 text-red-300'}`}
                 >
                   {projection.base >= 0 ? 'POSITIVO' : 'RISCO'}
@@ -442,7 +460,11 @@ export default function Insights({
                   : 'sem risco relevante'}
             </span>
           </div>
-          <div className="grid gap-2.5">
+          <div
+            className="grid gap-2.5"
+            role={criticalCount ? 'alert' : 'status'}
+            aria-label="Alertas inteligentes"
+          >
             {intelligence.alerts.map((alert) => (
               <article
                 key={alert.id}
@@ -461,7 +483,7 @@ export default function Insights({
                   <div className="min-w-0 flex-1">
                     <h4 className="text-sm font-bold">{alert.title}</h4>
                     <p className="mt-1 text-xs leading-relaxed text-white/60">
-                      {alert.message}
+                      {maskMoneyText(alert.message, isPrivate)}
                     </p>
                     {alert.action && (
                       <p className="mt-2 text-[9px] font-bold uppercase tracking-wider text-white/40">
@@ -482,7 +504,7 @@ export default function Insights({
           <div className="glass-card !p-4 space-y-3">
             {intelligence.narrative.map((line) => (
               <p key={line} className="text-xs leading-relaxed text-white/60">
-                {line}
+                {maskMoneyText(line, isPrivate)}
               </p>
             ))}
           </div>

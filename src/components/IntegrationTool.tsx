@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 
 import { useApp } from '../context/AppContext';
+import { sumActiveBalance } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   FinancialAccount,
@@ -74,10 +75,7 @@ export default function IntegrationTool({ user }: { user: User }) {
         settingsResult.error || accountsResult.error || categoriesResult.error;
       if (firstError) throw firstError;
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const balance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const balance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setCategories((categoriesResult.data || []) as TransactionCategory[]);
       setSettings(
