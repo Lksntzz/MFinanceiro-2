@@ -27,9 +27,8 @@ interface Goal {
   created_at: string;
 }
 
-export default function FinancialGoals() {
+export default function FinancialGoals({ userId }: { userId: string }) {
   const { isPrivate } = useApp();
-  const [userId, setUserId] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,19 +48,12 @@ export default function FinancialGoals() {
   const pageSize = 4;
 
   const fetchGoals = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
-      const { data: authData, error: authError } =
-        await supabase.auth.getUser();
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Sessão não encontrada.');
-      setUserId(authData.user.id);
-
       const { data, error: queryError } = await supabase
         .from('mf_financial_goals')
         .select('*')
-        .eq('user_id', authData.user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
       if (queryError) throw queryError;
 
@@ -78,7 +70,7 @@ export default function FinancialGoals() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void fetchGoals();
@@ -128,7 +120,7 @@ export default function FinancialGoals() {
 
   async function saveGoal(event: React.FormEvent) {
     event.preventDefault();
-    if (!userId || saving) return;
+    if (saving) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -173,7 +165,7 @@ export default function FinancialGoals() {
   }
 
   async function deleteGoal(goal: Goal) {
-    if (!userId || !window.confirm(`Excluir a meta “${goal.name}”?`)) return;
+    if (!window.confirm(`Excluir a meta “${goal.name}”?`)) return;
     setError(null);
     const { error: deleteError } = await supabase
       .from('mf_financial_goals')
@@ -188,7 +180,7 @@ export default function FinancialGoals() {
     await fetchGoals();
   }
 
-  if (loading)
+  if (loading && goals.length === 0)
     return (
       <div className="flex flex-1 items-center justify-center text-xs text-white/30">
         Carregando metas...
@@ -240,6 +232,7 @@ export default function FinancialGoals() {
           </p>
         </div>
         <button
+          type="button"
           onClick={openCreate}
           className="flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2 text-xs font-bold text-black"
         >
@@ -250,7 +243,12 @@ export default function FinancialGoals() {
       {error && (
         <div className="shrink-0 flex items-center rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
           {error}
-          <button onClick={() => setError(null)} className="ml-auto">
+          <button
+            type="button"
+            aria-label="Fechar aviso"
+            onClick={() => setError(null)}
+            className="ml-auto"
+          >
             <X size={14} />
           </button>
         </div>
@@ -305,12 +303,16 @@ export default function FinancialGoals() {
                     </div>
                     <div className="flex gap-1">
                       <button
+                        type="button"
+                        aria-label={`Editar meta ${goal.name}`}
                         onClick={() => openEdit(goal)}
                         className="p-1 text-white/30 hover:text-white"
                       >
                         <Pencil size={14} />
                       </button>
                       <button
+                        type="button"
+                        aria-label={`Excluir meta ${goal.name}`}
                         onClick={() => deleteGoal(goal)}
                         className="p-1 text-white/30 hover:text-red-400"
                       >
@@ -362,7 +364,15 @@ export default function FinancialGoals() {
       </section>
 
       {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={editingGoal ? 'Editar meta' : 'Nova meta'}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setShowModal(false);
+          }}
+        >
           <form onSubmit={saveGoal} className="glass-card w-full max-w-lg !p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
@@ -373,7 +383,11 @@ export default function FinancialGoals() {
                   Defina um objetivo mensurável.
                 </p>
               </div>
-              <button type="button" onClick={() => setShowModal(false)}>
+              <button
+                type="button"
+                aria-label="Fechar"
+                onClick={() => setShowModal(false)}
+              >
                 <X size={19} />
               </button>
             </div>
@@ -511,6 +525,7 @@ function Pager({
   return (
     <div className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px]">
       <button
+        type="button"
         onClick={() => onChange(Math.max(1, page - 1))}
         disabled={page === 1}
         className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30"
@@ -521,6 +536,7 @@ function Pager({
         {page} de {pages}
       </span>
       <button
+        type="button"
         onClick={() => onChange(Math.min(pages, page + 1))}
         disabled={page === pages}
         className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30"

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
+import { normalizeAccounts, sumActiveBalance } from '../lib/financial-accounts';
 import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
 import type { FinancialAccount, UserSettings } from '../types';
@@ -32,18 +33,6 @@ type FixedRow = {
   active?: boolean | null;
 };
 type CardRow = { used: number };
-
-function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
-  return rows.map((row) => {
-    const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
-  });
-}
 
 export default function PlanningStrategyTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
@@ -103,10 +92,7 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
       if (firstError) throw firstError;
 
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const currentBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const currentBalance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setSettings(
         settingsResult.data
@@ -152,10 +138,7 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
   }, [refresh]);
 
   const projection = useMemo(() => {
-    const balance = accounts.reduce(
-      (sum, account) => sum + Number(account.current_balance || 0),
-      0,
-    );
+    const balance = sumActiveBalance(accounts);
     const expectedIncome = Number(
       settings?.net_salary_estimated || settings?.gross_salary || 0,
     );
@@ -190,7 +173,9 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
     const base =
       balance + expectedIncome - fixed - subscriptionsMonthly - cardsUsed;
     const adjusted =
-      base + Number(extraIncome || 0) - Number(extraExpense || 0);
+      base +
+      Math.max(0, Number(extraIncome) || 0) -
+      Math.max(0, Number(extraExpense) || 0);
     return {
       balance,
       expectedIncome,
@@ -264,7 +249,11 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
         <div className="mf-error">
           <AlertCircle size={16} />
           {error}
-          <button type="button" onClick={() => setError(null)}>
+          <button
+            type="button"
+            aria-label="Fechar aviso"
+            onClick={() => setError(null)}
+          >
             <X size={14} />
           </button>
         </div>
@@ -274,7 +263,19 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
         {loading ? (
           <div className="mf-loading">Carregando planejamento...</div>
         ) : showGoals ? (
-          <FinancialGoals />
+          <FinancialGoals userId={user.id} />
+        ) : error && !settings && accounts.length === 0 ? (
+          <div className="mf-card text-sm text-white/50">
+            Não foi possível carregar seus dados, então o simulador não mostra
+            números para não exibir valores zerados como se fossem reais.
+            <button
+              type="button"
+              className="ml-2 font-bold text-brand-primary underline"
+              onClick={() => void refresh()}
+            >
+              Tentar de novo
+            </button>
+          </div>
         ) : (
           <div className="space-y-4 animate-fade-in">
             <div>
@@ -328,6 +329,7 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
                     <input
                       className="w-full bg-transparent py-3 text-sm text-white outline-none"
                       type="number"
+                      min="0"
                       step="0.01"
                       value={extraIncome}
                       onChange={(event) => setExtraIncome(event.target.value)}
@@ -341,6 +343,7 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
                     <input
                       className="w-full bg-transparent py-3 text-sm text-white outline-none"
                       type="number"
+                      min="0"
                       step="0.01"
                       value={extraExpense}
                       onChange={(event) => setExtraExpense(event.target.value)}
@@ -368,13 +371,21 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                     <span className="text-white/40">Entrada testada</span>
                     <strong className="mt-1 block text-emerald-400">
-                      + {formatCurrency(Number(extraIncome || 0), isPrivate)}
+                      +{' '}
+                      {formatCurrency(
+                        Math.max(0, Number(extraIncome) || 0),
+                        isPrivate,
+                      )}
                     </strong>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                     <span className="text-white/40">Gasto testado</span>
                     <strong className="mt-1 block text-red-400">
-                      - {formatCurrency(Number(extraExpense || 0), isPrivate)}
+                      -{' '}
+                      {formatCurrency(
+                        Math.max(0, Number(extraExpense) || 0),
+                        isPrivate,
+                      )}
                     </strong>
                   </div>
                 </div>

@@ -27,6 +27,7 @@ import {
   useState,
 } from 'react';
 import { useApp } from '../context/AppContext';
+import { normalizeAccounts, sumActiveBalance } from '../lib/financial-accounts';
 import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
 import type {
@@ -75,18 +76,6 @@ type BudgetRow = {
   category: string;
   limit_amount: number;
 };
-
-function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
-  return rows.map((row) => {
-    const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
-  });
-}
 
 function normalizeCards(rows: unknown[]): CreditCard[] {
   return rows.map((row) => {
@@ -289,10 +278,7 @@ export default function PlanningTool({ user }: { user: User }) {
       if (firstError) throw firstError;
 
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const balance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const balance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setSettings(
         settingsResult.data
@@ -363,10 +349,7 @@ export default function PlanningTool({ user }: { user: User }) {
       );
   }, [pathname]);
 
-  const balance = accounts.reduce(
-    (sum, account) => sum + Number(account.current_balance || 0),
-    0,
-  );
+  const balance = sumActiveBalance(accounts);
   const pendingFixed = fixedBills
     .filter(
       (bill: any) =>
@@ -466,7 +449,7 @@ export default function PlanningTool({ user }: { user: User }) {
     const payload = {
       user_id: user.id,
       name: cardForm.name.trim(),
-      brand: editingCard?.brand || 'Visa',
+      brand: editingCard?.brand || '',
       limit: Number(cardForm.limit || 0),
       used: Number(cardForm.used || 0),
       due_day: Number(cardForm.due_day || 10),
@@ -552,6 +535,8 @@ export default function PlanningTool({ user }: { user: User }) {
   }
 
   async function deleteInstallment(item: CardInstallment) {
+    if (!window.confirm(`Excluir o parcelamento “${item.description}”?`))
+      return;
     const result = await supabase
       .from('mf_card_installments')
       .delete()
@@ -562,6 +547,12 @@ export default function PlanningTool({ user }: { user: User }) {
   }
 
   async function payInstallment(item: CardInstallment) {
+    if (
+      !window.confirm(
+        `Registrar o pagamento da parcela de “${item.description}”? Isso gera um lançamento na sua conta.`,
+      )
+    )
+      return;
     const result = await supabase.rpc('mf_pay_card_installment', {
       p_installment_id: item.id,
     });
@@ -570,6 +561,12 @@ export default function PlanningTool({ user }: { user: User }) {
   }
 
   async function payCardBill(card: CreditCard) {
+    if (
+      !window.confirm(
+        `Registrar o pagamento da fatura do cartão ${card.name}? Isso gera um lançamento na sua conta.`,
+      )
+    )
+      return;
     const result = await supabase.rpc('mf_pay_credit_card_bill_v2', {
       p_card_id: card.id,
     });

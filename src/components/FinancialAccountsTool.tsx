@@ -14,6 +14,11 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApp } from '../context/AppContext';
+import {
+  normalizeAccounts,
+  REAL_BALANCE_ACCOUNT_TYPES,
+  sumActiveBalance,
+} from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   FinancialAccount,
@@ -31,18 +36,6 @@ const ACCOUNT_TYPE_LABELS: Record<FinancialAccountType, string> = {
   credit: 'Conta de crédito',
   other: 'Outra',
 };
-
-function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
-  return rows.map((row) => {
-    const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
-  });
-}
 
 export default function FinancialAccountsTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
@@ -78,10 +71,7 @@ export default function FinancialAccountsTool({ user }: { user: User }) {
       const firstError = settingsResult.error || accountsResult.error;
       if (firstError) throw firstError;
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const currentBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const currentBalance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setSettings(
         settingsResult.data
@@ -324,10 +314,11 @@ export default function FinancialAccountsTool({ user }: { user: User }) {
                     }
                     className="mt-1 w-full rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs"
                   >
-                    <option value="checking">Conta corrente</option>
-                    <option value="savings">Poupança</option>
-                    <option value="cash">Carteira / dinheiro</option>
-                    <option value="other">Outra</option>
+                    {REAL_BALANCE_ACCOUNT_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="block text-[10px] text-white/50">

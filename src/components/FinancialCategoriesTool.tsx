@@ -12,6 +12,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApp } from '../context/AppContext';
+import { normalizeAccounts, sumActiveBalance } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   FinancialAccount,
@@ -20,18 +21,6 @@ import type {
 } from '../types';
 import AppNavigation from './AppNavigation';
 import ProfileCenter from './ProfileCenter';
-
-function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
-  return rows.map((row) => {
-    const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
-  });
-}
 
 export default function FinancialCategoriesTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
@@ -76,10 +65,7 @@ export default function FinancialCategoriesTool({ user }: { user: User }) {
         settingsResult.error || accountsResult.error || categoriesResult.error;
       if (firstError) throw firstError;
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const currentBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const currentBalance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setSettings(
         settingsResult.data
