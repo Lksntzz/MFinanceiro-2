@@ -16,7 +16,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
@@ -169,7 +169,7 @@ export default function Investments({
     return () => document.body.classList.remove('mf-investments-workspace');
   }, []);
 
-  async function fetchInvestments() {
+  const fetchInvestments = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -187,7 +187,7 @@ export default function Investments({
     } finally {
       setLoading(false);
     }
-  }
+  }, [user.id]);
 
   useEffect(() => {
     void fetchInvestments();

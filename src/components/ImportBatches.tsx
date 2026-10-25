@@ -7,7 +7,7 @@ import {
   RefreshCw,
   RotateCcw,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { supabase } from '../lib/supabase';
 import type {
@@ -47,7 +47,7 @@ export default function ImportBatches({
   const selectedBatch =
     batches.find((batch) => batch.id === selectedBatchId) || null;
 
-  async function loadBatches() {
+  const loadBatches = useCallback(async () => {
     setLoading(true);
     setError(null);
     const { data, error: queryError } = await supabase
@@ -61,7 +61,7 @@ export default function ImportBatches({
     if (queryError) setError(queryError.message);
     else setBatches((data || []) as StatementImportBatch[]);
     setLoading(false);
-  }
+  }, [userId]);
 
   async function selectBatch(batchId: string) {
     setSelectedBatchId(batchId);
