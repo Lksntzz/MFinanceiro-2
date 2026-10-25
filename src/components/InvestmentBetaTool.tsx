@@ -21,7 +21,6 @@ import {
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-
 import { useApp } from '../context/AppContext';
 import {
   ASSET_CLASS_LABELS,
@@ -52,6 +51,7 @@ import {
   fetchBetaMarketQuote,
 } from '../features/investments-beta/investment-market-beta';
 import { formatCurrency } from '../lib/formatters';
+import { toLocalISODate } from '../lib/local-date';
 import { supabase } from '../lib/supabase';
 import AppNavigation from './AppNavigation';
 
@@ -94,7 +94,7 @@ const EMPTY_DRAFT: OperationDraft = {
   assetName: '',
   institution: '',
   accountId: '',
-  date: new Date().toISOString().slice(0, 10),
+  date: toLocalISODate(),
   quantity: '',
   unitPrice: '',
   fees: '0',

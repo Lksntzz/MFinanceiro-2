@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-
 import { useApp } from '../context/AppContext';
+import { toLocalISODate } from '../lib/local-date';
 import { supabase } from '../lib/supabase';
 import type {
   CreditCard,
@@ -52,7 +52,7 @@ export default function TransactionLaunchTool({ user }: { user: User }) {
   const [form, setForm] = useState({
     type: 'expense' as 'expense' | 'income',
     amount: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: toLocalISODate(),
     accountId: '',
     categoryId: '',
     description: '',
