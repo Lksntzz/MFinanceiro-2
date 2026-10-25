@@ -275,7 +275,7 @@ function payrollItem(patch: Partial<PayrollItem> = {}): PayrollItem {
         hasTransactionSignals: false,
       },
     }),
-    'arquivo sem movimentacoes',
+    'arquivo sem movimentações',
   );
 
   const balancedRows = [

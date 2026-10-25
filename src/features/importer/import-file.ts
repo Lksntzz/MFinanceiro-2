@@ -5,7 +5,10 @@ import type {
   FormatDetectionResult,
   SpreadsheetAnalysis,
 } from './import-types';
-import { generateTransactionId } from './statement-parser-utils';
+import {
+  generateTransactionId,
+  isValidStatementDate,
+} from './statement-parser-utils';
 
 export async function hashImportFile(file: File): Promise<string | undefined> {
   if (!globalThis.crypto?.subtle) return undefined;
@@ -78,22 +81,22 @@ export function inferEmptyResultReason(params: {
   );
 
   if (format === 'pdf')
-    return pdfReason || 'nenhum registro de transacao encontrado';
+    return pdfReason || 'nenhum registro de transação encontrado';
 
   if (format === 'csv') {
     if (
       isMfinanceiroExport &&
       (!csvAnalysis || csvAnalysis.nonEmptyLines === 0)
     ) {
-      return 'arquivo do MFinanceiro sem transacoes para importar';
+      return 'arquivo do MFinanceiro sem transações para importar';
     }
     if (!csvAnalysis || csvAnalysis.nonEmptyLines === 0)
       return 'planilha vazia';
     if (csvAnalysis.nonEmptyLines <= 1 && csvAnalysis.hasHeaderKeywords)
-      return 'arquivo sem movimentacoes';
+      return 'arquivo sem movimentações';
     if (!csvAnalysis.hasTransactionSignals)
-      return 'arquivo nao e um extrato bancario';
-    return 'nenhum registro de transacao encontrado';
+      return 'arquivo não é um extrato bancário';
+    return 'nenhum registro de transação encontrado';
   }
 
   if (format === 'xls' || format === 'xlsx') {
@@ -101,26 +104,26 @@ export function inferEmptyResultReason(params: {
       isMfinanceiroExport &&
       (!sheetAnalysis || sheetAnalysis.nonEmptyRows === 0)
     ) {
-      return 'arquivo do MFinanceiro sem transacoes para importar';
+      return 'arquivo do MFinanceiro sem transações para importar';
     }
     if (!sheetAnalysis || sheetAnalysis.nonEmptyRows === 0)
       return 'planilha vazia';
     if (sheetAnalysis.nonEmptyRows <= 1 && sheetAnalysis.hasHeaderKeywords)
-      return 'arquivo sem movimentacoes';
+      return 'arquivo sem movimentações';
     if (!sheetAnalysis.hasTransactionSignals)
-      return 'arquivo nao e um extrato bancario';
-    return 'nenhum registro de transacao encontrado';
+      return 'arquivo não é um extrato bancário';
+    return 'nenhum registro de transação encontrado';
   }
 
   if (format === 'ofx') {
     const content = ofxContent || '';
-    if (!content.trim()) return 'arquivo sem movimentacoes';
+    if (!content.trim()) return 'arquivo sem movimentações';
     if (!/<OFX|<BANKTRANLIST|<STMTTRN>/i.test(content))
-      return 'arquivo nao e um extrato bancario';
-    if (!/<STMTTRN>/i.test(content)) return 'arquivo sem movimentacoes';
+      return 'arquivo não é um extrato bancário';
+    if (!/<STMTTRN>/i.test(content)) return 'arquivo sem movimentações';
   }
 
-  return 'nenhum registro de transacao encontrado';
+  return 'nenhum registro de transação encontrado';
 }
 
 export function buildTextPreview(raw: string | undefined): string {
@@ -143,7 +146,7 @@ export function getInvalidLineReasons(items: ImportedTransaction[]): string[] {
       reasons.push(`Linha rejeitada: descricao ausente (${item.id})`);
     } else if (!item.amount || Math.abs(item.amount) <= 0) {
       reasons.push(`Linha rejeitada: valor invalido (${item.id})`);
-    } else if (!item.date || Number.isNaN(new Date(item.date).getTime())) {
+    } else if (!isValidStatementDate(item.date)) {
       reasons.push(`Linha rejeitada: data invalida (${item.id})`);
     } else {
       reasons.push(
@@ -229,10 +232,10 @@ export function detectFileFormat(
   return {
     format: 'unknown',
     formatLabel: ext ? ext.toUpperCase() : 'Desconhecido',
-    parserLabel: 'Nao disponivel',
+    parserLabel: 'Não disponível',
     parserExists: false,
     supported: false,
-    reason: 'Formato nao suportado. Use CSV, OFX, PDF, XLS, XLSX ou imagem.',
+    reason: 'Formato não suportado. Use CSV, OFX, PDF, XLS, XLSX ou imagem.',
   };
 }
 
@@ -240,14 +243,15 @@ export function normalizeImportedTransactions(
   items: ImportedTransaction[],
 ): ImportedTransaction[] {
   return items.map((item, index) => {
-    const safeDate = Number.isNaN(new Date(item.date).getTime())
-      ? new Date().toISOString()
-      : item.date;
+    // Data inválida não vira "hoje": fica vazia e a linha exige correção.
+    const hasValidDate = isValidStatementDate(item.date);
+    const safeDate = hasValidDate ? item.date : '';
     const safeDescription = (item.description || '').trim() || 'Sem descricao';
     const safeAmount = Math.abs(Number(item.amount) || 0);
     const safeType: ImportedTransaction['type'] =
       item.type === 'income' ? 'income' : 'expense';
-    const isValid = safeDescription !== 'Sem descricao' && safeAmount > 0;
+    const isValid =
+      safeDescription !== 'Sem descricao' && safeAmount > 0 && hasValidDate;
     const status: ImportedTransaction['status'] =
       isValid && item.status !== 'error'
         ? item.status

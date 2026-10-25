@@ -76,29 +76,45 @@ export function looksLikeNoiseLine(line: string): boolean {
   ].some((token) => normalized.includes(token));
 }
 
+// Devolve ISO (meio-dia UTC) só se a data existir no calendário; senão ''.
+// Nunca "rola" 31/02 para março nem inventa a data de hoje.
+function existingDateToIso(year: number, month: number, day: number): string {
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const exists =
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
+  return exists ? date.toISOString() : '';
+}
+
 export function parsePdfDateToIso(rawDate: string): string {
   const fullYear = rawDate.match(/(\d{2})[./-](\d{2})[./-](\d{4})/);
-  if (fullYear) {
-    const day = Number(fullYear[1]);
-    const month = Number(fullYear[2]);
-    const year = Number(fullYear[3]);
-    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
-  }
+  if (fullYear)
+    return existingDateToIso(
+      Number(fullYear[3]),
+      Number(fullYear[2]),
+      Number(fullYear[1]),
+    );
 
   const shortYear = rawDate.match(/(\d{2})[./-](\d{2})[./-](\d{2})/);
-  if (shortYear) {
-    const day = Number(shortYear[1]);
-    const month = Number(shortYear[2]);
-    const year = Number(`20${shortYear[3]}`);
-    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
-  }
+  if (shortYear)
+    return existingDateToIso(
+      Number(`20${shortYear[3]}`),
+      Number(shortYear[2]),
+      Number(shortYear[1]),
+    );
 
   const withoutYear = rawDate.match(/(\d{2})[./-](\d{2})$/);
-  if (!withoutYear) return new Date().toISOString();
+  if (!withoutYear) return '';
   const day = Number(withoutYear[1]);
   const month = Number(withoutYear[2]);
-  const year = new Date().getUTCFullYear();
-  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
+  const now = new Date();
+  let iso = existingDateToIso(now.getUTCFullYear(), month, day);
+  // Extrato sem ano lido em janeiro (ex.: lançamento de 28/12): se a data cair
+  // mais de 7 dias no futuro, pertence ao ano anterior.
+  if (iso && new Date(iso).getTime() > now.getTime() + 7 * 86_400_000)
+    iso = existingDateToIso(now.getUTCFullYear() - 1, month, day);
+  return iso;
 }
 
 export function detectBankFromText(text: string): string {

@@ -158,14 +158,45 @@ export function parseStatementAmount(raw: string | undefined): number {
   return isNegative ? -Math.abs(value) : value;
 }
 
+/**
+ * Uma data de lançamento é válida quando começa com AAAA-MM-DD e existe de fato
+ * no calendário (31/02 e mês 13 não existem).
+ */
+export function isValidStatementDate(value: string | undefined): boolean {
+  if (!value) return false;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+/**
+ * Converte a data do extrato para ISO. Data ausente ou inválida devolve o
+ * `fallback` informado ou texto vazio: nunca inventa "hoje" nem "rola" o
+ * calendário (ex.: 10/25/2026 virar 01/2028).
+ */
 export function parseStatementDate(
   raw: string | undefined,
-  fallback = new Date(),
+  fallback?: Date,
 ): string {
-  if (!raw) return fallback.toISOString();
+  const fallbackIso = fallback ? fallback.toISOString() : '';
+  if (!raw) return fallbackIso;
   const value = raw.trim();
-  const stableIso = (year: number, month: number, day: number) =>
-    new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString();
+  const stableIso = (year: number, month: number, day: number) => {
+    const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    const exists =
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day;
+    return exists ? date.toISOString() : fallbackIso;
+  };
 
   const br = value.match(/^(\d{2})[./-](\d{2})[./-](\d{2,4})$/);
   if (br) {
@@ -181,10 +212,10 @@ export function parseStatementDate(
       Number(isoDateOnly[3]),
     );
 
+  // Texto livre só é aceito se trouxer um ano de 4 dígitos (evita "12" virar 2001).
+  if (!/\d{4}/.test(value)) return fallbackIso;
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? fallback.toISOString()
-    : parsed.toISOString();
+  return Number.isNaN(parsed.getTime()) ? fallbackIso : parsed.toISOString();
 }
 
 export function looksLikeDate(value: string | undefined): boolean {
