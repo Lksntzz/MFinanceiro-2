@@ -1,27 +1,8 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { downloadXlsx } from '../lib/xlsx-export';
-import type { Investment, Transaction } from '../types';
+import type { Investment } from '../types';
 
 export const ReportService = {
-  exportTransactionsToExcel: async (transactions: Transaction[]) => {
-    const rows = transactions.map((transaction) => [
-      new Date(transaction.date).toLocaleDateString('pt-BR'),
-      transaction.description,
-      transaction.amount,
-      transaction.category,
-      transaction.type === 'income' ? 'Entrada' : 'Saída',
-    ]);
-
-    await downloadXlsx(`MFinanceiro_Relatorio_Transacoes_${Date.now()}.xlsx`, [
-      {
-        name: 'Transações',
-        rows: [['Data', 'Descrição', 'Valor', 'Categoria', 'Tipo'], ...rows],
-        columnWidths: [13, 38, 14, 22, 12],
-      },
-    ]);
-  },
-
   exportPortfolioToPDF: (investments: Investment[], total: number) => {
     const doc = new jsPDF();
 
