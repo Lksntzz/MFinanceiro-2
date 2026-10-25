@@ -18,7 +18,10 @@ export function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
  * arquivadas (para poderem ser reativadas), então a soma precisa filtrar.
  */
 export function sumActiveBalance(
-  accounts: Pick<FinancialAccount, 'current_balance' | 'is_active'>[],
+  accounts: {
+    current_balance?: number | string | null;
+    is_active?: boolean | null;
+  }[],
 ): number {
   return accounts.reduce(
     (sum, account) =>

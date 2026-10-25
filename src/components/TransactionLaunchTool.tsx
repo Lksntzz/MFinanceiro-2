@@ -14,6 +14,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
+import { sumActiveBalance } from '../lib/financial-accounts';
 import { toLocalISODate } from '../lib/local-date';
 import { supabase } from '../lib/supabase';
 import type {
@@ -100,10 +101,7 @@ export default function TransactionLaunchTool({ user }: { user: User }) {
         cardsResult.error;
       if (firstError) throw firstError;
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const currentBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const currentBalance = sumActiveBalance(nextAccounts);
       setAccounts(nextAccounts);
       setCategories((categoriesResult.data || []) as TransactionCategory[]);
       setCards(

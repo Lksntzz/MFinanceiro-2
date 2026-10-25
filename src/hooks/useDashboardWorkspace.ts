@@ -16,6 +16,7 @@ import {
   writeDashboardWorkspaceCache,
 } from '../lib/dashboard-workspace-cache';
 import { calculateFinanceSummary } from '../lib/finance-calculations';
+import { sumActiveBalance } from '../lib/financial-accounts';
 import {
   LEDGER_PAGE_SIZE,
   mergeLedgerRows,
@@ -212,10 +213,7 @@ export function useDashboardWorkspace(userId: string) {
         installmentsResult.data || [],
       );
       const nextFixedBills = (fixedResult.data || []) as FixedBill[];
-      const derivedBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const derivedBalance = sumActiveBalance(nextAccounts);
       const page = normalizeDashboardLedgerPage(ledgerResult.data);
       nextSettings = { ...nextSettings, current_balance: derivedBalance };
 

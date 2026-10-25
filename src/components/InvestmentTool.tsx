@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
+import { sumActiveBalance } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type { FinancialAccount, UserSettings } from '../types';
 import AppNavigation from './AppNavigation';
@@ -53,10 +54,7 @@ export default function InvestmentTool({ user }: { user: User }) {
       if (firstError) throw firstError;
 
       const nextAccounts = normalizeAccounts(accountsResult.data || []);
-      const currentBalance = nextAccounts.reduce(
-        (sum, account) => sum + Number(account.current_balance || 0),
-        0,
-      );
+      const currentBalance = sumActiveBalance(nextAccounts);
 
       setAccounts(nextAccounts);
       setSettings(

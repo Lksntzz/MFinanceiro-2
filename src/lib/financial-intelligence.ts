@@ -174,21 +174,46 @@ function isVariableExpense(transaction: Transaction): boolean {
   ].some((needle) => text.includes(needle));
 }
 
+/** Renda mensal estimada: líquido; na falta dele, o bruto (igual ao Planejamento). */
+function estimatedMonthlyIncome(settings: UserSettings | null): number {
+  if (!settings) return 0;
+  return Math.max(
+    0,
+    n(settings.net_salary_estimated) || n(settings.gross_salary),
+  );
+}
+
+function isActiveSubscription(item: Subscription): boolean {
+  return !['cancelled', 'canceled', 'inactive'].includes(
+    String(item.status || 'active').toLowerCase(),
+  );
+}
+
+/** Conta fixa já paga no mês do vencimento não deve virar saída futura. */
+function isFixedBillPaidFor(bill: FixedBill, date: Date): boolean {
+  return (
+    String(bill.status || '').toLowerCase() === 'paid' &&
+    String(bill.last_paid_month || '') === dayKey(date).slice(0, 7)
+  );
+}
+
+/** Esconde valores em R$ dentro de textos quando o modo privacidade está ligado. */
+export function maskMoneyText(text: string, privateMode: boolean): string {
+  if (!privateMode) return text;
+  return text.replace(/-?\s?R\$[\s\u00a0]*-?[\d.]+(?:,\d{1,2})?/g, '••••••');
+}
+
 function monthlySubscriptionCost(subscriptions: Subscription[]): number {
-  return subscriptions
-    .filter(
-      (item) => String(item.status || 'active').toLowerCase() !== 'cancelled',
-    )
-    .reduce((sum, item) => {
-      const amount = Math.abs(n(item.amount));
-      return sum + (item.billing_cycle === 'yearly' ? amount / 12 : amount);
-    }, 0);
+  return subscriptions.filter(isActiveSubscription).reduce((sum, item) => {
+    const amount = Math.abs(n(item.amount));
+    return sum + (item.billing_cycle === 'yearly' ? amount / 12 : amount);
+  }, 0);
 }
 
 function paymentAmounts(
   settings: UserSettings,
 ): Array<{ day: number; amount: number }> {
-  const monthlyNet = Math.max(0, n(settings.net_salary_estimated));
+  const monthlyNet = estimatedMonthlyIncome(settings);
   if (settings.payday_cycle !== 'biweekly') {
     return [
       {
@@ -248,14 +273,17 @@ function buildRecurringEvents(
     fixedBills.forEach((bill) => {
       const active = (bill as FixedBill & { active?: boolean }).active;
       if (active === false) return;
-      const date = safeRecurringDate(month, bill.due_day);
+      let date = safeRecurringDate(month, bill.due_day);
       const amount = Math.abs(
         n(
           (bill as FixedBill & { default_amount?: number }).default_amount ??
             bill.amount,
         ),
       );
-      if (date >= now && date <= end && amount > 0) {
+      if (amount <= 0 || isFixedBillPaidFor(bill, date)) return;
+      // Vencida e não paga neste mês: ainda vai sair, então entra hoje.
+      if (monthOffset === 0 && date < now) date = now;
+      if (date >= now && date <= end) {
         events.push({
           date,
           amount: -amount,
@@ -265,24 +293,19 @@ function buildRecurringEvents(
       }
     });
 
-    subscriptions
-      .filter(
-        (subscription) =>
-          String(subscription.status || 'active').toLowerCase() !== 'cancelled',
-      )
-      .forEach((subscription) => {
-        if (subscription.billing_cycle !== 'monthly') return;
-        const date = safeRecurringDate(month, subscription.due_day);
-        const amount = Math.abs(n(subscription.amount));
-        if (date >= now && date <= end && amount > 0) {
-          events.push({
-            date,
-            amount: -amount,
-            kind: 'subscription',
-            label: subscription.name || 'Assinatura',
-          });
-        }
-      });
+    subscriptions.filter(isActiveSubscription).forEach((subscription) => {
+      if (subscription.billing_cycle !== 'monthly') return;
+      const date = safeRecurringDate(month, subscription.due_day);
+      const amount = Math.abs(n(subscription.amount));
+      if (date >= now && date <= end && amount > 0) {
+        events.push({
+          date,
+          amount: -amount,
+          kind: 'subscription',
+          label: subscription.name || 'Assinatura',
+        });
+      }
+    });
   }
 
   cards.forEach((card) => {
@@ -322,6 +345,21 @@ function buildRecurringEvents(
     ) {
       let date = safeRecurringDate(month, installment.due_day);
       if (date < now) {
+        const overdue =
+          installmentNumber === current &&
+          String(installment.last_paid_month || '') !==
+            dayKey(date).slice(0, 7);
+        if (overdue) {
+          // Parcela do mês já vencida e não paga: entra hoje, não some.
+          events.push({
+            date: now,
+            amount: -monthly,
+            kind: 'installment',
+            label: `${installment.description || 'Parcela'} ${installmentNumber}/${total} (vencida)`,
+          });
+          month = addMonths(month, 1);
+          continue;
+        }
         month = addMonths(month, 1);
         date = safeRecurringDate(month, installment.due_day);
       }
@@ -387,7 +425,8 @@ function historicalMetrics(transactions: Transaction[], now: Date) {
     (sum, row) => sum + Math.abs(n(row.transaction.amount)),
     0,
   );
-  const denominator = Math.max(14, Math.min(60, historyDays || 14));
+  // Mínimo de 7 dias evita extrapolar ruído; com histórico menor o aviso de confiança baixa já aparece.
+  const denominator = Math.max(7, Math.min(60, historyDays || 7));
   const dailyVariable = variableTotal60 / denominator;
 
   const recent30Expense = usable
@@ -408,8 +447,9 @@ function historicalMetrics(transactions: Transaction[], now: Date) {
     )
     .reduce((sum, row) => sum + Math.abs(n(row.transaction.amount)), 0);
 
+  // Só compara janelas quando as duas existem de fato (≥ 60 dias de histórico).
   const expenseTrendPercent =
-    previous30Expense > 0
+    previous30Expense > 0 && historyDays >= 60
       ? ((recent30Expense - previous30Expense) / previous30Expense) * 100
       : null;
 
@@ -441,7 +481,14 @@ function buildCurve(
     byDay.set(key, [...(byDay.get(key) || []), event]);
   });
 
-  const points: ForecastPoint[] = [{ day: 0, date: dayKey(now), balance }];
+  // Eventos de hoje (inclusive vencidos não pagos) já pesam no saldo inicial.
+  (byDay.get(dayKey(now)) || []).forEach((event) => {
+    balance +=
+      event.amount > 0 ? event.amount * incomeMultiplier : event.amount;
+  });
+  const points: ForecastPoint[] = [
+    { day: 0, date: dayKey(now), balance: Math.round(balance * 100) / 100 },
+  ];
   for (let day = 1; day <= 90; day += 1) {
     const date = addDays(now, day);
     balance -= dailyVariable * multiplier;
@@ -493,8 +540,7 @@ function confidenceScore(
 ): number {
   const historyScore = clamp(historyDays / 60, 0, 1) * 0.45;
   const volumeScore = clamp(observedTransactions / 80, 0, 1) * 0.35;
-  const incomeScore =
-    settings && n(settings.net_salary_estimated) > 0 ? 0.2 : 0.08;
+  const incomeScore = estimatedMonthlyIncome(settings) > 0 ? 0.2 : 0.08;
   return clamp(historyScore + volumeScore + incomeScore, 0.18, 0.98);
 }
 
@@ -524,7 +570,7 @@ export function buildFinancialIntelligence(
   const settings = input.settings;
 
   const history = historicalMetrics(transactions, now);
-  const monthlyIncome = Math.max(0, n(settings?.net_salary_estimated));
+  const monthlyIncome = estimatedMonthlyIncome(settings);
   const subscriptionsMonthly = monthlySubscriptionCost(subscriptions);
   const fixedMonthly = fixedBills
     .filter(

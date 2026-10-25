@@ -438,6 +438,7 @@ export default function Dashboard({
                     </div>
                   )}
                   <Insights
+                    userId={user.id}
                     summary={workspace.summary}
                     transactions={workspace.financeTransactions}
                     fixedBills={workspace.fixedBills}

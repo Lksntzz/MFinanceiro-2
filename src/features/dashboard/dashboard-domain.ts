@@ -1,3 +1,4 @@
+import { sumActiveBalance } from '../../lib/financial-accounts';
 import type {
   CardInstallment,
   FinancialAccount,
@@ -140,10 +141,7 @@ export function calculateDashboardBalance(
   fallbackBalance = 0,
 ): number {
   if (!accounts.length) return Number(fallbackBalance || 0);
-  return accounts.reduce(
-    (sum, account) => sum + Number(account.current_balance || 0),
-    0,
-  );
+  return sumActiveBalance(accounts);
 }
 
 export function buildStatementImportEntries(

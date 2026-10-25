@@ -161,7 +161,7 @@ export default function PlanningStrategyTool({ user }: { user: User }) {
           sum +
           (String(item.billing_cycle || '')
             .toLowerCase()
-            .includes('annual')
+            .match(/yearly|annual/)
             ? amount / 12
             : amount)
         );
