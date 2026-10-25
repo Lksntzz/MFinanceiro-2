@@ -52,13 +52,21 @@ export function normalizeDashboardTransaction(
 
   const amount = Number(item.amount ?? item.valor ?? 0);
   const rawType = String(item.type || item.tipo || '').toLowerCase();
-  const type: 'income' | 'expense' =
-    rawType === 'income' ||
-    rawType === 'entrada' ||
-    rawType === 'receita' ||
-    amount > 0
-      ? 'income'
-      : 'expense';
+  const isIncomeType =
+    rawType === 'income' || rawType === 'entrada' || rawType === 'receita';
+  const isExpenseType =
+    rawType === 'expense' ||
+    rawType === 'saida' ||
+    rawType === 'saída' ||
+    rawType === 'despesa';
+  // Um tipo informado explicitamente vale mais que o sinal do valor.
+  const type: 'income' | 'expense' = isIncomeType
+    ? 'income'
+    : isExpenseType
+      ? 'expense'
+      : amount > 0
+        ? 'income'
+        : 'expense';
 
   return {
     ...item,

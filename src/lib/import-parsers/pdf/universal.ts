@@ -89,28 +89,6 @@ function signedByContext(
   return parsed;
 }
 
-function keyOf(item: ExtractedPdfTransaction): string {
-  return [
-    item.rawDate.replace(/[^0-9]/g, ''),
-    Math.round(item.signedAmount * 100),
-    normalizeHeader(item.description).slice(0, 80),
-  ].join('|');
-}
-
-export function mergePdfTransactions(
-  ...groups: ExtractedPdfTransaction[][]
-): ExtractedPdfTransaction[] {
-  const seen = new Set<string>();
-  const merged: ExtractedPdfTransaction[] = [];
-  for (const item of groups.flat()) {
-    const key = keyOf(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(item);
-  }
-  return merged;
-}
-
 /**
  * Resilient fallback shared by every registered bank.
  * Supports tables where a date appears once and the following movements reuse it,

@@ -7,7 +7,7 @@ import {
   RefreshCw,
   RotateCcw,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { supabase } from '../lib/supabase';
 import type {
@@ -19,6 +19,24 @@ import type {
 interface ImportBatchesProps {
   userId: string;
   accounts: FinancialAccount[];
+}
+
+const BATCH_PAGE_SIZE = 50;
+const ROW_PAGE_SIZE = 200;
+
+const ROW_STATUS_LABELS: Record<string, string> = {
+  imported: 'importada',
+  duplicate: 'duplicada',
+  rejected: 'rejeitada',
+  ignored: 'ignorada',
+  reverted: 'desfeita',
+  pending: 'pendente',
+};
+
+// Datas puras (AAAA-MM-DD) viram dd/MM/aaaa sem passar por fuso horário.
+function formatDay(value: string | null | undefined): string {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 }
 
 function money(value: number | null | undefined): string {
@@ -36,6 +54,11 @@ export default function ImportBatches({
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [rows, setRows] = useState<StatementImportRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMoreBatches, setHasMoreBatches] = useState(false);
+  const [loadingMoreBatches, setLoadingMoreBatches] = useState(false);
+  const [rowsTotal, setRowsTotal] = useState(0);
+  const [loadingMoreRows, setLoadingMoreRows] = useState(false);
+  const selectionRef = useRef<string | null>(null);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [revertingBatchId, setRevertingBatchId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,37 +70,94 @@ export default function ImportBatches({
   const selectedBatch =
     batches.find((batch) => batch.id === selectedBatchId) || null;
 
+  const BATCH_COLUMNS =
+    'id,user_id,account_id,status,source_format,file_name,parser_name,period_start,period_end,balance_mode,balance_before,balance_after,net_amount,requested_count,inserted_count,duplicate_count,rejected_count,ignored_count,error_message,created_at,completed_at,reverted_at,revert_reason';
+
   const loadBatches = useCallback(async () => {
-    setLoading(true);
     setError(null);
     const { data, error: queryError } = await supabase
       .from('mf_statement_import_batches')
-      .select(
-        'id,user_id,account_id,status,source_format,file_name,parser_name,period_start,period_end,balance_mode,balance_before,balance_after,net_amount,requested_count,inserted_count,duplicate_count,rejected_count,ignored_count,error_message,created_at,completed_at,reverted_at,revert_reason',
-      )
+      .select(BATCH_COLUMNS)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .range(0, 49);
+      .range(0, BATCH_PAGE_SIZE - 1);
     if (queryError) setError(queryError.message);
-    else setBatches((data || []) as StatementImportBatch[]);
+    else {
+      setBatches((data || []) as StatementImportBatch[]);
+      setHasMoreBatches((data || []).length === BATCH_PAGE_SIZE);
+    }
     setLoading(false);
   }, [userId]);
 
+  async function loadMoreBatches() {
+    if (loadingMoreBatches) return;
+    setLoadingMoreBatches(true);
+    const { data, error: queryError } = await supabase
+      .from('mf_statement_import_batches')
+      .select(BATCH_COLUMNS)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(batches.length, batches.length + BATCH_PAGE_SIZE - 1);
+    if (queryError) setError(queryError.message);
+    else {
+      setBatches((current) => [
+        ...current,
+        ...((data || []) as StatementImportBatch[]),
+      ]);
+      setHasMoreBatches((data || []).length === BATCH_PAGE_SIZE);
+    }
+    setLoadingMoreBatches(false);
+  }
+
+  const ROW_COLUMNS =
+    'id,batch_id,line_number,transaction_date,description,category_name,signed_amount,status,error_message,ledger_entry_id';
+
   async function selectBatch(batchId: string) {
+    selectionRef.current = batchId;
     setSelectedBatchId(batchId);
+    setRows([]);
+    setRowsTotal(0);
     setRowsLoading(true);
     setError(null);
-    const { data, error: queryError } = await supabase
+    const {
+      data,
+      error: queryError,
+      count,
+    } = await supabase
       .from('mf_statement_import_rows')
-      .select(
-        'id,batch_id,line_number,transaction_date,description,category_name,signed_amount,status,error_message,ledger_entry_id',
-      )
+      .select(ROW_COLUMNS, { count: 'exact' })
       .eq('batch_id', batchId)
       .order('line_number')
-      .range(0, 199);
+      .range(0, ROW_PAGE_SIZE - 1);
+    // O usuário pode ter clicado em outro lote enquanto esta resposta chegava.
+    if (selectionRef.current !== batchId) return;
     if (queryError) setError(queryError.message);
-    else setRows((data || []) as StatementImportRow[]);
+    else {
+      setRows((data || []) as StatementImportRow[]);
+      setRowsTotal(count ?? (data || []).length);
+    }
     setRowsLoading(false);
+  }
+
+  async function loadMoreRows() {
+    const batchId = selectedBatchId;
+    if (!batchId || loadingMoreRows) return;
+    setLoadingMoreRows(true);
+    const { data, error: queryError } = await supabase
+      .from('mf_statement_import_rows')
+      .select(ROW_COLUMNS)
+      .eq('batch_id', batchId)
+      .order('line_number')
+      .range(rows.length, rows.length + ROW_PAGE_SIZE - 1);
+    if (selectionRef.current === batchId) {
+      if (queryError) setError(queryError.message);
+      else
+        setRows((current) => [
+          ...current,
+          ...((data || []) as StatementImportRow[]),
+        ]);
+    }
+    setLoadingMoreRows(false);
   }
 
   useEffect(() => {
@@ -108,7 +188,7 @@ export default function ImportBatches({
     setRevertingBatchId(null);
   }
 
-  if (loading)
+  if (loading && batches.length === 0)
     return (
       <div className="flex h-48 items-center justify-center gap-2 text-xs text-white/40">
         <Loader2 size={16} className="animate-spin" /> Carregando lotes...
@@ -180,6 +260,18 @@ export default function ImportBatches({
               </div>
             </button>
           ))}
+          {hasMoreBatches && (
+            <button
+              type="button"
+              onClick={() => void loadMoreBatches()}
+              disabled={loadingMoreBatches}
+              className="w-full rounded-xl border border-white/10 py-2.5 text-[10px] font-bold text-white/60 hover:bg-white/5 disabled:opacity-45"
+            >
+              {loadingMoreBatches
+                ? 'Carregando…'
+                : 'Carregar lotes mais antigos'}
+            </button>
+          )}
           {batches.length === 0 && (
             <div className="py-12 text-center text-xs text-white/30">
               Nenhum lote registrado ainda.
@@ -213,8 +305,9 @@ export default function ImportBatches({
                     {selectedBatch.file_name || 'Importação sem arquivo'}
                   </h3>
                   <p className="mt-1 text-[10px] text-white/40">
-                    {selectedBatch.period_start || 'Período não identificado'}{' '}
-                    até {selectedBatch.period_end || '—'} · saldo{' '}
+                    {formatDay(selectedBatch.period_start) ||
+                      'Período não identificado'}{' '}
+                    até {formatDay(selectedBatch.period_end) || '—'} · saldo{' '}
                     {money(selectedBatch.balance_before)} →{' '}
                     {money(selectedBatch.balance_after)}
                   </p>
@@ -311,8 +404,9 @@ export default function ImportBatches({
                           'Linha sem descrição'}
                       </div>
                       <div className="mt-0.5 truncate text-white/35">
-                        {row.transaction_date || 'sem data'} ·{' '}
-                        {row.category_name || 'sem categoria'} · {row.status}
+                        {formatDay(row.transaction_date) || 'sem data'} ·{' '}
+                        {row.category_name || 'sem categoria'} ·{' '}
+                        {ROW_STATUS_LABELS[row.status] || row.status}
                       </div>
                     </div>
                     <strong
@@ -326,6 +420,21 @@ export default function ImportBatches({
                     </strong>
                   </div>
                 ))
+              )}
+              {!rowsLoading && rows.length < rowsTotal && (
+                <div className="flex flex-col items-center gap-2 p-4 text-[10px] text-white/45">
+                  <span>
+                    Mostrando {rows.length} de {rowsTotal} linhas deste lote.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreRows()}
+                    disabled={loadingMoreRows}
+                    className="rounded-lg border border-white/10 px-4 py-2 font-bold text-white/70 hover:bg-white/5 disabled:opacity-45"
+                  >
+                    {loadingMoreRows ? 'Carregando…' : 'Carregar mais linhas'}
+                  </button>
+                </div>
               )}
               {!rowsLoading && rows.length === 0 && (
                 <div className="flex h-40 items-center justify-center text-xs text-white/30">

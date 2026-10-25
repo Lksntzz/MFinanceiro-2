@@ -530,10 +530,3 @@ export function standardizeBankSheet(rows: SpreadsheetRow[]): string | null {
 
   return output.length > 1 ? output.join('\n') : null;
 }
-
-export function spreadsheetRowsToCsv(rows: SpreadsheetRow[]): string {
-  return rows
-    .filter((row) => row.some((cell) => displayCell(cell) !== ''))
-    .map((row) => row.map((cell) => csvField(displayCell(cell))).join(','))
-    .join('\n');
-}
