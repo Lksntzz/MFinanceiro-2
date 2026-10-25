@@ -2,8 +2,10 @@ import type { Session } from '@supabase/supabase-js';
 import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import Auth from './components/Auth';
 import ConfigRequired from './components/ConfigRequired';
+import { nextBackoffDelay, withTimeout } from './lib/async-guards';
 import {
   fetchMaintenanceConfig,
+  fetchMaintenanceConfigWithStatus,
   isMaintenanceAdmin,
   MAINTENANCE_BROADCAST_EVENT,
   MAINTENANCE_CHANNEL,
@@ -22,6 +24,13 @@ const STORAGE_EMAIL = 'mf-auth-email';
 const AWAITING_CONFIRMATION_EMAIL = 'mf-awaiting-email-confirmation';
 const CONFIRMED_EMAIL_STORAGE = 'mf-confirmed-email';
 const MAINTENANCE_FALLBACK_POLL_MS = 30_000;
+// Com falhas seguidas o intervalo dobra até este teto, aliviando um banco lento.
+const MAINTENANCE_MAX_POLL_MS = 240_000;
+// Foco/visibilidade/online não consultam de novo dentro desta janela.
+const MAINTENANCE_NOISY_MIN_GAP_MS = 10_000;
+// Se a renovação de sessão demorar mais que isso, o app segue com a sessão
+// local; o resultado tardio chega por onAuthStateChange.
+const SESSION_REFRESH_TIMEOUT_MS = 8_000;
 
 function hasAdminOAuthIntent() {
   try {
@@ -202,10 +211,23 @@ export default function App() {
 
         let currentSession = sessionData.session;
         if (currentSession) {
-          const { data: refreshed, error: refreshError } =
-            await supabase.auth.refreshSession();
-          if (!refreshError && refreshed.session)
-            currentSession = refreshed.session;
+          const refreshResult = await withTimeout(
+            supabase.auth.refreshSession(),
+            SESSION_REFRESH_TIMEOUT_MS,
+            'Renovação de sessão',
+          ).catch((err) => {
+            console.warn(
+              'Renovação de sessão lenta; seguindo com a local:',
+              err,
+            );
+            return null;
+          });
+          if (
+            refreshResult &&
+            !refreshResult.error &&
+            refreshResult.data.session
+          )
+            currentSession = refreshResult.data.session;
         }
 
         if (shouldHandleEmailConfirmation(currentSession)) {
@@ -286,19 +308,38 @@ export default function App() {
 
     let active = true;
     let refreshInFlight = false;
+    let lastRefreshAt = 0;
+    let consecutiveFailures = 0;
+    let pollTimer: number | undefined;
 
     const applyMaintenance = (next: MaintenanceConfig) => {
       if (!active) return;
       setMaintenance(next);
     };
 
-    const refreshMaintenance = async () => {
+    // `force` é usado quando o próprio estado de manutenção mudou (Realtime,
+    // broadcast, polling). Foco/visibilidade/online são "ruído" e respeitam
+    // um intervalo mínimo para não martelar um banco lento.
+    const refreshMaintenance = async ({ force = false } = {}) => {
       if (!active || refreshInFlight) return;
+      if (!force && Date.now() - lastRefreshAt < MAINTENANCE_NOISY_MIN_GAP_MS)
+        return;
       refreshInFlight = true;
+      lastRefreshAt = Date.now();
 
       try {
-        applyMaintenance(await fetchMaintenanceConfig(supabase));
+        const { config, degraded } =
+          await fetchMaintenanceConfigWithStatus(supabase);
+        if (degraded) {
+          // Rede/banco indisponível: não sobrescreve um estado já conhecido
+          // com o padrão "manutenção desligada".
+          consecutiveFailures += 1;
+          return;
+        }
+        consecutiveFailures = 0;
+        applyMaintenance(config);
       } catch (err) {
+        consecutiveFailures += 1;
         console.warn('Falha ao atualizar o modo de manutenção:', err);
       } finally {
         refreshInFlight = false;
@@ -315,16 +356,17 @@ export default function App() {
           table: 'mf_global_settings',
         },
         () => {
-          void refreshMaintenance();
+          void refreshMaintenance({ force: true });
         },
       )
       .on('broadcast', { event: MAINTENANCE_BROADCAST_EVENT }, () => {
-        void refreshMaintenance();
+        void refreshMaintenance({ force: true });
       })
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') void refreshMaintenance();
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
-          void refreshMaintenance();
+        if (status === 'SUBSCRIBED') void refreshMaintenance({ force: true });
+        // CHANNEL_ERROR/TIMED_OUT não consultam o banco na hora: o Realtime
+        // reconecta sozinho e o polling com backoff cobre a indisponibilidade.
+        // Consultar a cada erro criava um ciclo que sobrecarregava o banco.
       });
 
     const onFocus = () => void refreshMaintenance();
@@ -337,9 +379,22 @@ export default function App() {
       if (next) applyMaintenance(next);
     };
 
-    const fallbackPollId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshMaintenance();
-    }, MAINTENANCE_FALLBACK_POLL_MS);
+    const schedulePoll = () => {
+      pollTimer = window.setTimeout(
+        async () => {
+          if (!active) return;
+          if (document.visibilityState === 'visible')
+            await refreshMaintenance({ force: true });
+          if (active) schedulePoll();
+        },
+        nextBackoffDelay(
+          MAINTENANCE_FALLBACK_POLL_MS,
+          consecutiveFailures,
+          MAINTENANCE_MAX_POLL_MS,
+        ),
+      );
+    };
+    schedulePoll();
 
     window.addEventListener('focus', onFocus);
     window.addEventListener('online', onOnline);
@@ -351,7 +406,7 @@ export default function App() {
 
     return () => {
       active = false;
-      window.clearInterval(fallbackPollId);
+      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
       window.removeEventListener(

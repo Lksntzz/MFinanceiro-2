@@ -38,6 +38,9 @@ import type {
   UserSettings,
 } from '../types';
 
+const LOCAL_REFRESH_DEBOUNCE_MS = 120;
+const REALTIME_REFRESH_DEBOUNCE_MS = 600;
+
 export function useDashboardWorkspace(userId: string) {
   const initialCache = useMemo(
     () => ({
@@ -251,10 +254,19 @@ export function useDashboardWorkspace(userId: string) {
 
   useEffect(() => {
     const filter = `user_id=eq.${userId}`;
-    const scheduleRefresh = () => {
+    const scheduleRefreshIn = (delayMs: number) => {
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = window.setTimeout(() => void refresh(), 120);
+      refreshTimerRef.current = window.setTimeout(
+        () => void refresh(),
+        delayMs,
+      );
     };
+    // Ação do próprio usuário: a tela deve reagir quase na hora.
+    const scheduleRefresh = () => scheduleRefreshIn(LOCAL_REFRESH_DEBOUNCE_MS);
+    // Eventos do Realtime chegam em rajadas (várias linhas/tabelas por ação,
+    // além do eco da própria gravação): agrupa em uma única recarga.
+    const scheduleRealtimeRefresh = () =>
+      scheduleRefreshIn(REALTIME_REFRESH_DEBOUNCE_MS);
 
     window.addEventListener('mf:finance-data-changed', scheduleRefresh);
 
@@ -268,12 +280,12 @@ export function useDashboardWorkspace(userId: string) {
           table: 'mf_finance_ledger_entries',
           filter,
         },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mf_user_settings', filter },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .on(
         'postgres_changes',
@@ -283,7 +295,7 @@ export function useDashboardWorkspace(userId: string) {
           table: 'mf_financial_accounts',
           filter,
         },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .on(
         'postgres_changes',
@@ -293,22 +305,22 @@ export function useDashboardWorkspace(userId: string) {
           table: 'mf_transaction_categories',
           filter,
         },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mf_credit_cards', filter },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mf_card_installments', filter },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mf_fixed_bills', filter },
-        scheduleRefresh,
+        scheduleRealtimeRefresh,
       )
       .subscribe();
 

@@ -98,11 +98,13 @@ function scopedConfig(
 
 async function readFromGlobalSettingsTable(
   db: SupabaseClient,
+  signal: AbortSignal,
 ): Promise<MaintenanceConfig | null> {
   const { data, error } = await db
     .from('mf_global_settings')
     .select('key, maintenance_mode, maintenance_message, updated_at')
-    .in('key', ['global', 'mobile', 'desktop', 'ios']);
+    .in('key', ['global', 'mobile', 'desktop', 'ios'])
+    .abortSignal(signal);
 
   if (error) {
     if (isMissingSchemaError(error)) return null;
@@ -121,12 +123,14 @@ async function readFromGlobalSettingsTable(
 
 async function readFromAppConfigTable(
   db: SupabaseClient,
+  signal: AbortSignal,
 ): Promise<MaintenanceConfig | null> {
   const { data, error } = await db
     .from('mf_app_config')
     .select('maintenance_mode, maintenance_message')
     .order('updated_at', { ascending: false })
     .limit(1)
+    .abortSignal(signal)
     .maybeSingle();
 
   if (error) {
@@ -138,24 +142,70 @@ async function readFromAppConfigTable(
   return scopedConfig(data as MaintenanceRow, undefined, undefined, undefined);
 }
 
+const MAINTENANCE_READ_TIMEOUT_MS = 6_000;
+
+export interface MaintenanceFetchResult {
+  config: MaintenanceConfig;
+  /**
+   * true quando a rede ou o servidor falharam e `config` é apenas o padrão
+   * (manutenção desligada). Quem já conhece um estado anterior deve mantê-lo.
+   */
+  degraded: boolean;
+}
+
+// Erros de aplicação do PostgREST/Postgres sempre trazem `code`. Erros de
+// rede, timeout e gateway (502/503/504/521) chegam sem código.
+function isTransientFailure(error: any): boolean {
+  if (!error) return false;
+  if (error.name === 'AbortError' || error.name === 'TimeoutError') return true;
+  return !String(error.code || '');
+}
+
+export async function fetchMaintenanceConfigWithStatus(
+  db: SupabaseClient,
+): Promise<MaintenanceFetchResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    MAINTENANCE_READ_TIMEOUT_MS,
+  );
+
+  const strategies: Array<() => Promise<MaintenanceConfig | null>> = [
+    () => readFromGlobalSettingsTable(db, controller.signal),
+    () => readFromAppConfigTable(db, controller.signal),
+  ];
+
+  try {
+    for (const read of strategies) {
+      try {
+        const result = await read();
+        if (result) return { config: result, degraded: false };
+      } catch (e) {
+        console.warn('Maintenance check strategy failed:', e);
+        // Em queda de rede/servidor, tentar a segunda tabela só dobraria a
+        // carga sobre um banco que já está lento.
+        if (isTransientFailure(e)) {
+          return {
+            config: scopedConfig(undefined, undefined, undefined, undefined),
+            degraded: true,
+          };
+        }
+      }
+    }
+
+    return {
+      config: scopedConfig(undefined, undefined, undefined, undefined),
+      degraded: false,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchMaintenanceConfig(
   db: SupabaseClient,
 ): Promise<MaintenanceConfig> {
-  const strategies: Array<() => Promise<MaintenanceConfig | null>> = [
-    () => readFromGlobalSettingsTable(db),
-    () => readFromAppConfigTable(db),
-  ];
-
-  for (const read of strategies) {
-    try {
-      const result = await read();
-      if (result) return result;
-    } catch (e) {
-      console.warn('Maintenance check strategy failed:', e);
-    }
-  }
-
-  return scopedConfig(undefined, undefined, undefined, undefined);
+  return (await fetchMaintenanceConfigWithStatus(db)).config;
 }
 
 export function getMaintenanceForSurface(
