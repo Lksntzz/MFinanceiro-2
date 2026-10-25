@@ -81,22 +81,22 @@ export function inferEmptyResultReason(params: {
   );
 
   if (format === 'pdf')
-    return pdfReason || 'nenhum registro de transacao encontrado';
+    return pdfReason || 'nenhum registro de transação encontrado';
 
   if (format === 'csv') {
     if (
       isMfinanceiroExport &&
       (!csvAnalysis || csvAnalysis.nonEmptyLines === 0)
     ) {
-      return 'arquivo do MFinanceiro sem transacoes para importar';
+      return 'arquivo do MFinanceiro sem transações para importar';
     }
     if (!csvAnalysis || csvAnalysis.nonEmptyLines === 0)
       return 'planilha vazia';
     if (csvAnalysis.nonEmptyLines <= 1 && csvAnalysis.hasHeaderKeywords)
-      return 'arquivo sem movimentacoes';
+      return 'arquivo sem movimentações';
     if (!csvAnalysis.hasTransactionSignals)
-      return 'arquivo nao e um extrato bancario';
-    return 'nenhum registro de transacao encontrado';
+      return 'arquivo não é um extrato bancário';
+    return 'nenhum registro de transação encontrado';
   }
 
   if (format === 'xls' || format === 'xlsx') {
@@ -104,26 +104,26 @@ export function inferEmptyResultReason(params: {
       isMfinanceiroExport &&
       (!sheetAnalysis || sheetAnalysis.nonEmptyRows === 0)
     ) {
-      return 'arquivo do MFinanceiro sem transacoes para importar';
+      return 'arquivo do MFinanceiro sem transações para importar';
     }
     if (!sheetAnalysis || sheetAnalysis.nonEmptyRows === 0)
       return 'planilha vazia';
     if (sheetAnalysis.nonEmptyRows <= 1 && sheetAnalysis.hasHeaderKeywords)
-      return 'arquivo sem movimentacoes';
+      return 'arquivo sem movimentações';
     if (!sheetAnalysis.hasTransactionSignals)
-      return 'arquivo nao e um extrato bancario';
-    return 'nenhum registro de transacao encontrado';
+      return 'arquivo não é um extrato bancário';
+    return 'nenhum registro de transação encontrado';
   }
 
   if (format === 'ofx') {
     const content = ofxContent || '';
-    if (!content.trim()) return 'arquivo sem movimentacoes';
+    if (!content.trim()) return 'arquivo sem movimentações';
     if (!/<OFX|<BANKTRANLIST|<STMTTRN>/i.test(content))
-      return 'arquivo nao e um extrato bancario';
-    if (!/<STMTTRN>/i.test(content)) return 'arquivo sem movimentacoes';
+      return 'arquivo não é um extrato bancário';
+    if (!/<STMTTRN>/i.test(content)) return 'arquivo sem movimentações';
   }
 
-  return 'nenhum registro de transacao encontrado';
+  return 'nenhum registro de transação encontrado';
 }
 
 export function buildTextPreview(raw: string | undefined): string {
@@ -232,10 +232,10 @@ export function detectFileFormat(
   return {
     format: 'unknown',
     formatLabel: ext ? ext.toUpperCase() : 'Desconhecido',
-    parserLabel: 'Nao disponivel',
+    parserLabel: 'Não disponível',
     parserExists: false,
     supported: false,
-    reason: 'Formato nao suportado. Use CSV, OFX, PDF, XLS, XLSX ou imagem.',
+    reason: 'Formato não suportado. Use CSV, OFX, PDF, XLS, XLSX ou imagem.',
   };
 }
 

@@ -267,7 +267,7 @@ export default function ImportarExtratos({
           linesExtracted: 0,
           linesIgnored: 0,
           rejectedLineReasons: [],
-          reason: detection.reason || 'Formato nao suportado para importacao.',
+          reason: detection.reason || 'Formato não suportado para importação.',
         });
         setStep('review');
         return;
@@ -607,13 +607,17 @@ export default function ImportarExtratos({
           <CheckCircle2 size={48} />
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold">Importacao Concluida!</h2>
+          <h2 className="text-2xl font-bold">Importação concluída!</h2>
           <p className="text-white/40 text-sm max-w-xs mx-auto">
-            {committedCount} lancamentos foram adicionados ao seu ledger com
-            sucesso.
+            {committedCount}{' '}
+            {committedCount === 1
+              ? 'lançamento foi adicionado'
+              : 'lançamentos foram adicionados'}{' '}
+            ao seu histórico.
           </p>
         </div>
         <button
+          type="button"
           onClick={onCancel}
           className="px-8 py-3 bg-brand-primary text-white rounded-xl font-bold uppercase tracking-widest hover:bg-brand-primary/80 transition-all"
         >
@@ -632,11 +636,13 @@ export default function ImportarExtratos({
             Extratos
           </h2>
           <p className="text-xs text-white/40">
-            Traga suas movimentacoes bancarias para o MFinanceiro de forma
+            Traga suas movimentações bancárias para o MFinanceiro de forma
             inteligente.
           </p>
         </div>
         <button
+          type="button"
+          aria-label="Fechar importação de extratos"
           onClick={onCancel}
           disabled={isImporting}
           className="p-2 text-white/20 hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40"
@@ -653,7 +659,7 @@ export default function ImportarExtratos({
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
                 onDrop={onDrop}
-                className={`h-64 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-4 transition-all ${
+                className={`relative h-64 overflow-hidden border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-4 transition-all ${
                   isDragging
                     ? 'border-brand-primary bg-brand-primary/5'
                     : 'border-white/10 bg-white/5 hover:border-white/20'
@@ -670,6 +676,7 @@ export default function ImportarExtratos({
                 </div>
                 <input
                   type="file"
+                  aria-label="Selecionar arquivo de extrato"
                   className="absolute inset-0 opacity-0 cursor-pointer"
                   onChange={handleFileSelect}
                   accept=".csv,.ofx,.xls,.xlsx,.pdf,image/*"
@@ -694,7 +701,7 @@ export default function ImportarExtratos({
                     <ShieldCheck size={18} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold">Seguranca de Dados</h4>
+                    <h4 className="text-xs font-bold">Segurança de dados</h4>
                     <p className="text-[10px] text-white/40 mt-1">
                       Arquivos de OCR ficam em armazenamento privado e a chave
                       de IA permanece no servidor.
@@ -707,7 +714,7 @@ export default function ImportarExtratos({
             <div className="col-span-4 space-y-4">
               <div className="glass-card !p-5 space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-                  <Filter size={14} className="text-white/40" /> Configuracao
+                  <Filter size={14} className="text-white/40" /> Configuração
                 </h3>
                 <div>
                   <label className="text-[10px] text-white/40 uppercase font-bold block mb-1.5">
@@ -718,7 +725,7 @@ export default function ImportarExtratos({
                     onChange={(e) => setBank(e.target.value)}
                     className="w-full bg-[#121212] border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-primary transition-all [&>option]:bg-[#121212] [&>option]:text-white"
                   >
-                    <option value="auto">Deteccao Automatica</option>
+                    <option value="auto">Detecção automática</option>
                     <option value="nubank">Nubank</option>
                     <option value="inter">Inter</option>
                     <option value="santander">Santander</option>
@@ -734,7 +741,7 @@ export default function ImportarExtratos({
                   <Info size={14} className="text-brand-primary" /> Dica Pro
                 </h3>
                 <p className="text-[10px] text-white/60 leading-relaxed">
-                  OFX costuma ter mais precisao na importacao por trazer
+                  OFX costuma ter mais precisão na importação por trazer
                   identificadores unicos e valor consolidado por transacao.
                 </p>
               </div>
@@ -911,7 +918,7 @@ export default function ImportarExtratos({
               <div className="flex flex-wrap items-center gap-6">
                 <div className="flex flex-col">
                   <span className="text-[8px] text-white/40 uppercase font-bold">
-                    Lancamentos
+                    Lançamentos
                   </span>
                   <span className="text-sm font-bold">
                     {importedData.length}
@@ -969,7 +976,7 @@ export default function ImportarExtratos({
                     </>
                   ) : (
                     <>
-                      Confirmar Importacao <ChevronRight size={14} />
+                      Confirmar importação <ChevronRight size={14} />
                     </>
                   )}
                 </button>
@@ -1023,12 +1030,12 @@ export default function ImportarExtratos({
                 </div>
                 <div>
                   <div className="text-white/40 uppercase text-[9px] font-bold">
-                    Parser disponivel
+                    Parser disponível
                   </div>
                   <div
                     className={`font-bold ${importDiagnostics.parserExists ? 'text-green-400' : 'text-red-400'}`}
                   >
-                    {importDiagnostics.parserExists ? 'Sim' : 'Nao'}
+                    {importDiagnostics.parserExists ? 'Sim' : 'Não'}
                   </div>
                 </div>
               </div>
@@ -1047,7 +1054,7 @@ export default function ImportarExtratos({
               </div>
               <div className="mt-2 text-[11px]">
                 <span className="text-white/40 uppercase text-[9px] font-bold">
-                  Lancamentos validos:
+                  Lançamentos válidos:
                 </span>{' '}
                 <span className="font-bold">
                   {importDiagnostics.validFound}
@@ -1055,7 +1062,7 @@ export default function ImportarExtratos({
               </div>
               <div className="mt-1 text-[11px]">
                 <span className="text-white/40 uppercase text-[9px] font-bold">
-                  Linhas extraidas:
+                  Linhas extraídas:
                 </span>{' '}
                 <span className="font-bold">
                   {importDiagnostics.linesExtracted}
@@ -1089,7 +1096,7 @@ export default function ImportarExtratos({
               {importDiagnostics.rejectedLineReasons.length > 0 && (
                 <div className="mt-2 text-[10px] text-red-300 space-y-1">
                   <div className="text-[9px] uppercase text-red-200/80 font-bold">
-                    Motivos de rejeicao (amostra)
+                    Motivos de rejeição (amostra)
                   </div>
                   {importDiagnostics.rejectedLineReasons.map((msg, idx) => (
                     <div key={`${idx}-${msg.slice(0, 20)}`}>- {msg}</div>
@@ -1217,7 +1224,7 @@ export default function ImportarExtratos({
             {importedData.length === 0 && (
               <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-xs text-yellow-300">
                 {importDiagnostics?.reason ||
-                  'Nenhum lancamento valido encontrado. Revise o formato e tente novamente.'}
+                  'Nenhum lançamento válido encontrado. Revise o formato e tente novamente.'}
               </div>
             )}
           </div>
