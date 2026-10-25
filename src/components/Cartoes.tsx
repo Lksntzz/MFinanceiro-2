@@ -29,8 +29,10 @@ const money = (value: number) =>
     style: 'currency',
     currency: 'BRL',
   });
+const rawPercent = (used: number, limit: number) =>
+  limit > 0 ? Math.max(0, (used / limit) * 100) : 0;
 const percent = (used: number, limit: number) =>
-  limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0;
+  Math.min(100, rawPercent(used, limit));
 
 export default function Cartoes(props: CartoesProps) {
   const {
@@ -75,9 +77,9 @@ export default function Cartoes(props: CartoesProps) {
   const totalLimit = normalizedCards.reduce((sum, card) => sum + card.limit, 0);
   const totalUsed = normalizedCards.reduce((sum, card) => sum + card.used, 0);
   const available = totalLimit - totalUsed;
-  const globalUsage = percent(totalUsed, totalLimit);
+  const globalUsage = rawPercent(totalUsed, totalLimit);
   const pressureCard = [...normalizedCards].sort(
-    (a, b) => percent(b.used, b.limit) - percent(a.used, a.limit),
+    (a, b) => rawPercent(b.used, b.limit) - rawPercent(a.used, a.limit),
   )[0];
   const monthlyInstallments = normalizedInstallments
     .filter((item) => item.current_installment <= item.total_installments)
@@ -168,6 +170,8 @@ export default function Cartoes(props: CartoesProps) {
                       <div className="flex gap-1">
                         {onEditCard && (
                           <button
+                            type="button"
+                            aria-label={`Editar cartão ${card.name}`}
                             onClick={() => onEditCard(card)}
                             className="p-1 text-white/30 hover:text-white"
                           >
@@ -176,6 +180,8 @@ export default function Cartoes(props: CartoesProps) {
                         )}
                         {onDeleteCard && (
                           <button
+                            type="button"
+                            aria-label={`Excluir cartão ${card.name}`}
                             onClick={() => onDeleteCard(card)}
                             className="p-1 text-white/30 hover:text-red-400"
                           >
@@ -212,7 +218,9 @@ export default function Cartoes(props: CartoesProps) {
                       />
                     </div>
                     <div className="mt-1 flex justify-between text-[9px] text-white/30">
-                      <span>{usage.toFixed(0)}%</span>
+                      <span>
+                        {rawPercent(card.used, card.limit).toFixed(0)}%
+                      </span>
                       <span>Limite {money(card.limit)}</span>
                     </div>
                     <div className="mt-3 flex justify-between border-t border-white/5 pt-3 text-[9px] text-white/40">
@@ -223,6 +231,7 @@ export default function Cartoes(props: CartoesProps) {
                     </div>
                     {onPayCardBill && card.used > 0 && (
                       <button
+                        type="button"
                         onClick={() => onPayCardBill(card)}
                         className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-primary/15 py-2 text-[10px] font-bold text-brand-primary"
                       >
@@ -267,8 +276,8 @@ export default function Cartoes(props: CartoesProps) {
             {pressureCard ? (
               <p className="mt-2 text-xs text-white/50">
                 <strong>{pressureCard.name}</strong>:{' '}
-                {percent(pressureCard.used, pressureCard.limit).toFixed(0)}% do
-                limite.
+                {rawPercent(pressureCard.used, pressureCard.limit).toFixed(0)}%
+                do limite.
               </p>
             ) : (
               <p className="mt-2 text-xs text-white/30">
@@ -326,6 +335,8 @@ export default function Cartoes(props: CartoesProps) {
                     <div className="flex gap-1">
                       {onEditInstallment && (
                         <button
+                          type="button"
+                          aria-label={`Editar parcelamento ${item.description}`}
                           onClick={() => onEditInstallment(item)}
                           className="text-white/30"
                         >
@@ -334,6 +345,8 @@ export default function Cartoes(props: CartoesProps) {
                       )}
                       {onDeleteInstallment && (
                         <button
+                          type="button"
+                          aria-label={`Excluir parcelamento ${item.description}`}
                           onClick={() => onDeleteInstallment(item)}
                           className="text-white/30 hover:text-red-400"
                         >
@@ -347,6 +360,7 @@ export default function Cartoes(props: CartoesProps) {
                   </div>
                   {onPayInstallment && !completed && (
                     <button
+                      type="button"
                       onClick={() => onPayInstallment(item)}
                       className="mt-2 w-full rounded-lg bg-green-500/10 py-1.5 text-[9px] font-bold text-green-400"
                     >
@@ -417,6 +431,7 @@ function Header({
       </div>
       {action && (
         <button
+          type="button"
           onClick={action}
           className="flex items-center gap-2 rounded-xl bg-brand-primary px-3 py-2 text-xs font-bold text-black"
         >
@@ -450,6 +465,7 @@ function Pager({
       className={`${compact ? 'mt-2' : 'mt-auto pt-3'} flex items-center justify-center gap-3 text-[10px]`}
     >
       <button
+        type="button"
         onClick={() => onChange(Math.max(1, page - 1))}
         disabled={page === 1}
         className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30"
@@ -460,6 +476,7 @@ function Pager({
         {page} de {pages}
       </span>
       <button
+        type="button"
         onClick={() => onChange(Math.min(pages, page + 1))}
         disabled={page === pages}
         className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30"

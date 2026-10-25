@@ -9,6 +9,7 @@ import {
 import type React from 'react';
 import { useMemo, useState } from 'react';
 
+import { REAL_BALANCE_ACCOUNT_TYPES } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   FinancialAccount,
@@ -162,7 +163,8 @@ export default function FinancialStructure({
           <div>
             <h3 className="text-sm font-bold">Contas financeiras</h3>
             <p className="text-[10px] text-white/40">
-              Cada lançamento pertence a uma conta.
+              Cadastre só onde há saldo real; cartões e investimentos têm áreas
+              próprias.
             </p>
           </div>
         </div>
@@ -184,7 +186,10 @@ export default function FinancialStructure({
                 </div>
                 <div className="mt-1 text-[10px] text-white/40">
                   {ACCOUNT_TYPE_LABELS[account.account_type]} ·{' '}
-                  {account.transaction_count} lançamentos
+                  {account.transaction_count}{' '}
+                  {account.transaction_count === 1
+                    ? 'lançamento'
+                    : 'lançamentos'}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-3">
@@ -246,12 +251,11 @@ export default function FinancialStructure({
               }
               className="mt-1 w-full rounded-lg border border-white/10 bg-[#121212] px-3 py-2 text-xs"
             >
-              <option value="checking">Conta corrente</option>
-              <option value="savings">Poupança</option>
-              <option value="cash">Carteira</option>
-              <option value="investment">Investimentos</option>
-              <option value="credit">Crédito</option>
-              <option value="other">Outra</option>
+              {REAL_BALANCE_ACCOUNT_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
             </select>
           </label>
           <label className="text-[10px] text-white/50">
