@@ -1,5 +1,6 @@
 import type { ImportedTransaction } from '../../types';
 import type { ImportBalanceValidation } from './import-types';
+import { isValidStatementDate } from './statement-parser-utils';
 
 function signedAmount(item: ImportedTransaction): number {
   const amount = Number(item.amount);
@@ -92,7 +93,9 @@ export function toggleImportedTransaction(
     if (item.id !== id) return item;
     if (
       item.status === 'error' &&
-      (item.amount <= 0 || item.description === 'Sem descricao')
+      (item.amount <= 0 ||
+        item.description === 'Sem descricao' ||
+        !isValidStatementDate(item.date))
     )
       return item;
     const selected = item.status !== 'ready';
@@ -117,7 +120,7 @@ export function updateImportedTransaction(
     if (item.id !== id) return item;
     const next = { ...item, ...patch };
     const valid =
-      /^\d{4}-\d{2}-\d{2}$/.test(next.date) &&
+      isValidStatementDate(next.date) &&
       next.description.trim().length > 0 &&
       Number(next.amount) > 0;
     return {

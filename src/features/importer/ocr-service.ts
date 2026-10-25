@@ -1,4 +1,3 @@
-import { toLocalISODate } from '../../lib/local-date';
 import { supabase } from '../../lib/supabase';
 import type { ImportedTransaction } from '../../types';
 import { hashImportFile, inferFileMimeType } from './import-file';
@@ -109,7 +108,7 @@ export async function extractStatementWithOcr(
     return {
       id: generateTransactionId('ocr', index),
       extraction_item_id: String(item.id || '') || undefined,
-      date: date || toLocalISODate(),
+      date,
       description,
       amount: Math.abs(signedAmount),
       source_id: String(item.external_id || '') || undefined,

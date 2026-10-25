@@ -4,6 +4,7 @@ import {
   generateTransactionId,
   inferColumnByRatio,
   inferStatementCategory,
+  isValidStatementDate,
   looksLikeAmount,
   looksLikeDate,
   looksLikeText,
@@ -108,11 +109,16 @@ export function parseCsvTransactions(
         partialBalanceIndex >= 0
           ? parseStatementAmount(columns[partialBalanceIndex])
           : Number.NaN;
+      const date = parseStatementDate(columns[releaseDateIndex]);
       const status: ImportedTransaction['status'] =
-        description !== 'Sem descricao' && amount > 0 ? 'ready' : 'error';
+        description !== 'Sem descricao' &&
+        amount > 0 &&
+        isValidStatementDate(date)
+          ? 'ready'
+          : 'error';
       return {
         id: generateTransactionId('csv-statement', index),
-        date: parseStatementDate(columns[releaseDateIndex]),
+        date,
         description,
         amount,
         source_id: sourceId || undefined,
@@ -171,8 +177,13 @@ export function parseCsvTransactions(
           ? columns[0]
           : '';
     const amount = Math.abs(signedAmount);
+    const date = parseStatementDate(rawDate);
     const status: ImportedTransaction['status'] =
-      description !== 'Sem descricao' && amount > 0 ? 'ready' : 'error';
+      description !== 'Sem descricao' &&
+      amount > 0 &&
+      isValidStatementDate(date)
+        ? 'ready'
+        : 'error';
     const rawBalance =
       runningBalanceIndex >= 0
         ? parseStatementAmount(columns[runningBalanceIndex])
@@ -187,7 +198,7 @@ export function parseCsvTransactions(
 
     return {
       id: generateTransactionId('csv', index),
-      date: parseStatementDate(rawDate),
+      date,
       description,
       amount,
       type,

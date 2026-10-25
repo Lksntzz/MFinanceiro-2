@@ -2,6 +2,7 @@ import type { ImportedTransaction } from '../../types';
 import {
   generateTransactionId,
   inferStatementCategory,
+  isValidStatementDate,
   normalizeStatementHeader,
   parseStatementAmount,
   parseStatementDate,
@@ -42,18 +43,19 @@ export function parseOfxTransactions(
       /(credit|dep|income)/.test(transactionType) || signedAmount > 0
         ? 'income'
         : 'expense';
+    const date = parseStatementDate(rawDate);
     const status: ImportedTransaction['status'] =
-      signedAmount !== 0 ? 'ready' : 'error';
+      signedAmount !== 0 && isValidStatementDate(date) ? 'ready' : 'error';
 
     return {
       id: fitId || generateTransactionId('ofx', index),
-      date: parseStatementDate(rawDate),
+      date,
       description,
       amount: Math.abs(signedAmount),
       type,
       category: inferStatementCategory(description, type),
       status,
-      confidence: signedAmount !== 0 ? 0.96 : 0.45,
+      confidence: status === 'ready' ? 0.96 : 0.45,
       original_description: description,
       bank_source: bank === 'auto' ? 'Importado OFX' : bank,
       running_balance:

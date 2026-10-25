@@ -5,7 +5,10 @@ import type {
   FormatDetectionResult,
   SpreadsheetAnalysis,
 } from './import-types';
-import { generateTransactionId } from './statement-parser-utils';
+import {
+  generateTransactionId,
+  isValidStatementDate,
+} from './statement-parser-utils';
 
 export async function hashImportFile(file: File): Promise<string | undefined> {
   if (!globalThis.crypto?.subtle) return undefined;
@@ -143,7 +146,7 @@ export function getInvalidLineReasons(items: ImportedTransaction[]): string[] {
       reasons.push(`Linha rejeitada: descricao ausente (${item.id})`);
     } else if (!item.amount || Math.abs(item.amount) <= 0) {
       reasons.push(`Linha rejeitada: valor invalido (${item.id})`);
-    } else if (!item.date || Number.isNaN(new Date(item.date).getTime())) {
+    } else if (!isValidStatementDate(item.date)) {
       reasons.push(`Linha rejeitada: data invalida (${item.id})`);
     } else {
       reasons.push(
@@ -240,14 +243,15 @@ export function normalizeImportedTransactions(
   items: ImportedTransaction[],
 ): ImportedTransaction[] {
   return items.map((item, index) => {
-    const safeDate = Number.isNaN(new Date(item.date).getTime())
-      ? new Date().toISOString()
-      : item.date;
+    // Data inválida não vira "hoje": fica vazia e a linha exige correção.
+    const hasValidDate = isValidStatementDate(item.date);
+    const safeDate = hasValidDate ? item.date : '';
     const safeDescription = (item.description || '').trim() || 'Sem descricao';
     const safeAmount = Math.abs(Number(item.amount) || 0);
     const safeType: ImportedTransaction['type'] =
       item.type === 'income' ? 'income' : 'expense';
-    const isValid = safeDescription !== 'Sem descricao' && safeAmount > 0;
+    const isValid =
+      safeDescription !== 'Sem descricao' && safeAmount > 0 && hasValidDate;
     const status: ImportedTransaction['status'] =
       isValid && item.status !== 'error'
         ? item.status
