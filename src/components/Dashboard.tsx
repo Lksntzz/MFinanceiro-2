@@ -19,7 +19,6 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router';
-
 import { useApp } from '../context/AppContext';
 import {
   appendDismissedAlert,
@@ -32,6 +31,7 @@ import { useDashboardWorkspace } from '../hooks/useDashboardWorkspace';
 import { useUserPreferences } from '../hooks/useUserPreferences';
 import { recordUserActivity } from '../lib/activity-log';
 import { assessDataQuality } from '../lib/financial-quality';
+import { toLocalMonthKey } from '../lib/local-date';
 import { supabase } from '../lib/supabase';
 import { offerUndo } from '../lib/undo-actions';
 import type { ImportedTransaction, StatementImportOptions } from '../types';
@@ -74,7 +74,7 @@ export default function Dashboard({
   const isAdmin = ['admin', 'owner'].includes(
     String(user.app_metadata?.role || '').toLowerCase(),
   );
-  const monthKey = new Date().toISOString().slice(0, 7);
+  const monthKey = toLocalMonthKey();
 
   const qualityIssues = useMemo(
     () =>

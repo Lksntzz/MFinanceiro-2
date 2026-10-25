@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { toLocalISODate } from '../lib/local-date';
 
 import { supabase } from '../lib/supabase';
 import { downloadXlsx } from '../lib/xlsx-export';
@@ -461,27 +462,24 @@ export default function History({
       normalize(row.status) === 'pending' ? 'Pendente' : 'Realizado',
       row.source || '',
     ]);
-    await downloadXlsx(
-      `MFinanceiro_Historico_${new Date().toISOString().slice(0, 10)}.xlsx`,
-      [
-        {
-          name: 'Lançamentos',
-          rows: [
-            [
-              'Data',
-              'Descrição',
-              'Categoria',
-              'Tipo',
-              'Valor',
-              'Situação',
-              'Origem',
-            ],
-            ...rows,
+    await downloadXlsx(`MFinanceiro_Historico_${toLocalISODate()}.xlsx`, [
+      {
+        name: 'Lançamentos',
+        rows: [
+          [
+            'Data',
+            'Descrição',
+            'Categoria',
+            'Tipo',
+            'Valor',
+            'Situação',
+            'Origem',
           ],
-          columnWidths: [13, 38, 22, 12, 14, 14, 18],
-        },
-      ],
-    );
+          ...rows,
+        ],
+        columnWidths: [13, 38, 22, 12, 14, 14, 18],
+      },
+    ]);
   }
 
   return (

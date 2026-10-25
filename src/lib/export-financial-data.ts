@@ -1,3 +1,4 @@
+import { toLocalISODate } from './local-date';
 import { supabase } from './supabase';
 
 const EXPORT_TABLES = [
@@ -77,7 +78,7 @@ export async function exportFinancialData(userId: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `MF_Financeiro_Dados_${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `MF_Financeiro_Dados_${toLocalISODate()}.json`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
