@@ -1,4 +1,13 @@
-import { Calendar, CreditCard, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import {
+  Calendar,
+  CreditCard,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApp } from '../context/AppContext';
@@ -6,9 +15,13 @@ import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
 import type { Subscription } from '../types';
 
-export default function SubscriptionManager() {
+const isInactive = (item: Subscription) =>
+  ['inactive', 'cancelled', 'canceled'].includes(
+    String(item.status || '').toLowerCase(),
+  );
+
+export default function SubscriptionManager({ userId }: { userId: string }) {
   const { isPrivate } = useApp();
-  const [userId, setUserId] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [netIncome, setNetIncome] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,25 +41,18 @@ export default function SubscriptionManager() {
   const pageSize = 6;
 
   const fetchSubscriptions = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
-      const { data: authData, error: authError } =
-        await supabase.auth.getUser();
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Sessão não encontrada.');
-      setUserId(authData.user.id);
-
       const [subscriptionsResult, settingsResult] = await Promise.all([
         supabase
           .from('mf_subscriptions')
           .select('*')
-          .eq('user_id', authData.user.id)
+          .eq('user_id', userId)
           .order('due_day', { ascending: true }),
         supabase
           .from('mf_user_settings')
           .select('net_salary_estimated')
-          .eq('user_id', authData.user.id)
+          .eq('user_id', userId)
           .maybeSingle(),
       ]);
 
@@ -69,7 +75,7 @@ export default function SubscriptionManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void fetchSubscriptions();
@@ -78,7 +84,7 @@ export default function SubscriptionManager() {
   const totalMonthly = useMemo(
     () =>
       subscriptions
-        .filter((item) => item.status !== 'cancelled')
+        .filter((item) => !isInactive(item))
         .reduce(
           (sum, item) =>
             sum +
@@ -100,7 +106,7 @@ export default function SubscriptionManager() {
 
   async function handleAdd(event: React.FormEvent) {
     event.preventDefault();
-    if (!userId || saving) return;
+    if (saving) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -146,7 +152,11 @@ export default function SubscriptionManager() {
   }
 
   async function handleDelete(item: Subscription) {
-    if (!userId || !window.confirm(`Remover a assinatura “${item.name}”?`))
+    if (
+      !window.confirm(
+        `Remover a assinatura “${item.name}”? O histórico dela será perdido; para só parar de contar, use Pausar.`,
+      )
+    )
       return;
     setError(null);
     const { error: deleteError } = await supabase
@@ -162,7 +172,26 @@ export default function SubscriptionManager() {
     await fetchSubscriptions();
   }
 
-  if (loading) {
+  async function handleToggle(item: Subscription) {
+    setError(null);
+    setMessage(null);
+    const nextStatus = isInactive(item) ? 'active' : 'cancelled';
+    const { error: updateError } = await supabase
+      .from('mf_subscriptions')
+      .update({ status: nextStatus })
+      .eq('id', item.id)
+      .eq('user_id', userId);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setMessage(
+      nextStatus === 'active' ? 'Assinatura reativada.' : 'Assinatura pausada.',
+    );
+    await fetchSubscriptions();
+  }
+
+  if (loading && subscriptions.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center text-xs text-white/30">
         <RefreshCw className="mr-2 animate-spin" size={16} /> Carregando
@@ -181,6 +210,7 @@ export default function SubscriptionManager() {
           </p>
         </div>
         <button
+          type="button"
           onClick={() => setShowModal(true)}
           className="flex items-center gap-2 rounded-xl bg-brand-secondary px-4 py-2 text-xs font-bold text-black"
         >
@@ -191,7 +221,12 @@ export default function SubscriptionManager() {
       {error && (
         <div className="shrink-0 flex items-center rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
           {error}
-          <button onClick={() => setError(null)} className="ml-auto">
+          <button
+            type="button"
+            aria-label="Fechar aviso"
+            onClick={() => setError(null)}
+            className="ml-auto"
+          >
             <X size={14} />
           </button>
         </div>
@@ -203,7 +238,12 @@ export default function SubscriptionManager() {
       )}
 
       <section className="grid shrink-0 grid-cols-2 lg:grid-cols-4 gap-3">
-        <Metric label="Assinaturas" value={String(subscriptions.length)} />
+        <Metric
+          label="Assinaturas ativas"
+          value={String(
+            subscriptions.filter((item) => !isInactive(item)).length,
+          )}
+        />
         <Metric
           label="Compromisso mensal"
           value={formatCurrency(totalMonthly, isPrivate)}
@@ -234,7 +274,7 @@ export default function SubscriptionManager() {
             {visible.map((item) => (
               <article
                 key={item.id}
-                className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                className={`rounded-2xl border border-white/10 bg-white/[0.03] p-4 ${isInactive(item) ? 'opacity-50' : ''}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 gap-3">
@@ -250,12 +290,33 @@ export default function SubscriptionManager() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(item)}
-                    className="p-1 text-white/20 hover:text-red-400"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      aria-label={
+                        isInactive(item)
+                          ? `Reativar ${item.name}`
+                          : `Pausar ${item.name}`
+                      }
+                      title={isInactive(item) ? 'Reativar' : 'Pausar'}
+                      onClick={() => void handleToggle(item)}
+                      className="p-1 text-white/30 hover:text-white"
+                    >
+                      {isInactive(item) ? (
+                        <Play size={15} />
+                      ) : (
+                        <Pause size={15} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Remover ${item.name}`}
+                      onClick={() => handleDelete(item)}
+                      className="p-1 text-white/20 hover:text-red-400"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-5 flex items-end justify-between gap-3">
                   <div>
@@ -282,7 +343,15 @@ export default function SubscriptionManager() {
       </section>
 
       {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Nova assinatura"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setShowModal(false);
+          }}
+        >
           <form
             onSubmit={handleAdd}
             className="glass-card w-full max-w-lg !p-6"
@@ -294,7 +363,11 @@ export default function SubscriptionManager() {
                   Informe os dados reais da cobrança.
                 </p>
               </div>
-              <button type="button" onClick={() => setShowModal(false)}>
+              <button
+                type="button"
+                aria-label="Fechar"
+                onClick={() => setShowModal(false)}
+              >
                 <X size={19} />
               </button>
             </div>
@@ -431,6 +504,7 @@ function Pager({
   return (
     <div className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px]">
       <button
+        type="button"
         onClick={() => onChange(Math.max(1, page - 1))}
         disabled={page === 1}
         className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30"
@@ -441,6 +515,7 @@ function Pager({
         {page} de {pages}
       </span>
       <button
+        type="button"
         onClick={() => onChange(Math.min(pages, page + 1))}
         disabled={page === pages}
         className="rounded-lg bg-white/5 px-3 py-1.5 disabled:opacity-30"

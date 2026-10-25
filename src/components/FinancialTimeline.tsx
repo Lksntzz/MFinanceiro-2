@@ -40,15 +40,21 @@ function safeDay(value: unknown) {
   return Math.min(31, Math.max(1, Number.isFinite(day) ? Math.trunc(day) : 1));
 }
 
+function normalizeTitle(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 export default function FinancialTimeline({
-  userId,
   settings,
   fixedBills,
   subscriptions,
   cards,
   installments,
 }: {
-  userId: string;
   settings: UserSettings | null;
   fixedBills: FixedBill[];
   subscriptions: Subscription[];
@@ -105,7 +111,7 @@ export default function FinancialTimeline({
   const planned = useMemo<TimelineItem[]>(() => {
     const rows: TimelineItem[] = [];
     fixedBills
-      .filter((bill: any) => bill.status !== 'paid')
+      .filter((bill: any) => bill.active !== false && bill.status !== 'paid')
       .forEach((bill) =>
         rows.push({
           id: `fixed:${bill.id}`,
@@ -118,18 +124,25 @@ export default function FinancialTimeline({
           icon: Repeat2,
         }),
       );
-    subscriptions.forEach((subscription: any) =>
-      rows.push({
-        id: `subscription:${subscription.id}`,
-        day: safeDay(subscription.due_day),
-        title: subscription.name || 'Assinatura',
-        subtitle: 'Assinatura',
-        amount: Math.abs(Number(subscription.amount || 0)),
-        direction: 'expense',
-        status: 'planned',
-        icon: Repeat2,
-      }),
-    );
+    subscriptions
+      .filter(
+        (subscription: any) =>
+          !['inactive', 'cancelled', 'canceled'].includes(
+            String(subscription.status || '').toLowerCase(),
+          ),
+      )
+      .forEach((subscription: any) =>
+        rows.push({
+          id: `subscription:${subscription.id}`,
+          day: safeDay(subscription.due_day),
+          title: subscription.name || 'Assinatura',
+          subtitle: 'Assinatura',
+          amount: Math.abs(Number(subscription.amount || 0)),
+          direction: 'expense',
+          status: 'planned',
+          icon: Repeat2,
+        }),
+      );
     cards.forEach((card: any) =>
       rows.push({
         id: `card:${card.id}`,
@@ -193,13 +206,26 @@ export default function FinancialTimeline({
     return rows;
   }, [cards, fixedBills, installments, settings, subscriptions]);
 
-  const items = useMemo(
-    () =>
-      [...realized, ...planned].sort(
-        (a, b) => a.day - b.day || (a.status === 'realized' ? -1 : 1),
-      ),
-    [planned, realized],
-  );
+  const items = useMemo(() => {
+    // Se o pagamento já apareceu como realizado, não repete o item como "previsto".
+    const realizedTitles = realized.map((item) => normalizeTitle(item.title));
+    const stillPlanned = planned.filter((item) => {
+      if (item.direction !== 'expense' || item.status === 'informational')
+        return true;
+      const title = normalizeTitle(item.title);
+      return !(
+        title.length >= 3 &&
+        realizedTitles.some(
+          (realizedTitle) =>
+            realizedTitle.includes(title) || title.includes(realizedTitle),
+        )
+      );
+    });
+    const rank = { realized: 0, planned: 1, informational: 2 } as const;
+    return [...realized, ...stillPlanned].sort(
+      (a, b) => a.day - b.day || rank[a.status] - rank[b.status],
+    );
+  }, [planned, realized]);
   return (
     <section className="mf-card mf-financial-timeline">
       <div className="mf-timeline-heading">
