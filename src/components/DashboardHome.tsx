@@ -42,6 +42,36 @@ function transactionDay(rawDate: string): string {
   return parsed ? format(parsed, 'yyyy-MM-dd') : '';
 }
 
+function formatTransactionDate(rawDate: string): string {
+  const parsed = parseTransactionDate(rawDate);
+  return parsed ? format(parsed, 'dd/MM/yyyy') : '--';
+}
+
+const CHART_OPTIONS: any = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 300 },
+  plugins: { legend: { display: false } },
+  scales: {
+    y: {
+      grid: { color: 'rgba(255,255,255,.055)' },
+      ticks: {
+        color: 'rgba(255,255,255,.35)',
+        font: { size: 9 },
+        maxTicksLimit: 5,
+      },
+    },
+    x: {
+      grid: { display: false },
+      ticks: {
+        color: 'rgba(255,255,255,.35)',
+        font: { size: 9 },
+        maxTicksLimit: 12,
+      },
+    },
+  },
+};
+
 const DEFAULT_WIDGETS: HomeWidgetId[] = [
   'status',
   'alerts',
@@ -184,72 +214,53 @@ export default function DashboardHome({
     };
   }, [historicalWindow, rhythmFilter]);
 
-  const chartOptions: any = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 300 },
-    plugins: { legend: { display: false } },
-    scales: {
-      y: {
-        grid: { color: 'rgba(255,255,255,.055)' },
-        ticks: {
-          color: 'rgba(255,255,255,.35)',
-          font: { size: 9 },
-          maxTicksLimit: 5,
+  const balanceChart = useMemo(
+    () => ({
+      labels: historicalWindow.labels,
+      datasets: [
+        {
+          label: 'Saldo',
+          data: historicalWindow.balances,
+          borderColor: '#00f2ff',
+          backgroundColor: 'rgba(0,242,255,.08)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          borderWidth: 2,
         },
-      },
-      x: {
-        grid: { display: false },
-        ticks: {
-          color: 'rgba(255,255,255,.35)',
-          font: { size: 9 },
-          maxTicksLimit: 12,
+      ],
+    }),
+    [historicalWindow],
+  );
+  const rhythmChart = useMemo(
+    () => ({
+      labels: rhythm.labels,
+      datasets: [
+        {
+          label: 'Saídas',
+          data: rhythm.expenses,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239,68,68,.06)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          borderWidth: 2,
         },
-      },
-    },
-  };
-
-  const balanceChart = {
-    labels: historicalWindow.labels,
-    datasets: [
-      {
-        label: 'Saldo',
-        data: historicalWindow.balances,
-        borderColor: '#00f2ff',
-        backgroundColor: 'rgba(0,242,255,.08)',
-        fill: true,
-        tension: 0.35,
-        pointRadius: 2,
-        pointHoverRadius: 5,
-        borderWidth: 2,
-      },
-    ],
-  };
-  const rhythmChart = {
-    labels: rhythm.labels,
-    datasets: [
-      {
-        label: 'Saídas',
-        data: rhythm.expenses,
-        borderColor: '#ef4444',
-        backgroundColor: 'rgba(239,68,68,.06)',
-        fill: true,
-        tension: 0.35,
-        pointRadius: 0,
-        borderWidth: 2,
-      },
-      {
-        label: 'Entradas',
-        data: rhythm.incomes,
-        borderColor: '#22c55e',
-        backgroundColor: 'rgba(34,197,94,.06)',
-        fill: true,
-        tension: 0.35,
-        pointRadius: 0,
-        borderWidth: 2,
-      },
-    ],
-  };
+        {
+          label: 'Entradas',
+          data: rhythm.incomes,
+          borderColor: '#22c55e',
+          backgroundColor: 'rgba(34,197,94,.06)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          borderWidth: 2,
+        },
+      ],
+    }),
+    [rhythm],
+  );
 
   const cardUsed = cards.reduce((sum, card) => sum + Number(card.used || 0), 0);
   const cardLimit = cards.reduce(
@@ -332,7 +343,7 @@ export default function DashboardHome({
             <Suspense
               fallback={<div className="mf-loading">Carregando gráfico…</div>}
             >
-              <DashboardCharts data={balanceChart} options={chartOptions} />
+              <DashboardCharts data={balanceChart} options={CHART_OPTIONS} />
             </Suspense>
           </div>
         </article>
@@ -348,6 +359,8 @@ export default function DashboardHome({
               {(['day', 'week', 'month'] as const).map((filter) => (
                 <button
                   key={filter}
+                  type="button"
+                  aria-pressed={rhythmFilter === filter}
                   className={rhythmFilter === filter ? 'active' : ''}
                   onClick={() => setRhythmFilter(filter)}
                 >
@@ -364,7 +377,7 @@ export default function DashboardHome({
             <Suspense
               fallback={<div className="mf-loading">Carregando gráfico…</div>}
             >
-              <DashboardCharts data={rhythmChart} options={chartOptions} />
+              <DashboardCharts data={rhythmChart} options={CHART_OPTIONS} />
             </Suspense>
           </div>
         </article>
@@ -413,9 +426,7 @@ export default function DashboardHome({
                         <strong>
                           {transaction.description || transaction.category}
                         </strong>
-                        <small>
-                          {format(new Date(transaction.date), 'dd/MM/yyyy')}
-                        </small>
+                        <small>{formatTransactionDate(transaction.date)}</small>
                       </span>
                       <b
                         className={
