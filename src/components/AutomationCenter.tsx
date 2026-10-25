@@ -35,6 +35,36 @@ import type {
   TransactionCategory,
 } from '../types';
 
+// Open Finance fica desligado na interface até as funções de sincronização e de
+// webhook estarem publicadas (hoje só a de sessão está). Mude para true ao liberar.
+const OPEN_FINANCE_ENABLED = false;
+
+const matchFieldLabels: Record<string, string> = {
+  description: 'a descrição',
+  source: 'a origem',
+  description_or_source: 'a descrição ou a origem',
+};
+const matchOperatorLabels: Record<string, string> = {
+  contains: 'contém',
+  starts_with: 'começa com',
+  exact: 'é igual a',
+};
+const runStatusLabels: Record<string, string> = {
+  queued: 'na fila',
+  running: 'em andamento',
+  syncing: 'sincronizando',
+  completed: 'concluída',
+  partial: 'parcial',
+  error: 'com erro',
+  failed: 'com erro',
+};
+const triggerLabels: Record<string, string> = {
+  manual: 'manual',
+  initial: 'primeira carga',
+  webhook: 'automática',
+  scheduled: 'agendada',
+};
+
 interface AutomationCenterProps {
   userId: string;
   accounts: FinancialAccount[];
@@ -142,7 +172,6 @@ export default function AutomationCenter({
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
     const [rulesResult, connectionsResult, runsResult] = await Promise.all([
       supabase
         .from('mf_categorization_rules')
@@ -177,6 +206,11 @@ export default function AutomationCenter({
 
   useEffect(() => {
     void load();
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleLoad = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => void load(), 800);
+    };
     const channel = supabase
       .channel(`financial-automation-${userId}`)
       .on(
@@ -187,7 +221,7 @@ export default function AutomationCenter({
           table: 'mf_categorization_rules',
           filter: `user_id=eq.${userId}`,
         },
-        () => void load(),
+        scheduleLoad,
       )
       .on(
         'postgres_changes',
@@ -197,7 +231,7 @@ export default function AutomationCenter({
           table: 'mf_bank_connections',
           filter: `user_id=eq.${userId}`,
         },
-        () => void load(),
+        scheduleLoad,
       )
       .on(
         'postgres_changes',
@@ -207,10 +241,11 @@ export default function AutomationCenter({
           table: 'mf_bank_sync_runs',
           filter: `user_id=eq.${userId}`,
         },
-        () => void load(),
+        scheduleLoad,
       )
       .subscribe();
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
       void supabase.removeChannel(channel);
     };
   }, [load, userId]);
@@ -500,7 +535,7 @@ export default function AutomationCenter({
     }
   }
 
-  if (loading) {
+  if (loading && rules.length === 0 && connections.length === 0) {
     return (
       <div className="flex min-h-64 items-center justify-center gap-2 text-xs text-white/40">
         <Loader2 size={16} className="animate-spin" /> Carregando automações...
@@ -568,18 +603,20 @@ export default function AutomationCenter({
         >
           Regras automáticas
         </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'connections'}
-          className={activeTab === 'connections' ? 'active' : ''}
-          onClick={() => setActiveTab('connections')}
-        >
-          Open Finance
-        </button>
+        {OPEN_FINANCE_ENABLED && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'connections'}
+            className={activeTab === 'connections' ? 'active' : ''}
+            onClick={() => setActiveTab('connections')}
+          >
+            Open Finance
+          </button>
+        )}
       </div>
 
-      {activeTab === 'rules' ? (
+      {activeTab === 'rules' || !OPEN_FINANCE_ENABLED ? (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
           <section className="glass-card !p-0 overflow-hidden">
             <div className="flex items-center justify-between border-b border-white/10 p-4">
@@ -614,8 +651,11 @@ export default function AutomationCenter({
                       </span>
                     </div>
                     <p className="mt-1 text-[10px] text-white/40">
-                      {rule.match_field} {rule.match_operator} “
-                      {rule.match_value}” →{' '}
+                      Quando{' '}
+                      {matchFieldLabels[rule.match_field] || rule.match_field}{' '}
+                      {matchOperatorLabels[rule.match_operator] ||
+                        rule.match_operator}{' '}
+                      “{rule.match_value}” →{' '}
                       {categoryNames.get(rule.category_id) || 'Categoria'}
                       {rule.account_id
                         ? ` · ${accountNames.get(rule.account_id) || 'Conta'}`
@@ -892,8 +932,8 @@ export default function AutomationCenter({
 
           <div className="rounded-xl border border-green-500/15 bg-green-500/[0.04] p-3 text-[10px] text-white/50">
             <ShieldCheck size={14} className="mr-2 inline text-green-300" />
-            Connect Tokens são temporários e gerados no servidor. `CLIENT_ID` e
-            `CLIENT_SECRET` permanecem exclusivamente nos secrets do Supabase.
+            As chaves do provedor ficam guardadas só no servidor e o acesso ao
+            seu banco usa um token temporário.
           </div>
 
           <section className="glass-card !p-0 overflow-hidden">
@@ -1011,8 +1051,11 @@ export default function AutomationCenter({
                     </div>
                     {lastRun && (
                       <p className="mt-2 flex items-center gap-1 text-[9px] text-white/30">
-                        <Clock3 size={11} /> Última execução: {lastRun.status} ·{' '}
-                        {lastRun.trigger_source} ·{' '}
+                        <Clock3 size={11} /> Última execução:{' '}
+                        {runStatusLabels[lastRun.status] || lastRun.status} ·{' '}
+                        {triggerLabels[lastRun.trigger_source] ||
+                          lastRun.trigger_source}{' '}
+                        ·{' '}
                         {formatDate(lastRun.finished_at || lastRun.created_at)}
                       </p>
                     )}

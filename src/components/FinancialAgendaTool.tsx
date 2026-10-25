@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
-import { sumActiveBalance } from '../lib/financial-accounts';
+import { normalizeAccounts, sumActiveBalance } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   CardInstallment,
@@ -33,17 +33,6 @@ import SubscriptionManager from './SubscriptionManager';
 type AgendaSection = 'recurrences' | 'income' | 'calendar';
 type RecurrenceKind = 'fixed' | 'subscriptions';
 
-function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
-  return rows.map((row) => {
-    const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
-  });
-}
 function sectionFromPath(pathname: string): AgendaSection {
   if (
     pathname.endsWith('/recorrencias') ||
@@ -247,7 +236,11 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
         <div className="mf-error">
           <AlertCircle size={16} />
           {error}
-          <button type="button" onClick={() => setError(null)}>
+          <button
+            type="button"
+            aria-label="Fechar aviso"
+            onClick={() => setError(null)}
+          >
             <X size={14} />
           </button>
         </div>
@@ -274,7 +267,6 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
                   installments={installments}
                 />
                 <FinancialTimeline
-                  userId={user.id}
                   settings={settings}
                   fixedBills={fixedBills}
                   subscriptions={subscriptions}
@@ -294,6 +286,8 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
                 </div>
                 <div className="mf-subnav">
                   <button
+                    type="button"
+                    aria-pressed={recurrenceKind === 'fixed'}
                     className={recurrenceKind === 'fixed' ? 'active' : ''}
                     onClick={() =>
                       navigate('/app/agenda/recorrencias?tipo=fixas')
@@ -302,6 +296,8 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
                     Contas fixas
                   </button>
                   <button
+                    type="button"
+                    aria-pressed={recurrenceKind === 'subscriptions'}
                     className={
                       recurrenceKind === 'subscriptions' ? 'active' : ''
                     }
@@ -315,7 +311,7 @@ export default function FinancialAgendaTool({ user }: { user: User }) {
                 {recurrenceKind === 'fixed' ? (
                   <MonthlyFixedBills userId={user.id} onDataChanged={refresh} />
                 ) : (
-                  <SubscriptionManager />
+                  <SubscriptionManager userId={user.id} />
                 )}
               </div>
             )}

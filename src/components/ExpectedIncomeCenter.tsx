@@ -58,7 +58,7 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
     event.preventDefault();
     const value = Number(amount);
     const day = Number(payday);
-    if (!Number.isFinite(value) || value < 0) {
+    if (amount.trim() === '' || !Number.isFinite(value) || value < 0) {
       setError('Informe uma renda mensal válida.');
       return;
     }
@@ -69,15 +69,20 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
     setSaving(true);
     setError(null);
     setMessage(null);
-    const { error: saveError } = await supabase
+    const { data: updated, error: saveError } = await supabase
       .from('mf_user_settings')
       .update({
         net_salary_estimated: value,
         payday_1: day,
       })
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select('user_id');
     setSaving(false);
     if (saveError) setError(saveError.message);
+    else if (!updated || updated.length === 0)
+      setError(
+        'Não encontramos suas configurações para salvar. Recarregue a página e tente de novo.',
+      );
     else {
       setMessage('Receita prevista atualizada.');
       await load();
@@ -93,6 +98,9 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
     settings?.payday_2_percentage ?? (splitIncome ? 40 : 0),
   );
   const monthly = Number(settings?.net_salary_estimated || 0);
+  const splitLooksWrong =
+    splitIncome &&
+    (secondShare <= 0 || Math.abs(firstShare + secondShare - 100) > 0.5);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -106,9 +114,22 @@ export default function ExpectedIncomeCenter({ userId }: { userId: string }) {
 
       {(error || message) && (
         <div
+          role={error ? 'alert' : 'status'}
           className={`rounded-xl border px-4 py-3 text-xs ${error ? 'border-red-500/25 bg-red-500/10 text-red-200' : 'border-green-500/25 bg-green-500/10 text-green-200'}`}
         >
           {error || message}
+        </div>
+      )}
+
+      {splitLooksWrong && (
+        <div
+          className="rounded-xl border border-yellow-500/25 bg-yellow-500/10 px-4 py-3 text-xs text-yellow-100"
+          role="status"
+        >
+          Seu recebimento está dividido em duas partes, mas as porcentagens (
+          {firstShare}% + {secondShare}%) não fecham 100% ou a 2ª parte está
+          zerada. As projeções vão usar essa divisão como está; ajuste em “Folha
+          e holerite”.
         </div>
       )}
 

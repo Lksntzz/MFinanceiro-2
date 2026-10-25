@@ -15,8 +15,10 @@ import {
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useApp } from '../context/AppContext';
 import { CATEGORIES } from '../lib/constants';
+import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
 
 type OccurrenceStatus = 'pending' | 'paid' | 'skipped';
@@ -44,11 +46,6 @@ type Occurrence = {
 
 type EditScope = 'month' | 'future';
 
-const money = (value: number) =>
-  Number(value || 0).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
 const monthKey = (date: Date) => format(startOfMonth(date), 'yyyy-MM-01');
 const monthLabel = (value: string) => {
   const label = format(parseISO(value), 'MMMM yyyy', { locale: ptBR });
@@ -62,9 +59,17 @@ export default function MonthlyFixedBills({
   userId: string;
   onDataChanged?: () => void;
 }) {
+  const { isPrivate } = useApp();
+  const money = (value: number) =>
+    formatCurrency(Number(value || 0), isPrivate);
   const [rows, setRows] = useState<Occurrence[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()));
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  // A geração dos meses futuros grava no banco: roda 1 vez por abertura da tela,
+  // nunca dentro de recargas disparadas por tempo real (evitava um ciclo infinito).
+  const ensuredRef = useRef(false);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [payTarget, setPayTarget] = useState<Occurrence | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -95,48 +100,53 @@ export default function MonthlyFixedBills({
     [],
   );
 
-  const load = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const { error: ensureError } = await supabase.rpc(
-        'mf_ensure_fixed_bill_occurrences',
-        { p_months_ahead: 12 },
-      );
-      if (ensureError) throw ensureError;
+  const load = useCallback(
+    async (options?: { forceEnsure?: boolean }) => {
+      if (!userId) return;
+      setError(null);
+      try {
+        if (!ensuredRef.current || options?.forceEnsure) {
+          const { error: ensureError } = await supabase.rpc(
+            'mf_ensure_fixed_bill_occurrences',
+            { p_months_ahead: 12 },
+          );
+          if (ensureError) throw ensureError;
+          ensuredRef.current = true;
+        }
 
-      const start = monthKey(addMonths(new Date(), -1));
-      const end = monthKey(addMonths(new Date(), 7));
-      const { data, error: queryError } = await supabase
-        .from('mf_fixed_bill_occurrences')
-        .select(
-          'id,fixed_bill_id,competence,due_date,amount,status,paid_at,notes,fixed_bill:mf_fixed_bills(id,name,category,default_amount,default_due_day,active)',
-        )
-        .eq('user_id', userId)
-        .gte('competence', start)
-        .lt('competence', end)
-        .order('due_date', { ascending: true });
-      if (queryError) throw queryError;
+        const start = monthKey(addMonths(new Date(), -1));
+        const end = monthKey(addMonths(new Date(), 7));
+        const { data, error: queryError } = await supabase
+          .from('mf_fixed_bill_occurrences')
+          .select(
+            'id,fixed_bill_id,competence,due_date,amount,status,paid_at,notes,fixed_bill:mf_fixed_bills(id,name,category,default_amount,default_due_day,active)',
+          )
+          .eq('user_id', userId)
+          .gte('competence', start)
+          .lt('competence', end)
+          .order('due_date', { ascending: true });
+        if (queryError) throw queryError;
 
-      const normalized = (data || [])
-        .map((item: any) => ({
-          ...item,
-          amount: Number(item.amount || 0),
-          fixed_bill: Array.isArray(item.fixed_bill)
-            ? item.fixed_bill[0]
-            : item.fixed_bill,
-        }))
-        .filter((item: any) => item.fixed_bill) as Occurrence[];
-      setRows(normalized);
-    } catch (loadError: any) {
-      setError(
-        loadError?.message || 'Não foi possível carregar as contas mensais.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
+        const normalized = (data || [])
+          .map((item: any) => ({
+            ...item,
+            amount: Number(item.amount || 0),
+            fixed_bill: Array.isArray(item.fixed_bill)
+              ? item.fixed_bill[0]
+              : item.fixed_bill,
+          }))
+          .filter((item: any) => item.fixed_bill) as Occurrence[];
+        setRows(normalized);
+      } catch (loadError: any) {
+        setError(
+          loadError?.message || 'Não foi possível carregar as contas mensais.',
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [userId],
+  );
 
   useEffect(() => {
     void load();
@@ -154,21 +164,17 @@ export default function MonthlyFixedBills({
           table: 'mf_fixed_bill_occurrences',
           filter: `user_id=eq.${userId}`,
         },
-        load,
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'mf_fixed_bills',
-          filter: `user_id=eq.${userId}`,
+        () => {
+          // Agrupa rajadas de eventos; não escuta mf_fixed_bills porque a
+          // própria geração dos meses atualiza essa tabela (causava recarga em cadeia).
+          if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+          reloadTimerRef.current = setTimeout(() => void load(), 800);
         },
-        load,
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      void supabase.removeChannel(channel);
     };
   }, [userId, load]);
 
@@ -288,6 +294,7 @@ export default function MonthlyFixedBills({
   }
 
   async function pay(row: Occurrence) {
+    setPayTarget(null);
     setSaving(true);
     setError(null);
     try {
@@ -397,7 +404,6 @@ export default function MonthlyFixedBills({
   return (
     <div className="mf-monthly-bills-page">
       <style>{`
-        #mf-monthly-fixed-bills-host { width:100%; min-width:0; }
         .mf-monthly-bills-page { width:100%; min-height:0; display:flex; flex:1; flex-direction:column; gap:14px; color:white; overflow:hidden; }
         .mf-bills-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap; }
         .mf-bills-heading h2 { font-size:18px; font-weight:900; }
@@ -453,7 +459,7 @@ export default function MonthlyFixedBills({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => void load({ forceEnsure: true })}
             className="mf-small-action"
           >
             <RefreshCcw size={13} /> Atualizar
@@ -476,6 +482,7 @@ export default function MonthlyFixedBills({
           <button
             type="button"
             className="float-right"
+            aria-label="Fechar aviso"
             onClick={() => {
               setError(null);
               setMessage(null);
@@ -575,7 +582,7 @@ export default function MonthlyFixedBills({
                       type="button"
                       className="mf-small-action primary"
                       disabled={saving}
-                      onClick={() => void pay(row)}
+                      onClick={() => setPayTarget(row)}
                     >
                       <CheckCircle2 size={12} /> Marcar paga
                     </button>
@@ -649,8 +656,79 @@ export default function MonthlyFixedBills({
         </button>
       </div>
 
+      {payTarget && (
+        <div
+          className="mf-bill-dialog-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmar pagamento"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setPayTarget(null);
+          }}
+        >
+          <div className="mf-bill-dialog">
+            <header>
+              <div>
+                <strong>Marcar {payTarget.fixed_bill.name} como paga?</strong>
+                <p className="mt-1 text-[9px] text-white/35">
+                  Isso gera uma saída de {money(payTarget.amount)} no seu
+                  histórico e no saldo.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Fechar"
+                onClick={() => setPayTarget(null)}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="grid gap-3 p-[18px]">
+              <label className="mf-bill-field">
+                Forma de pagamento
+                <select
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value)}
+                >
+                  <option value="pix">Pix</option>
+                  <option value="debit_card">Cartão de débito</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="bank_transfer">Transferência</option>
+                  <option value="cash">Dinheiro</option>
+                </select>
+              </label>
+              <div className="mf-dialog-actions">
+                <button
+                  type="button"
+                  className="mf-small-action"
+                  onClick={() => setPayTarget(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="mf-small-action primary"
+                  disabled={saving}
+                  onClick={() => void pay(payTarget)}
+                >
+                  <CheckCircle2 size={13} /> Confirmar pagamento
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNew && (
-        <div className="mf-bill-dialog-backdrop">
+        <div
+          className="mf-bill-dialog-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Nova conta fixa"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setShowNew(false);
+          }}
+        >
           <div className="mf-bill-dialog">
             <header>
               <div>
@@ -659,7 +737,11 @@ export default function MonthlyFixedBills({
                   Ela será repetida automaticamente nos próximos meses.
                 </p>
               </div>
-              <button type="button" onClick={() => setShowNew(false)}>
+              <button
+                type="button"
+                aria-label="Fechar"
+                onClick={() => setShowNew(false)}
+              >
                 <X size={18} />
               </button>
             </header>
@@ -733,7 +815,15 @@ export default function MonthlyFixedBills({
       )}
 
       {editing && (
-        <div className="mf-bill-dialog-backdrop">
+        <div
+          className="mf-bill-dialog-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Editar conta fixa"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setEditing(null);
+          }}
+        >
           <div className="mf-bill-dialog">
             <header>
               <div>
@@ -743,7 +833,11 @@ export default function MonthlyFixedBills({
                   próximos.
                 </p>
               </div>
-              <button type="button" onClick={() => setEditing(null)}>
+              <button
+                type="button"
+                aria-label="Fechar"
+                onClick={() => setEditing(null)}
+              >
                 <X size={18} />
               </button>
             </header>
@@ -835,19 +929,6 @@ export default function MonthlyFixedBills({
                   />
                 </label>
               )}
-              <label className="mf-bill-field col-span-full">
-                Forma usada ao marcar como paga
-                <select
-                  value={paymentMethod}
-                  onChange={(event) => setPaymentMethod(event.target.value)}
-                >
-                  <option value="pix">Pix</option>
-                  <option value="debit_card">Cartão de débito</option>
-                  <option value="boleto">Boleto</option>
-                  <option value="bank_transfer">Transferência</option>
-                  <option value="cash">Dinheiro</option>
-                </select>
-              </label>
               <div className="mf-dialog-actions">
                 <button
                   type="button"

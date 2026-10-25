@@ -18,7 +18,10 @@ import {
   DollarSign,
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useApp } from '../context/AppContext';
+import { installmentVisibleInMonth, monthOffset } from '../lib/calendar-rules';
+import { formatCurrency } from '../lib/formatters';
 import { supabase } from '../lib/supabase';
 
 interface CalendarEvent {
@@ -64,6 +67,10 @@ export default function FinancialCalendar({
   cards = [],
   installments = [],
 }: CalendarProps) {
+  const { isPrivate } = useApp();
+  const money = (value: number) =>
+    formatCurrency(Number(value || 0), isPrivate);
+  const ensuredRef = useRef(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [occurrences, setOccurrences] = useState<BillOccurrence[]>([]);
   const [occurrencesLoaded, setOccurrencesLoaded] = useState(false);
@@ -83,18 +90,22 @@ export default function FinancialCalendar({
     }
 
     async function loadOccurrences() {
-      setOccurrencesLoaded(false);
-      const { error: ensureError } = await supabase.rpc(
-        'mf_ensure_fixed_bill_occurrences',
-        { p_months_ahead: 12 },
-      );
-      if (ensureError) {
-        console.warn(
-          'Não foi possível preparar as ocorrências do calendário:',
-          ensureError,
+      // A geração dos meses grava no banco: 1 vez por abertura, não a cada mês
+      // navegado nem a cada evento de tempo real.
+      if (!ensuredRef.current) {
+        const { error: ensureError } = await supabase.rpc(
+          'mf_ensure_fixed_bill_occurrences',
+          { p_months_ahead: 12 },
         );
-        if (active) setOccurrencesLoaded(false);
-        return;
+        if (ensureError) {
+          console.warn(
+            'Não foi possível preparar as ocorrências do calendário:',
+            ensureError,
+          );
+          if (active) setOccurrencesLoaded(false);
+          return;
+        }
+        ensuredRef.current = true;
       }
 
       const { data, error } = await supabase
@@ -127,6 +138,7 @@ export default function FinancialCalendar({
     }
 
     void loadOccurrences();
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel(`financial-calendar-${userId}-${format(currentDate, 'yyyy-MM')}`)
       .on(
@@ -137,12 +149,16 @@ export default function FinancialCalendar({
           table: 'mf_fixed_bill_occurrences',
           filter: `user_id=eq.${userId}`,
         },
-        () => void loadOccurrences(),
+        () => {
+          if (reloadTimer) clearTimeout(reloadTimer);
+          reloadTimer = setTimeout(() => void loadOccurrences(), 800);
+        },
       )
       .subscribe();
 
     return () => {
       active = false;
+      if (reloadTimer) clearTimeout(reloadTimer);
       void supabase.removeChannel(channel);
     };
   }, [userId, currentDate]);
@@ -158,6 +174,8 @@ export default function FinancialCalendar({
   ).length;
 
   const events = useMemo<CalendarEvent[]>(() => {
+    // Quantos meses o mês exibido está à frente do mês atual (negativo = passado).
+    const offset = monthOffset(new Date(), currentDate);
     const billEvents: CalendarEvent[] = occurrencesLoaded
       ? occurrences
           .filter((row) => row.status !== 'skipped')
@@ -190,7 +208,9 @@ export default function FinancialCalendar({
 
     const list: CalendarEvent[] = [...billEvents];
 
+    // Assinaturas, fatura e parcelas só fazem sentido do mês atual em diante.
     subscriptions
+      .filter(() => offset >= 0)
       .filter(
         (item) =>
           !['inactive', 'cancelled', 'canceled'].includes(
@@ -214,7 +234,9 @@ export default function FinancialCalendar({
         });
       });
 
+    // A fatura em aberto é a do mês atual; não repetir o mesmo valor nos outros.
     cards
+      .filter(() => offset === 0)
       .filter((card) => Number(card.used || 0) > 0)
       .forEach((card) => {
         list.push({
@@ -229,10 +251,12 @@ export default function FinancialCalendar({
 
     const cardIds = new Set(cards.map((card) => String(card.id)));
     installments
-      .filter(
-        (item) =>
-          Number(item.current_installment || 1) <=
+      .filter((item) =>
+        installmentVisibleInMonth(
+          Number(item.current_installment || 1),
           Number(item.total_installments || 1),
+          offset,
+        ),
       )
       .forEach((item) => {
         const includedInCardBill =
@@ -272,7 +296,12 @@ export default function FinancialCalendar({
         status: 'ready',
       });
     }
-    if (secondPayday >= 1 && secondPayday <= 31 && netSalary > 0) {
+    if (
+      secondPayday >= 1 &&
+      secondPayday <= 31 &&
+      netSalary > 0 &&
+      (netSalary * secondPercentage) / 100 > 0
+    ) {
       list.push({
         id: 'income-2',
         day: safeRecurringDay(secondPayday, currentDate),
@@ -308,12 +337,16 @@ export default function FinancialCalendar({
       today.getFullYear() === currentDate.getFullYear() &&
       today.getMonth() === currentDate.getMonth();
     const referenceDay = isCurrentMonth ? today.getDate() : 1;
-    const nextIncome =
-      incomes.find((event) => event.day >= referenceDay) || incomes[0] || null;
-    const nextExpense =
-      pendingExpenses.find((event) => event.day >= referenceDay) ||
-      pendingExpenses[0] ||
-      null;
+    const isPastMonth =
+      currentDate.getFullYear() * 12 + currentDate.getMonth() <
+      today.getFullYear() * 12 + today.getMonth();
+    // Só mostra "próxima" se ainda estiver por vir; nunca uma data que já passou.
+    const nextIncome = isPastMonth
+      ? null
+      : incomes.find((event) => event.day >= referenceDay) || null;
+    const nextExpense = isPastMonth
+      ? null
+      : pendingExpenses.find((event) => event.day >= referenceDay) || null;
     const incomeTotal = incomes.reduce((sum, event) => sum + event.amount, 0);
     const expenseTotal = pendingExpenses.reduce(
       (sum, event) => sum + event.amount,
@@ -346,6 +379,7 @@ export default function FinancialCalendar({
         </div>
         <div className="flex gap-2">
           <button
+            type="button"
             aria-label="Mês anterior"
             onClick={() => setCurrentDate((value) => addMonths(value, -1))}
             className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"
@@ -353,12 +387,14 @@ export default function FinancialCalendar({
             <ChevronLeft size={20} />
           </button>
           <button
+            type="button"
             onClick={() => setCurrentDate(new Date())}
             className="rounded-lg bg-white/5 px-3 py-2 text-[10px] font-bold text-white/50"
           >
             Hoje
           </button>
           <button
+            type="button"
             aria-label="Próximo mês"
             onClick={() => setCurrentDate((value) => addMonths(value, 1))}
             className="rounded-lg p-2 text-white/40 hover:bg-white/5 hover:text-white"
@@ -391,6 +427,7 @@ export default function FinancialCalendar({
           return (
             <article
               key={date.toISOString()}
+              aria-label={`Dia ${date.getDate()}: ${dayEvents.length} evento(s)`}
               className={`min-h-0 rounded-xl border p-1.5 ${isToday(date) ? 'border-brand-primary/30 bg-brand-primary/5' : 'border-white/5 bg-white/[0.03]'}`}
             >
               <div
@@ -414,7 +451,13 @@ export default function FinancialCalendar({
                   </div>
                 ))}
                 {dayEvents.length > 3 && (
-                  <div className="text-[8px] text-white/25">
+                  <div
+                    className="text-[8px] text-white/40"
+                    title={dayEvents
+                      .slice(3)
+                      .map((event) => `${event.name}: ${money(event.amount)}`)
+                      .join('\n')}
+                  >
                     +{dayEvents.length - 3} evento(s)
                   </div>
                 )}
@@ -467,12 +510,6 @@ export default function FinancialCalendar({
   );
 }
 
-function money(value: number) {
-  return Number(value || 0).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
-}
 function Summary({
   icon: Icon,
   label,

@@ -11,9 +11,10 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import { useApp } from '../context/AppContext';
-import { sumActiveBalance } from '../lib/financial-accounts';
+import { normalizeAccounts, sumActiveBalance } from '../lib/financial-accounts';
 import { supabase } from '../lib/supabase';
 import type {
   FinancialAccount,
@@ -24,20 +25,10 @@ import AppNavigation from './AppNavigation';
 import AutomationCenter from './AutomationCenter';
 import ProfileCenter from './ProfileCenter';
 
-function normalizeAccounts(rows: unknown[]): FinancialAccount[] {
-  return rows.map((row) => {
-    const item = row as Record<string, unknown>;
-    return {
-      ...item,
-      opening_balance: Number(item.opening_balance || 0),
-      current_balance: Number(item.current_balance || 0),
-      transaction_count: Number(item.transaction_count || 0),
-    } as FinancialAccount;
-  });
-}
-
 export default function IntegrationTool({ user }: { user: User }) {
   const { isPrivate, setIsPrivate } = useApp();
+  const navigate = useNavigate();
+  const [automationsOpen, setAutomationsOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [categories, setCategories] = useState<TransactionCategory[]>([]);
@@ -102,7 +93,7 @@ export default function IntegrationTool({ user }: { user: User }) {
 
   return (
     <div className="mf-app-shell mf-routed-app">
-      <AppNavigation onLaunch={() => window.location.assign('/app/lancar')} />
+      <AppNavigation onLaunch={() => navigate('/app/lancar')} />
       <header className="mf-topbar">
         <div className="mf-brand">
           <div className="mf-brand-icon">
@@ -136,7 +127,7 @@ export default function IntegrationTool({ user }: { user: User }) {
           <button
             type="button"
             className="primary"
-            onClick={() => window.location.assign('/app/lancar')}
+            onClick={() => navigate('/app/lancar')}
           >
             <Plus size={16} />
             Lançar
@@ -154,7 +145,7 @@ export default function IntegrationTool({ user }: { user: User }) {
         </div>
       </header>
       {error && (
-        <div className="mf-error">
+        <div className="mf-error" role="alert">
           <AlertCircle size={16} />
           {error}
         </div>
@@ -192,7 +183,13 @@ export default function IntegrationTool({ user }: { user: User }) {
               </div>
               <span>Em breve</span>
             </div>
-            <details className="mf-automation-disclosure">
+            <details
+              className="mf-automation-disclosure"
+              onToggle={(event) => {
+                if ((event.currentTarget as HTMLDetailsElement).open)
+                  setAutomationsOpen(true);
+              }}
+            >
               <summary>
                 <span>
                   <strong>Regras e automações</strong>
@@ -204,11 +201,14 @@ export default function IntegrationTool({ user }: { user: User }) {
                 <ChevronDown size={16} />
               </summary>
               <div className="mf-automation-content">
-                <AutomationCenter
-                  userId={user.id}
-                  accounts={accounts}
-                  categories={categories}
-                />
+                {/* Só monta (e só consulta/assina o banco) depois de aberto. */}
+                {automationsOpen && (
+                  <AutomationCenter
+                    userId={user.id}
+                    accounts={accounts}
+                    categories={categories}
+                  />
+                )}
               </div>
             </details>
           </div>

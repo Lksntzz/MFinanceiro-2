@@ -831,7 +831,7 @@ export default function PlanningTool({ user }: { user: User }) {
                 {commitmentKind === 'fixed' ? (
                   <MonthlyFixedBills userId={user.id} onDataChanged={refresh} />
                 ) : (
-                  <SubscriptionManager />
+                  <SubscriptionManager userId={user.id} />
                 )}
               </div>
             )}
