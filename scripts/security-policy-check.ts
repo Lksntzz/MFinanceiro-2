@@ -45,6 +45,24 @@ for (const required of [
   );
 }
 
+const phase1 = read(
+  'supabase/migrations/20261025120000_db_hardening_phase1.sql',
+);
+for (const required of [
+  'revoke execute on function %s from public, anon, authenticated',
+  'mf_sync_fixed_bill_snapshots',
+  'is distinct from',
+  '(select auth.uid())',
+  'submit_access_request',
+]) {
+  assert.ok(phase1.includes(required), `phase1 migration missing ${required}`);
+}
+assert.equal(
+  /grant execute[^;]*\bto\s+(?:public|anon)\b/i.test(phase1),
+  false,
+  'phase1 migration must not grant EXECUTE to public/anon',
+);
+
 const financialHealth = read('src/components/FinancialHealth.tsx');
 assert.ok(
   financialHealth.includes('to="/app/analises/insights"'),
